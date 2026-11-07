@@ -1,0 +1,200 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ride · AI Ride Coach</title>
+<style>
+:root{color-scheme:dark;--bg:#08090C;--volt:#D4F23B;--muted:#969aa6;--line:rgba(255,255,255,.07);--red:#ff777c}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#f4f5f7;font:16px/1.6 system-ui,sans-serif}nav{position:sticky;top:0;background:rgba(8,9,12,.9);backdrop-filter:blur(12px);border-bottom:1px solid var(--line);padding:16px 5vw;z-index:2;display:flex;gap:20px}a{color:inherit}nav a:first-child{margin-right:auto}main{max-width:960px;margin:auto;padding:48px 24px 80px}h1{font-size:clamp(36px,6vw,56px);letter-spacing:-.04em;line-height:1.1}h2{font-size:20px}.eyebrow{color:var(--volt);letter-spacing:.16em;font-size:12px;text-transform:uppercase}.muted,small{color:var(--muted)}.card{padding:28px;margin:20px 0;border:1px solid var(--line);border-radius:20px;background:rgba(255,255,255,.03);box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}.grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}.grid .card{margin:0}.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}label{display:grid;gap:6px;flex:1}input,button{font:inherit;border-radius:10px;padding:12px 16px}input{min-width:0;width:100%;background:#0b0c10;color:inherit;border:1px solid var(--line);box-shadow:inset 0 2px 8px #0006}input:focus{outline:1px solid var(--volt);box-shadow:0 0 16px #d4f23b20}button{border:1px solid transparent;color:#08090c;background:var(--volt);font-weight:650;cursor:pointer}button.secondary{color:#eee;background:transparent;border-color:var(--line)}button:disabled{opacity:.4;cursor:not-allowed}button:focus-visible,a:focus-visible{outline:2px solid var(--volt);outline-offset:4px}.hr{font-size:clamp(96px,18vw,150px);line-height:1.1;font-weight:750;letter-spacing:-.07em;font-variant-numeric:tabular-nums;color:var(--volt)}.pill{display:inline-block;border:1px solid var(--line);border-radius:30px;padding:5px 12px;font-size:13px}#simulated-banner{position:sticky;top:0;z-index:3;background:#ad132a;color:#fff;padding:12px 24px;text-align:center;font-weight:800;letter-spacing:.05em}.offline{color:var(--red)}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.7 ui-monospace,monospace;max-height:260px;overflow:auto}#summary{font-size:20px}footer{border-top:1px solid var(--line);padding-top:24px;margin-top:48px;color:var(--muted);font-size:13px}[hidden]{display:none!important}@media(max-width:640px){.grid{grid-template-columns:1fr}main{padding:32px 16px}.card{padding:20px}nav{font-size:13px}}
+</style>
+</head>
+<body>
+<div id="simulated-banner" hidden role="status">SIMULATED · 合成心率演示，不是真实骑行记录</div>
+<nav><a href="/">AI Ride Coach</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></nav>
+<main>
+<p class="eyebrow">Local voice · Honest memory</p>
+<h1>记录此刻，<br>不替你做判断。</h1>
+<p class="muted">心率带直连，本地语音，自定义阈值提醒。没有目标区间就不推算、不提醒越区。</p>
+<p id="compatibility" class="muted">Android Chrome 支持 Web Bluetooth；iOS Safari 不支持。需 HTTPS 或本机 localhost 安全上下文。手机不能用电脑的 127.0.0.1 地址连接。</p>
+<div class="card">
+<h2>01 / 设定记录</h2>
+<div class="row"><label>自定义下限（bpm，可留空）<input id="lower" type="number" min="0" max="65535" step="1" inputmode="numeric" placeholder="由你填写"></label><label>自定义上限（bpm，可留空）<input id="upper" type="number" min="0" max="65535" step="1" inputmode="numeric" placeholder="由你填写"></label></div>
+<p class="muted">上下限须同时填写或同时留空；仅为你设定的提醒阈值，不是医学安全范围。不根据年龄、LTHR 或演示值猜测训练区间。</p>
+<div class="row"><button id="start-ride" type="button">连接心率带并开始</button><button id="end-ride" type="button" class="secondary" disabled>结束骑行</button><button id="reconnect" type="button" class="secondary" disabled>重新连接</button></div>
+<p id="status" role="status" aria-live="polite">准备记录。语音需点击开始激活；请先在静止状态连接设备。</p>
+</div>
+<div class="grid"><section class="card"><span id="connection" class="pill">未连接</span><p><span id="heart-rate" class="hr">—</span> <span class="muted">bpm</span></p><p id="zone-state">未设置目标区间</p><p id="elapsed" class="muted">00:00</p></section><section class="card"><h2>02 / 原始时间轴</h2><p class="muted">仅展示最近 60 个实际点。断线标记 gap，不插值、不用旧读数补齐。超过 5 秒没有新读数也标记信号缺口。</p><pre id="timeline" aria-label="原始心率与断线记录"></pre></section></div>
+<section class="card"><h2>03 / 骑后一句话</h2><p id="summary">结束后根据记录生成。没有数据的部分保持缺失。</p><p id="save-status" role="status" aria-live="polite">本片存储为 ephemeral：重启或重新部署可能丢失，请保留下载备份。</p><div class="row"><button id="retry-upload" type="button" class="secondary">重试上传本机待传记录</button><button id="download-session" type="button" class="secondary" disabled>下载本次 JSON 备份</button></div></section>
+<footer><p>Record only. Not medical advice.</p><p>语音只报告记录和你设定的阈值，不提供训练处方或效果承诺。后台、锁屏、系统省电或浏览器挂起可能停止 BLE、计时或语音；本页不是可靠的安全报警器。请勿在骑行中操作屏幕。</p><p>心率数据保存在当前设备及本服务的临时目录；共用电脑请勿视为多用户私密空间。模拟来源会随记录保留，绝不转为真实来源。</p><p>AI Ride Coach · Early access · <a href="?simulate=1">打开模拟模式</a></p></footer>
+</main>
+<script>
+'use strict';
+// Device adapter only: ride_memory.py owns the reusable versioned memory contract.
+const PERSONA = Object.freeze({version:'ride-persona/1', above:'当前心率高于你设置的上限。', below:'当前心率低于你设置的下限。', disconnected:'心率信号已断开，当前读数不可用。', short:'记录太短，无法总结。'});
+const SERVICE = 0x180D, CHARACTERISTIC = 0x2A37;
+const OUTSIDE_DWELL_MS = 10000, ALERT_COOLDOWN_MS = 60000, STALE_MS = 5000, MAX_SERIES = 20000;
+const SIMULATED = new URLSearchParams(location.search).get('simulate') === '1';
+const $ = id => document.getElementById(id);
+let token = '', session = null, active = false, connecting = false, device = null, characteristic = null;
+let startedMs = 0, startedMono = 0, previous = null, lastSignal = null, gapOpen = false;
+let outsideSince = null, outsideKind = null, lastAlert = -Infinity, alerts = 0;
+let timer = null, simulator = null, lastSession = null, target = null;
+let totals = {below:0, within:0, above:0};
+const PENDING_PREFIX = 'luma.ride.pending.';
+function state(text){$('status').textContent = text;}
+function cancelSpeech(){if ('speechSynthesis' in window) window.speechSynthesis.cancel();}
+function speak(text){
+  if (!('speechSynthesis' in window) || !('SpeechSynthesisUtterance' in window)) return false;
+  try { cancelSpeech(); const utterance = new SpeechSynthesisUtterance(text); utterance.lang = 'zh-CN'; utterance.rate = 1.0; window.speechSynthesis.speak(utterance); return true; }
+  catch (_) {state('系统语音不可用；文字记录仍可继续。'); return false;}
+}
+function noteAndSpeak(text){if(session && session.coach_notes.length < 199) session.coach_notes.push(text); speak(text);}
+function readTarget(){
+  const a = $('lower').value.trim(), b = $('upper').value.trim();
+  if (!a && !b) return null;
+  const lower = Number(a), upper = Number(b);
+  if (!a || !b || !Number.isFinite(lower) || !Number.isFinite(upper) || lower < 0 || upper > 65535 || lower > upper) throw new Error('请填写有序的非负上下限，或同时留空。');
+  return {lower, upper};
+}
+function elapsedSeconds(){return Math.max(0, Math.round(performance.now() - startedMono) / 1000);}
+function zone(hr){return !target ? null : hr < target.lower ? 'below' : hr > target.upper ? 'above' : 'within';}
+function resetOutside(){outsideSince = null; outsideKind = null; cancelSpeech();}
+function drawTimeline(){ $('timeline').textContent = session.series.slice(-60).map(p => p.t.toFixed(3) + 's  ' + ('gap' in p ? 'gap — 信号缺失' : p.hr + ' bpm')).join('\n'); }
+function addPoint(point){
+  if (!active) return false;
+  if (session.series.length >= MAX_SERIES) {finishRide('已到 20000 点上限，停止记录，未静默丢弃后续数据。'); return false;}
+  const last = session.series[session.series.length-1];
+  if (last && point.t <= last.t) point.t = Math.round((last.t + .001) * 1000) / 1000;
+  session.series.push(point); drawTimeline(); return true;
+}
+function markGap(){
+  if (!active || gapOpen) return;
+  if (!addPoint({t:elapsedSeconds(), gap:true})) return;
+  gapOpen = true; previous = null; lastSignal = null; resetOutside();
+  $('heart-rate').textContent = '—'; $('connection').textContent = '信号缺失 · gap'; $('connection').classList.add('offline');
+  $('zone-state').textContent = '读数不可用，不判断区间'; noteAndSpeak(PERSONA.disconnected);
+}
+function receiveHR(hr, now = performance.now()){
+  if (!active || !Number.isInteger(hr) || hr < 0 || hr > 65535) return;
+  if (lastSignal !== null && now - lastSignal > STALE_MS) markGap();
+  if (!active) return;
+  const t = elapsedSeconds();
+  // Credit only an observed, short interval between two live samples. No gap allocation.
+  if (previous && target && now - previous.mono <= STALE_MS) totals[zone(previous.hr)] += Math.max(0, t - previous.t);
+  if (!addPoint({t, hr})) return;
+  const point = session.series[session.series.length-1];
+  previous = {t:point.t, hr, mono:now}; lastSignal = now; gapOpen = false;
+  $('heart-rate').textContent = String(hr); $('connection').textContent = SIMULATED ? 'SIMULATED · 合成信号' : 'BLE · 实时读数'; $('connection').classList.remove('offline');
+  const kind = zone(hr); $('zone-state').textContent = kind === null ? '未设置目标区间，仅记录' : kind === 'within' ? '位于自定义范围内' : kind === 'above' ? '高于自定义上限' : '低于自定义下限';
+  if (kind === null || kind === 'within') {resetOutside(); return;}
+  if (outsideKind !== kind) {outsideSince = now; outsideKind = kind; cancelSpeech();}
+  if (now - outsideSince >= OUTSIDE_DWELL_MS && now - lastAlert >= ALERT_COOLDOWN_MS) {
+    lastAlert = now; alerts += 1; noteAndSpeak(PERSONA[kind]);
+  }
+}
+function parseHeartRate(value){
+  if (!(value instanceof DataView) || value.byteLength < 2) throw new Error('无效心率特征数据');
+  const is16 = (value.getUint8(0) & 1) !== 0;
+  if (is16 && value.byteLength < 3) throw new Error('uint16 心率数据被截断');
+  return is16 ? value.getUint16(1, true) : value.getUint8(1);
+}
+function onHeartRate(event){try {receiveHR(parseHeartRate(event.target.value));} catch (_) {markGap(); state('心率数据格式异常，已标记缺口，没有补数。');}}
+function begin(){
+  target = readTarget(); startedMs = Date.now(); startedMono = performance.now();
+  const random = new Uint32Array(4); crypto.getRandomValues(random);
+  session = {schema_version:'luma-ride-memory/1', id:'ride-' + [...random].map(n=>n.toString(16).padStart(8,'0')).join(''), started_at:new Date(startedMs).toISOString(), ended_at:null, samples_hz:1, series:[], summary:null, coach_notes:[], persona_version:PERSONA.version, source:SIMULATED ? 'simulated' : 'ble_gatt_0x180d'};
+  active = true; previous = null; lastSignal = null; gapOpen = false; outsideSince = null; outsideKind = null; lastAlert = -Infinity; alerts = 0; totals = {below:0, within:0, above:0};
+  $('lower').disabled = $('upper').disabled = true; $('start-ride').disabled = true; $('end-ride').disabled = false; $('timeline').textContent = ''; $('summary').textContent = '记录中，结束后总结。';
+  timer = setInterval(()=>{if (!active) return; const s=Math.floor(elapsedSeconds()); $('elapsed').textContent = String(Math.floor(s/60)).padStart(2,'0') + ':' + String(s%60).padStart(2,'0'); if (lastSignal !== null && performance.now()-lastSignal > STALE_MS) markGap();}, 500);
+}
+async function connectBLE(){
+  if (!window.isSecureContext || !navigator.bluetooth) throw new Error('此浏览器不能连接 BLE：请使用 HTTPS 下的 Android Chrome；iOS Safari 不支持 Web Bluetooth。');
+  if (!device) {device = await navigator.bluetooth.requestDevice({filters:[{services:[SERVICE]}]}); device.addEventListener('gattserverdisconnected',()=>{markGap(); if(active) {state('BLE 已断开。缺口如实记录，可静止后重连。'); $('reconnect').disabled=false;}});}
+  if (characteristic) characteristic.removeEventListener('characteristicvaluechanged', onHeartRate);
+  const server = await device.gatt.connect(); const service = await server.getPrimaryService(SERVICE); characteristic = await service.getCharacteristic(CHARACTERISTIC);
+  if (!active) begin();
+  characteristic.addEventListener('characteristicvaluechanged', onHeartRate); await characteristic.startNotifications();
+  // Start a freshness window even before the first notification arrives.
+  lastSignal = performance.now(); $('reconnect').disabled = false; state('已连接，等待实际心率读数。语音只作自定义阈值提示。');
+}
+async function startRide(){
+  if (active || connecting) return;
+  try {
+    readTarget(); connecting=true; $('start-ride').disabled=true;
+    // Warm up browser speech in a user gesture, without inventing a recorded alert.
+    speak('开始记录。');
+    if (SIMULATED) {
+      begin(); state('SIMULATED：仅演示；所有记录永久带 simulated 来源。');
+      const generate = ()=>{const seconds=elapsedSeconds(), midpoint=target ? (target.lower+target.upper)/2 : 130; const amplitude=target ? Math.min(4,(target.upper-target.lower)/4) : 4;
+        const demoHigh = seconds%60 >= 30 && seconds%60 < 46;
+        const hr = demoHigh ? (target ? target.upper+12 : 155) : midpoint + Math.sin(seconds/8)*amplitude + (Math.random()-.5)*2;
+        receiveHR(Math.max(0,Math.min(65535,Math.round(hr))));};
+      generate(); simulator=setInterval(generate,1000);
+    } else await connectBLE();
+  } catch(error) {state(error.message || '连接失败，未生成假读数。'); if(active) markGap();}
+  finally {connecting=false; $('start-ride').disabled=active;}
+}
+function buildMemory(){
+  const duration = Math.max(elapsedSeconds(), session.series.length ? session.series[session.series.length-1].t : 0);
+  const hrs=session.series.filter(p=>'hr' in p).map(p=>p.hr);
+  session.ended_at=new Date(startedMs+Math.round(duration*1000)).toISOString();
+  session.summary={duration_s:duration,avg_hr:hrs.length ? hrs.reduce((a,b)=>a+b,0)/hrs.length : null,max_hr:hrs.length ? Math.max(...hrs) : null,time_in_zone_s:target ? {...totals} : null,zone_target:target ? {...target} : null,gaps:session.series.filter(p=>'gap' in p).length,alerts};
+  return session;
+}
+function summarize(memory){
+  const s=memory.summary, count=memory.series.filter(p=>'hr' in p).length;
+  if (s.duration_s < 10 || count < 2) return PERSONA.short;
+  let text=(memory.source === 'simulated' ? '模拟记录：' : '本次记录：') + Math.round(s.duration_s) + '秒，样本平均心率' + s.avg_hr.toFixed(1) + '，最高' + s.max_hr + '，信号缺口' + s.gaps + '次，阈值提醒' + s.alerts + '次。';
+  if(s.time_in_zone_s){const z=s.time_in_zone_s, observed=z.below+z.within+z.above;
+    text+=observed > 0 ? '在可归类的'+observed.toFixed(1)+'秒中，低于、范围内、高于自定义阈值的占比分别为'+[z.below,z.within,z.above].map(n=>(n/observed*100).toFixed(0)+'%').join('、')+'；未观测时间不计入。' : '没有足够连续读数计算区间占比。';
+  } else text+='未设置区间，不计算区间占比。';
+  return text;
+}
+function retain(memory){
+  try {localStorage.setItem(PENDING_PREFIX+memory.id, JSON.stringify(memory)); return true;}
+  catch (_) {$('save-status').textContent='浏览器本地存储不可用或已满；记录仍在本页内存，请立即下载 JSON 备份。关闭页面会丢失未保存数据。'; return false;}
+}
+async function getToken(){
+  const response=await fetch('/api/coach/config',{cache:'no-store'}); if(!response.ok) throw new Error('无法获取会话令牌');
+  const config=await response.json(); if(typeof config.token !== 'string' || !config.token) throw new Error('会话令牌缺失'); token=config.token;
+}
+async function upload(memory, retained){
+  try {
+    if(!token) await getToken();
+    const response=await fetch('/api/coach/ride/session',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify(memory)});
+    const result=await response.json();
+    if(!response.ok || result.status!=='saved' || result.id!==memory.id) {if(response.status===403)token=''; throw new Error(result.error_code || 'upload_failed');}
+    try {localStorage.removeItem(PENDING_PREFIX+memory.id);} catch (_) { /* A saved duplicate can be retried idempotently. */ }
+    $('save-status').textContent='已上传到临时存储（ephemeral），请下载备份；部署或重启可能丢失服务端数据。'; return true;
+  } catch(error) {$('save-status').textContent='上报失败（'+error.message+'）。'+(retained ? '已在当前浏览器本地保留，稍后点击重试；请勿清理站点数据。' : '本地存储也不可用；记录仅在本页内存，请立即下载备份。'); return false;}
+}
+function finishRide(reason=''){
+  if(!active)return;
+  const memory=buildMemory(); active=false; clearInterval(timer);clearInterval(simulator);resetOutside();
+  if(device && device.gatt.connected)device.gatt.disconnect();
+  $('end-ride').disabled=true;$('reconnect').disabled=true;$('start-ride').disabled=false;$('lower').disabled=$('upper').disabled=false;
+  const text=summarize(memory);$('summary').textContent=text;if(memory.coach_notes.length<200)memory.coach_notes.push(text);speak(text);
+  lastSession=memory;$('download-session').disabled=false;$('connection').textContent='记录已结束';state(reason || '记录结束。平均值为实际样本算术平均，不推断训练效果。');
+  const retained=retain(memory); void upload(memory,retained);
+}
+$('start-ride').addEventListener('click',startRide);
+$('end-ride').addEventListener('click',()=>finishRide());
+$('reconnect').addEventListener('click',async()=>{if(!active || SIMULATED || connecting)return;connecting=true;$('reconnect').disabled=true;try{await connectBLE();}catch(error){markGap();state(error.message || '重新连接失败，缺口仍保留。');}finally{connecting=false;$('reconnect').disabled=!active;}});
+$('retry-upload').addEventListener('click',async()=>{
+  $('retry-upload').disabled=true;
+  try {
+    const pending=[];for(let i=0;i<localStorage.length;i++){const key=localStorage.key(i);if(key && key.startsWith(PENDING_PREFIX))pending.push(key);}
+    if(!pending.length){if(lastSession)await upload(lastSession,retain(lastSession));else $('save-status').textContent='当前浏览器没有待传记录。';}
+    for(const key of pending){const memory=JSON.parse(localStorage.getItem(key));if(!memory || key!==PENDING_PREFIX+memory.id)throw new Error('待传记录损坏，未删除本地副本');if(!await upload(memory,true))break;}
+  }catch(_){$('save-status').textContent='无法读取本地待传记录；未删除任何副本。如本页仍有本次记录，请下载备份。';}
+  finally{$('retry-upload').disabled=false;}
+});
+$('download-session').addEventListener('click',()=>{if(!lastSession)return;const url=URL.createObjectURL(new Blob([JSON.stringify(lastSession,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download=lastSession.id+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
+window.addEventListener('beforeunload',event=>{if(active){event.preventDefault();event.returnValue='';}});
+$('simulated-banner').hidden=!SIMULATED;
+if(SIMULATED){$('start-ride').textContent='开始模拟记录';$('compatibility').textContent='SIMULATED · 无需心率带，点击后生成合成数据；每分钟有一次越区演示，仅在你填写上下限后进行阈值提醒。演示值不代表你的训练区间。';}
+else if(!window.isSecureContext || !navigator.bluetooth){$('start-ride').disabled=true;state('当前浏览器不支持 BLE 或不是安全上下文。请使用 HTTPS Android Chrome；iOS Safari 不支持 Web Bluetooth。可用页面底部模拟模式联调。');}
+if(!('speechSynthesis' in window))$('compatibility').textContent+=' 系统 TTS 不可用，只有文字提示。';
+</script>
+</body>
+</html>

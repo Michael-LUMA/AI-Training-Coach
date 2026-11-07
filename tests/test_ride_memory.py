@@ -1,0 +1,192 @@
+﻿"""Synthetic v1 memory contract tests: no devices, network, DB or model calls."""
+import copy
+import json
+import sys
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from ride_memory import MAX_SERIES, RideMemoryError, SCHEMA_VERSION, validate_session
+
+
+def memory():
+    """Synthetic observed record with an explicit missing-data interval."""
+    return {"schema_version": SCHEMA_VERSION, "id": "synthetic-ride_01",
+            "started_at": "2026-11-07T08:00:00Z", "ended_at": "2026-11-07T08:01:00Z",
+            "samples_hz": 1, "series": [{"t": 0, "hr": 120}, {"t": 1, "gap": True},
+                                       {"t": 30, "hr": 140}],
+            "summary": {"duration_s": 60, "avg_hr": 130, "max_hr": 140,
+                        "time_in_zone_s": None, "zone_target": None, "gaps": 1, "alerts": 0},
+            "coach_notes": ["记录中断，缺口未补数。"], "persona_version": "ride-persona/1",
+            "source": "ble_gatt_0x180d"}
+
+
+class RideMemoryTests(unittest.TestCase):
+    def reject(self, value):
+        with self.assertRaises(RideMemoryError) as caught:
+            validate_session(value)
+        self.assertTrue(caught.exception.code)
+        return caught.exception
+
+    def test_valid_ble_contract_roundtrips_without_mutation(self):
+        value = memory(); before = copy.deepcopy(value)
+        result = validate_session(value)
+        self.assertEqual(result, before)
+        self.assertEqual(value, before)
+        self.assertEqual(json.loads(json.dumps(result)), before)
+
+    def test_returned_memory_is_deeply_detached(self):
+        value = memory(); result = validate_session(value)
+        result['series'][0]['hr'] = 999
+        result['summary']['alerts'] = 999
+        result['coach_notes'].append('changed')
+        self.assertEqual(value, memory())
+        value['series'][2]['hr'] = 888
+        self.assertEqual(result['series'][2]['hr'], 140)
+
+    def test_missing_and_unknown_root_fields(self):
+        for key in memory():
+            value = memory(); del value[key]
+            with self.subTest(missing=key): self.reject(value)
+        value = memory(); value['api_key'] = 'private-secret'
+        error = self.reject(value)
+        self.assertNotIn('private-secret', str(error))
+
+    def test_wrong_root_types_and_version(self):
+        for value in (None, [], 'text', True): self.reject(value)
+        for version in ('luma-ride-memory/2', None, 1, {}):
+            value = memory(); value['schema_version'] = version
+            self.reject(value)
+
+    def test_source_mandatory_simulated_preserved_never_assumed_ble(self):
+        value = memory(); value['source'] = 'simulated'
+        self.assertEqual(validate_session(value)['source'], 'simulated')
+        for source in ('', 'BLE', 'SIMULATED', None, [], True):
+            value = memory(); value['source'] = source
+            self.reject(value)
+        value = memory(); del value['source']; self.reject(value)
+
+    def test_gap_preserved_no_interpolation_or_zero_fill(self):
+        result = validate_session(memory())
+        self.assertEqual(result['series'], [{'t': 0, 'hr': 120}, {'t': 1, 'gap': True}, {'t': 30, 'hr': 140}])
+        self.assertIsNone(result['summary']['time_in_zone_s'])
+        self.assertEqual(result['summary']['avg_hr'], 130)
+        self.assertNotIn('hr', result['series'][1])
+
+    def test_gap_requires_true_and_exclusive_shape(self):
+        for point in ({'t': 1, 'gap': False}, {'t': 1, 'gap': 1}, {'t': 1, 'gap': None},
+                      {'t': 1, 'hr': 130, 'gap': True}, {'t': 1}, {'t': 1, 'gap': True, 'why': 'disconnect'}, None):
+            value = memory(); value['series'][1] = point
+            self.reject(value)
+
+    def test_summary_requires_exact_fields(self):
+        for key in memory()['summary']:
+            value = memory(); del value['summary'][key]; self.reject(value)
+        for summary in (None, [], {'unknown': 1}):
+            value = memory(); value['summary'] = summary; self.reject(value)
+        value = memory(); value['summary']['fitness'] = 99; self.reject(value)
+
+    def test_negative_nonfinite_boolean_and_strings_rejected(self):
+        for bad in (-1, float('nan'), float('inf'), -float('inf'), True, '1', None, 10**400):
+            for field in ('samples_hz',):
+                value = memory(); value[field] = bad; self.reject(value)
+            for field in ('duration_s', 'avg_hr', 'max_hr', 'gaps', 'alerts'):
+                value = memory(); value['summary'][field] = bad
+                with self.subTest(field=field, bad_type=type(bad).__name__): self.reject(value)
+            value = memory(); value['series'][1]['t'] = bad; self.reject(value)
+
+    def test_sampling_rate_must_be_positive(self):
+        value = memory(); value['samples_hz'] = 0; self.reject(value)
+        value['samples_hz'] = .5
+        self.assertEqual(validate_session(value)['samples_hz'], .5)
+
+    def test_hr_unsigned_gatt_value_not_invented_physiology(self):
+        for hr in (-1, 65536, 120.5, True, None, '120', float('nan'), float('inf')):
+            value = memory(); value['series'][0]['hr'] = hr; self.reject(value)
+        value = memory(); value['series'] = [{'t': 0, 'hr': 0}, {'t': 1, 'hr': 65535}]
+        value['summary'].update(avg_hr=32767.5, max_hr=65535, gaps=0)
+        self.assertEqual(validate_session(value)['series'], value['series'])
+
+    def test_series_order_bounds_and_type(self):
+        for t in (0, -1, 61):
+            value = memory(); value['series'][1]['t'] = t; self.reject(value)
+        value = memory(); value['series'][0]['t'] = 2; self.reject(value)
+        for series in (None, {}, 'bad', [None]):
+            value = memory(); value['series'] = series; self.reject(value)
+
+    def test_series_limit_20000_inclusive(self):
+        value = memory(); value['ended_at'] = '2026-11-07T14:00:00Z'
+        value['series'] = [{'t': i, 'hr': 120} for i in range(MAX_SERIES)]
+        value['summary'].update(duration_s=21600, avg_hr=120, max_hr=120, gaps=0)
+        self.assertEqual(len(validate_session(value)['series']), MAX_SERIES)
+        value['series'].append({'t': MAX_SERIES, 'hr': 120})
+        self.assertEqual(self.reject(value).code, 'series_too_large')
+
+    def test_timestamps_must_be_valid_aware_and_ordered(self):
+        for date in ('2026-11-07', '2026-11-07T08:00:00', '2026-02-30T08:00:00Z',
+                     '2026-11-07T08:00:00+25:00', '2026-11-07T08:00:00-00:00',
+                     '2026-11-07T08:00:60Z', None, 123):
+            value = memory(); value['started_at'] = date; self.reject(value)
+        value = memory(); value['ended_at'] = '2026-11-07T07:59:59Z'; self.reject(value)
+        value = memory(); value['ended_at'] = '2026-11-07T08:01:00.123456Z'
+        value['summary']['duration_s'] = 60.123456
+        self.assertEqual(validate_session(value), value)
+
+    def test_timezone_offsets_compare_instants_without_rewriting_strings(self):
+        value = memory(); value['started_at'] = '2026-11-07T16:00:00+08:00'
+        self.assertEqual(validate_session(value), value)
+        value['summary']['duration_s'] = 59; self.reject(value)
+
+    def test_empty_or_all_gap_series_keep_missing_averages_null(self):
+        for series in ([], [{'t': 0, 'gap': True}]):
+            value = memory(); value['series'] = series
+            value['summary'].update(avg_hr=None, max_hr=None, gaps=len(series))
+            self.assertEqual(validate_session(value), value)
+            value['summary']['avg_hr'] = 0; self.reject(value)
+        value = memory(); value['series'] = []
+        value['ended_at'] = value['started_at']
+        value['summary'].update(duration_s=0, avg_hr=None, max_hr=None, gaps=0)
+        self.assertEqual(validate_session(value), value)
+
+    def test_summary_matches_recorded_samples_and_gap_count(self):
+        for updates in ({'avg_hr': 131}, {'max_hr': 150}, {'gaps': 0}, {'gaps': 1.0},
+                        {'alerts': .5}, {'alerts': 2**53}, {'avg_hr': None}):
+            value = memory(); value['summary'].update(updates); self.reject(value)
+
+    def test_zone_contract_allows_partial_coverage_not_gap_allocation(self):
+        value = memory(); value['summary'].update(zone_target={'lower': 120, 'upper': 140},
+                                                 time_in_zone_s={'below': 0, 'within': 1, 'above': 0})
+        result = validate_session(value)
+        self.assertEqual(result, value)
+        self.assertEqual(sum(result['summary']['time_in_zone_s'].values()), 1)
+        value['summary']['time_in_zone_s'] = None
+        self.assertEqual(validate_session(value), value)
+
+    def test_zone_no_target_no_times_and_exact_shapes(self):
+        for target in ({'lower': 150, 'upper': 120}, {'lower': -1, 'upper': 140},
+                       {'lower': 120, 'upper': float('nan')}, {'lower': True, 'upper': 140},
+                       {'lower': 120}, {'lower': 120, 'upper': 140, 'lthr': 160}):
+            value = memory(); value['summary']['zone_target'] = target; self.reject(value)
+        value = memory(); value['summary']['time_in_zone_s'] = {'below': 0, 'within': 0, 'above': 0}
+        self.reject(value)
+        for times in ({'below': 0, 'within': 61, 'above': 0}, {'below': 30, 'within': 30, 'above': 30},
+                      {'below': -1, 'within': 1, 'above': 0}, {'below': 0, 'within': float('inf'), 'above': 0},
+                      {'below': 0, 'within': 1}, {'below': 0, 'within': 1, 'above': 0, 'other': 0}):
+            value = memory(); value['summary'].update(zone_target={'lower': 120, 'upper': 140}, time_in_zone_s=times)
+            self.reject(value)
+
+    def test_bounded_safe_identifiers_persona_and_notes(self):
+        for identifier in ('../escape', '/abs', 'a/b', 'a\\b', '.', '', 'a'*65, None, '中文'):
+            value = memory(); value['id'] = identifier; self.reject(value)
+        for persona in ('', None, 'x'*65, '\ud800'):
+            value = memory(); value['persona_version'] = persona; self.reject(value)
+        for notes in (None, 'text', [{}], [''], ['x'*2001], ['x']*201, ['\ud800'], ['\x00']):
+            value = memory(); value['coach_notes'] = notes; self.reject(value)
+
+    def test_input_cycles_fail_with_contract_error_not_recursion(self):
+        value = memory(); value['series'][0]['hr'] = value; self.reject(value)
+        value = memory(); value['coach_notes'].append(value); self.reject(value)
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -15,6 +15,10 @@ import warnings
 import re
 import secrets
 import sqlite3
+import tempfile
+import time
+from collections import deque
+from threading import Lock
 from contextlib import closing
 from datetime import date, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -33,6 +37,7 @@ from coach_weekly import build_weekly_summary
 from coach_billing import BillingStore, verify as verify_billing
 from ride_gpx import GPXError
 from ride_review import ReviewError
+from ride_memory import validate_session, RideMemoryError
 from ride_server import strict_json, dumps
 
 BRAND_NAME = "AI Ride Coach"
@@ -40,6 +45,9 @@ SUPPORT_EMAIL = "support@example.invalid"  # Placeholder; replace before public 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_DB = ROOT / ".runtime/coach/coach.sqlite3"
 MAX_BODY_BYTES = 8192
+MAX_RIDE_BODY_BYTES = 2 * 1024 * 1024
+RIDE_POST = "/api/coach/ride/session"
+RIDE_LIST = "/api/coach/ride/sessions"
 DEFAULT_PORT = 8794
 
 
@@ -139,6 +147,17 @@ class App:
         self.llm_post = llm_post
         self.today = today if today is not None else date.today
         self.token = secrets.token_urlsafe(32)
+        # Credential-adjacent ephemeral data; tests/custom DBs stay isolated.
+        self._ride_dir = None
+        self._ride_lock = Lock()
+        self._ride_requests = {"GET": deque(), "POST": deque()}
+
+    @property
+    def ride_dir(self):
+        """Resolve storage only on ride requests, preserving injected store doubles."""
+        if self._ride_dir is None:
+            self._ride_dir = Path(self.store.path).parent / "data" / "ride_sessions"
+        return self._ride_dir
 
     @property
     def billing(self):
@@ -183,24 +202,27 @@ class App:
         parsed = urlsplit(path)
         require(not parsed.scheme and not parsed.netloc and not parsed.fragment, "Invalid request target")
         require(method in ("GET", "POST"), "Method not allowed", "method_not_allowed", 405)
-        public = method == "GET" and parsed.path in ("/", "/privacy", "/terms", "/api/coach/config")
+        public = method == "GET" and parsed.path in ("/", "/ride", "/privacy", "/terms", "/api/coach/config")
         if not public:
             token = headers.get("X-Coach-Token", "")
             require(type(token) is str and token.isascii() and secrets.compare_digest(token, self.token), "Session token required", "token_denied", 403)
-        allowed = ((method == "GET" and parsed.path in ("/", "/privacy", "/terms", "/api/coach/config", "/api/coach/activities")) or
-                   (method == "POST" and path in ("/api/coach/connect", "/api/coach/review", "/api/coach/review-l2", "/api/coach/demo-review", "/api/coach/waitlist", "/api/coach/weekly")))
+        allowed = ((method == "GET" and parsed.path in ("/", "/privacy", "/terms", "/api/coach/config", "/api/coach/activities", "/ride", RIDE_LIST)) or
+                   (method == "POST" and path in ("/api/coach/connect", "/api/coach/review", "/api/coach/review-l2", "/api/coach/demo-review", "/api/coach/waitlist", "/api/coach/weekly", RIDE_POST)))
         require(allowed, "Endpoint not found", "not_found", 404)
         if method == "POST":
             require(headers.get("Transfer-Encoding") is None and headers.get("Content-Type") == "application/json", "Fixed-length JSON required", "invalid_body", 415)
             raw = headers.get("Content-Length", "")
             require(type(raw) is str and re.fullmatch(r"[0-9]{1,8}", raw) is not None, "Body length invalid", "body_too_large", 413)
             length = int(raw)
-            require(0 < length <= MAX_BODY_BYTES, "Body size exceeds limit", "body_too_large", 413)
+            limit = MAX_RIDE_BODY_BYTES if path == RIDE_POST else MAX_BODY_BYTES
+            require(0 < length <= limit, "Body size exceeds limit", "body_too_large", 413)
             return length
         return 0
 
     def dispatch(self, method, path, headers, body=b"", port=DEFAULT_PORT):
         length = self.preflight(method, path, headers, port)
+        if urlsplit(path).path in (RIDE_POST, RIDE_LIST):
+            self._ride_rate_limit(method)
         if method == "POST" and path == "/api/coach/billing/webhook":
             require(len(body) == length, "Incomplete request body", "invalid_body")
             require(verify_billing(body, headers.get("creem-signature", ""), os.environ.get("CREEM_WEBHOOK_SECRET", "")), "Invalid webhook signature", "billing_signature_invalid", 403)
@@ -213,14 +235,16 @@ class App:
             if path == "/health":
                 return {"status": "ok"}
             parsed = urlsplit(path)
-            if parsed.path in ("/", "/privacy", "/terms"):
-                return _page({"/": "coach.html", "/privacy": "privacy.html", "/terms": "terms.html"}[parsed.path])
+            if parsed.path in ("/", "/ride", "/privacy", "/terms"):
+                return _page({"/": "coach.html", "/ride": "ride.html", "/privacy": "privacy.html", "/terms": "terms.html"}[parsed.path])
             if path == "/api/coach/config":
                 key = self.store.get_key()
                 return {"billing_enabled": bool(os.environ.get("CREEM_WEBHOOK_SECRET", "").strip()), "subscription_status": self.billing.current_status(), "brand_name": BRAND_NAME, "support_email": SUPPORT_EMAIL, "token": self.token, "connected": key is not None,
                         "masked_key": _masked(key), "verified": False, **self.store.encryption_status,
                         "mode": "local_only", "external_requests": "Only after explicit list/review actions"}
             parsed = urlsplit(path)
+            if parsed.path == RIDE_LIST:
+                return self._ride_sessions(parsed.query)
             require(parsed.path == "/api/coach/activities", "Endpoint not found", "not_found", 404)
             try:
                 query = parse_qs(parsed.query, keep_blank_values=True, strict_parsing=True, max_num_fields=1)
@@ -239,6 +263,8 @@ class App:
             payload = strict_json(body)
         except ActionError:
             raise ActionError("invalid_json", "Strict UTF-8 JSON required") from None
+        if path == RIDE_POST:
+            return self._save_ride(payload)
         if path == "/api/coach/waitlist":
             require(type(payload) is dict and set(payload) == {"email"}, "Expected email only")
             status = self.waitlist.register(payload["email"])
@@ -291,6 +317,85 @@ class App:
             result["llm"] = build_llm_review(
                 copy.deepcopy(review), api_key=os.environ.get("DASHSCOPE_API_KEY"), http_post=self.llm_post)
         return result
+
+    def _ride_rate_limit(self, method):
+        """Bound local disk traffic per single-user app, never an upstream quota.
+
+        Existing coach routes have upstream 429 propagation, not a local bucket.
+        Ride routes have no upstream; enforce 10 POST / 60 GET per minute here.
+        Called once in dispatch, not twice via preflight+dispatch in the handler.
+        """
+        now = time.monotonic()
+        with self._ride_lock:
+            bucket = self._ride_requests[method]
+            while bucket and now - bucket[0] >= 60:
+                bucket.popleft()
+            if len(bucket) >= (10 if method == "POST" else 60):
+                error = ActionError("rate_limited", "Local ride request limit reached", 429)
+                error.retry_after = str(max(1, int(60 - (now - bucket[0])) + 1))
+                raise error
+            bucket.append(now)
+
+    def _save_ride(self, payload):
+        """Validate before I/O; atomic, idempotent writes with no ID overwrite."""
+        try:
+            session = validate_session(payload)
+        except RideMemoryError as error:
+            raise ActionError(error.code, str(error)) from None
+        raw = dumps(session).encode("utf-8")
+        with self._ride_lock:
+            require(not self.ride_dir.is_symlink(), "Ride storage unavailable", "storage_unavailable", 503)
+            self.ride_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+            target = self.ride_dir / (session["id"] + ".json")
+            require(not target.is_symlink(), "Ride storage unavailable", "storage_unavailable", 503)
+            if target.exists():
+                require(target.stat().st_size <= MAX_RIDE_BODY_BYTES and
+                        strict_json(target.read_bytes()) == session,
+                        "Session ID already contains different data", "session_conflict", 409)
+            else:
+                temporary = None
+                try:
+                    with tempfile.NamedTemporaryFile(dir=self.ride_dir, prefix=".pending-", delete=False) as file:
+                        temporary = Path(file.name)
+                        file.write(raw)
+                        file.flush()
+                        os.fsync(file.fileno())
+                    temporary.chmod(0o600)
+                    os.replace(temporary, target)
+                finally:
+                    if temporary is not None:
+                        temporary.unlink(missing_ok=True)
+        return {"status": "saved", "id": session["id"], "storage": "ephemeral"}
+
+    def _ride_sessions(self, query):
+        """Return newest persisted metadata only, with a strict 1..20 limit."""
+        try:
+            params = {} if not query else parse_qs(query, keep_blank_values=True, strict_parsing=True, max_num_fields=1)
+        except ValueError:
+            raise ActionError("invalid_input", "Expected at most one limit parameter") from None
+        require(not params or (set(params) == {"limit"} and len(params["limit"]) == 1
+                and re.fullmatch(r"[0-9]{1,2}", params["limit"][0]) is not None),
+                "Expected limit from 1 to 20")
+        limit = int(params["limit"][0]) if params else 20
+        require(1 <= limit <= 20, "Expected limit from 1 to 20")
+        result, skipped = [], 0
+        with self._ride_lock:
+            require(not self.ride_dir.is_symlink(), "Ride storage unavailable", "storage_unavailable", 503)
+            files = sorted(self.ride_dir.glob("*.json"), key=lambda p: p.lstat().st_mtime_ns, reverse=True)
+            for path in files:
+                if len(result) == limit:
+                    break
+                try:
+                    if path.is_symlink() or path.stat().st_size > MAX_RIDE_BODY_BYTES:
+                        skipped += 1
+                        continue
+                    session = validate_session(strict_json(path.read_bytes()))
+                except (RideMemoryError, ActionError, OSError):
+                    skipped += 1
+                    continue
+                result.append({key: session[key] for key in (
+                    "schema_version", "id", "started_at", "ended_at", "summary", "persona_version", "source")})
+        return {"sessions": result, "storage": "ephemeral", "skipped_invalid": skipped}
 
     def _client(self):
         key = self.store.get_key()

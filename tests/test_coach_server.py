@@ -542,5 +542,174 @@ class CoachServerTests(unittest.TestCase):
         self.assertIn("connect-src 'self'", csp)
 
 
+    @staticmethod
+    def ride_payload(identifier='synthetic-ride-01', source='ble_gatt_0x180d'):
+        return {'schema_version': 'luma-ride-memory/1', 'id': identifier,
+                'started_at': '2026-11-07T08:00:00Z', 'ended_at': '2026-11-07T08:01:00Z',
+                'samples_hz': 1, 'series': [{'t': 0, 'hr': 120}, {'t': 1, 'gap': True}, {'t': 30, 'hr': 140}],
+                'summary': {'duration_s': 60, 'avg_hr': 130, 'max_hr': 140,
+                            'time_in_zone_s': None, 'zone_target': None, 'gaps': 1, 'alerts': 0},
+                'coach_notes': ['Signal missing; no interpolation.'],
+                'persona_version': 'ride-persona/1', 'source': source}
+
+    def test_ride_store_is_lazy_for_mock_store_and_page(self):
+        store = Mock()
+        app = server.App(store)
+        self.assertIsNone(app._ride_dir)
+        page, _ = app.dispatch('GET', '/ride?simulate=1', {'Host': '127.0.0.1:8794'})
+        self.assertIn(b'SIMULATED', page)
+        self.assertIsNone(app._ride_dir)
+        store.get_key.assert_not_called()
+
+    def test_ride_post_persists_exact_contract_and_metadata_list(self):
+        payload = self.ride_payload()
+        result = self.request('/api/coach/ride/session', payload)
+        self.assertEqual(result, {'status': 'saved', 'id': payload['id'], 'storage': 'ephemeral'})
+        path = self.app.ride_dir / (payload['id'] + '.json')
+        self.assertEqual(json.loads(path.read_text(encoding='utf-8')), payload)
+        result = self.request('/api/coach/ride/sessions?limit=1')
+        self.assertEqual(len(result['sessions']), 1)
+        meta = result['sessions'][0]
+        self.assertEqual(meta['summary'], payload['summary'])
+        self.assertEqual(meta['source'], payload['source'])
+        self.assertNotIn('series', meta)
+        self.assertNotIn('coach_notes', meta)
+        self.assertFalse(self.path.exists())
+        self.assertFalse(self.calls)
+
+    def test_ride_simulated_and_gap_are_not_rewritten(self):
+        payload = self.ride_payload(source='simulated')
+        self.request('/api/coach/ride/session', payload)
+        saved = json.loads((self.app.ride_dir / (payload['id']+'.json')).read_text(encoding='utf-8'))
+        self.assertEqual(saved['source'], 'simulated')
+        self.assertEqual(saved['series'], payload['series'])
+        self.assertEqual(saved['summary']['time_in_zone_s'], None)
+        self.assertEqual(len(saved['series']), 3)
+
+    def test_ride_idempotent_retry_and_conflict_never_overwrite(self):
+        payload = self.ride_payload()
+        self.request('/api/coach/ride/session', payload)
+        path = self.app.ride_dir / (payload['id']+'.json')
+        raw = path.read_bytes()
+        self.assertEqual(self.request('/api/coach/ride/session', payload)['status'], 'saved')
+        payload['coach_notes'] = ['Different memory']
+        self.error('session_conflict', lambda: self.request('/api/coach/ride/session', payload))
+        self.assertEqual(path.read_bytes(), raw)
+        self.assertFalse(list(self.app.ride_dir.glob('.pending-*')))
+
+    def test_ride_rejects_invalid_fields_before_disk_write(self):
+        for change in ({'id': '../escape'}, {'source': 'unknown'}, {'api_key': 'not-allowed'},
+                       {'samples_hz': -1}, {'series': [{}]}, {'series': [None]*20001}):
+            with self.subTest(change=list(change)):
+                payload = self.ride_payload(); payload.update(change)
+                handler = self.handler('POST', '/api/coach/ride/session', payload)
+                self.assertEqual(handler.reply.call_args.args[0], 400)
+        payload = self.ride_payload(); del payload['source']
+        self.assertEqual(self.handler('POST', '/api/coach/ride/session', payload).reply.call_args.args[0], 400)
+        self.assertIsNone(self.app._ride_dir)
+        self.assertFalse(self.calls)
+
+    def test_ride_rejects_nonfinite_and_duplicate_json_fields(self):
+        raw_bodies = (b'{"id":"one","id":"two"}', b'{"samples_hz":NaN}', b'{"samples_hz":1e999}')
+        for body in raw_bodies:
+            with self.subTest(body=body):
+                error = self.error('invalid_json', lambda: self.app.dispatch(
+                    'POST', '/api/coach/ride/session', self.headers('POST', body), body))
+                self.assertEqual(error.status, 400)
+        self.assertIsNone(self.app._ride_dir)
+
+    def test_ride_security_denies_before_body_read(self):
+        for overrides, code in (({'Host':'evil.test'},'host_denied'),
+                                ({'Origin':'https://evil.test'},'origin_denied'),
+                                ({'Origin':None},'origin_denied'),
+                                ({'Sec-Fetch-Site':'cross-site'},'origin_denied'),
+                                ({'X-Coach-Token':''},'token_denied'),
+                                ({'Content-Length':str(server.MAX_RIDE_BODY_BYTES+1)},'body_too_large'),
+                                ({'Transfer-Encoding':'chunked'},'invalid_body')):
+            with self.subTest(code=code):
+                h = self.handler('POST', '/api/coach/ride/session', self.ride_payload(), overrides)
+                self.assertEqual(h.reply.call_args.args[1]['error_code'], code)
+                h.rfile.read.assert_not_called()
+        for path in ('/api/coach/ride/sessions', '/api/coach/ride/sessions?limit=20'):
+            h = self.handler('GET', path, overrides={'X-Coach-Token':''})
+            self.assertEqual(h.reply.call_args.args[0], 403)
+        self.assertIsNone(self.app._ride_dir)
+
+    def test_ride_body_limit_accepts_real_series_without_relaxing_other_routes(self):
+        payload = self.ride_payload()
+        payload['series'] = [{'t':i/100, 'hr':120} for i in range(2000)]
+        payload['summary'].update(avg_hr=120, max_hr=120, gaps=0)
+        self.assertGreater(len(json.dumps(payload)), server.MAX_BODY_BYTES)
+        self.assertEqual(self.handler('POST', '/api/coach/ride/session', payload).reply.call_args.args[0], 200)
+        self.assertEqual(self.handler('POST', '/api/coach/demo-review', {},
+                         {'Content-Length':'9000'}).reply.call_args.args[0], 413)
+
+    def test_ride_post_rate_limit_once_per_handler_and_expiration(self):
+        with patch.object(server.time, 'monotonic', return_value=100):
+            for _ in range(10):
+                h = self.handler('POST', '/api/coach/ride/session', self.ride_payload())
+                self.assertEqual(h.reply.call_args.args[0], 200)
+            h = self.handler('POST', '/api/coach/ride/session', self.ride_payload())
+            status, result = h.reply.call_args.args
+            self.assertEqual((status, result['error_code']), (429, 'rate_limited'))
+            self.assertIn('retry_after', result)
+        with patch.object(server.time, 'monotonic', return_value=161):
+            self.assertEqual(self.request('/api/coach/ride/session', self.ride_payload())['status'], 'saved')
+
+    def test_ride_get_rate_limit_and_independent_post_budget(self):
+        with patch.object(server.time, 'monotonic', return_value=100):
+            for _ in range(60):
+                self.assertEqual(self.request('/api/coach/ride/sessions')['sessions'], [])
+            error = self.error('rate_limited', lambda: self.request('/api/coach/ride/sessions'))
+            self.assertEqual(error.status, 429)
+            self.assertEqual(self.request('/api/coach/ride/session', self.ride_payload())['status'], 'saved')
+
+    def test_ride_list_strict_limit_and_empty_storage_is_not_created(self):
+        self.assertEqual(self.request('/api/coach/ride/sessions')['sessions'], [])
+        self.assertFalse(self.app.ride_dir.exists())
+        for query in ('limit=0','limit=21','limit=-1','limit=1&limit=2','limit=',
+                      'limit=1&other=2','other=1','limit=1.0','limit','limit=999'):
+            self.error('invalid_input', lambda q=query: self.request('/api/coach/ride/sessions?'+q))
+
+    def test_ride_list_newest_first_and_skips_corrupt_files(self):
+        import os
+        for i in range(3):
+            payload = self.ride_payload('ride-'+str(i))
+            self.request('/api/coach/ride/session', payload)
+            os.utime(self.app.ride_dir/(payload['id']+'.json'), (100+i,100+i))
+        (self.app.ride_dir/'corrupt.json').write_text('{', encoding='utf-8')
+        result = self.request('/api/coach/ride/sessions?limit=2')
+        self.assertEqual([row['id'] for row in result['sessions']], ['ride-2','ride-1'])
+        self.assertEqual(result['skipped_invalid'], 1)
+
+    def test_ride_atomic_write_failure_returns_storage_error_no_partial_file(self):
+        with patch.object(server.os, 'replace', side_effect=OSError('synthetic disk failure')):
+            h = self.handler('POST', '/api/coach/ride/session', self.ride_payload())
+        status, result = h.reply.call_args.args
+        self.assertEqual((status,result['error_code']), (503,'storage_unavailable'))
+        self.assertNotIn('synthetic disk failure', json.dumps(result))
+        self.assertFalse(list(self.app.ride_dir.iterdir()))
+
+    def test_ride_page_public_query_csp_and_required_contracts(self):
+        for path in ('/ride', '/ride?simulate=1'):
+            page, csp = self.app.dispatch('GET', path, {'Host':'127.0.0.1:8794'})
+            text = page.decode('utf-8')
+            for item in ('0x180D','0x2A37','getUint16(1, true)','getUint8(1)', 'PERSONA',
+                         'OUTSIDE_DWELL_MS = 10000', 'ALERT_COOLDOWN_MS = 60000',
+                         'simulate=1','SIMULATED','id="simulated-banner"','gap:true',
+                         "source:SIMULATED ? 'simulated' : 'ble_gatt_0x180d'",
+                         'speechSynthesis','zh-CN','utterance.rate = 1.0',
+                         'gattserverdisconnected','localStorage.setItem','retry-upload',
+                         'download-session','/api/coach/ride/session','X-Coach-Token',
+                         'Record only. Not medical advice.', 'Android Chrome','iOS Safari'):
+                with self.subTest(path=path, item=item): self.assertIn(item, text)
+            self.assertNotIn('innerHTML', text)
+            self.assertNotIn('<script src=', text)
+            self.assertIn("script-src 'sha256-", csp)
+            self.assertIn("style-src 'sha256-", csp)
+            self.assertIn("connect-src 'self'", csp)
+        self.assertIsNone(self.app._ride_dir)
+
+
 if __name__ == '__main__':
     unittest.main()
