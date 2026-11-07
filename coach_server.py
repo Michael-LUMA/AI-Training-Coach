@@ -39,6 +39,7 @@ from ride_gpx import GPXError
 from ride_review import ReviewError
 from ride_memory import validate_session, RideMemoryError
 from ride_brain import build_ride_review
+from ride_weekly import build_ride_weekly, aggregate_ride_weeks, split_week_sessions, weekly_template
 from ride_server import strict_json, dumps
 
 BRAND_NAME = "AI Ride Coach"
@@ -50,6 +51,7 @@ MAX_RIDE_BODY_BYTES = 2 * 1024 * 1024
 RIDE_POST = "/api/coach/ride/session"
 RIDE_LIST = "/api/coach/ride/sessions"
 RIDE_REVIEW = "/api/coach/ride/review"
+RIDE_WEEKLY = "/api/coach/ride/weekly"
 DEFAULT_PORT = 8794
 
 
@@ -209,7 +211,7 @@ class App:
             token = headers.get("X-Coach-Token", "")
             require(type(token) is str and token.isascii() and secrets.compare_digest(token, self.token), "Session token required", "token_denied", 403)
         allowed = ((method == "GET" and parsed.path in ("/", "/privacy", "/terms", "/api/coach/config", "/api/coach/activities", "/ride", "/ride.webmanifest", "/icon.svg", RIDE_LIST)) or
-                   (method == "POST" and path in ("/api/coach/connect", "/api/coach/review", "/api/coach/review-l2", "/api/coach/demo-review", "/api/coach/waitlist", "/api/coach/weekly", RIDE_POST, RIDE_REVIEW)))
+                   (method == "POST" and path in ("/api/coach/connect", "/api/coach/review", "/api/coach/review-l2", "/api/coach/demo-review", "/api/coach/waitlist", "/api/coach/weekly", RIDE_POST, RIDE_REVIEW, RIDE_WEEKLY)))
         require(allowed, "Endpoint not found", "not_found", 404)
         if method == "POST":
             require(headers.get("Transfer-Encoding") is None and headers.get("Content-Type") == "application/json", "Fixed-length JSON required", "invalid_body", 415)
@@ -223,7 +225,7 @@ class App:
 
     def dispatch(self, method, path, headers, body=b"", port=DEFAULT_PORT):
         length = self.preflight(method, path, headers, port)
-        if urlsplit(path).path in (RIDE_POST, RIDE_LIST, RIDE_REVIEW):
+        if urlsplit(path).path in (RIDE_POST, RIDE_LIST, RIDE_REVIEW, RIDE_WEEKLY):
             self._ride_rate_limit(method)
         if method == "POST" and path == "/api/coach/billing/webhook":
             require(len(body) == length, "Incomplete request body", "invalid_body")
@@ -272,6 +274,8 @@ class App:
             raise ActionError("invalid_json", "Strict UTF-8 JSON required") from None
         if path == RIDE_POST:
             return self._save_ride(payload)
+        if path == RIDE_WEEKLY:
+            return self._weekly_ride(payload)
         if path == RIDE_REVIEW:
             return self._review_ride(payload)
         if path == "/api/coach/waitlist":
@@ -365,6 +369,55 @@ class App:
         return {"speech_status": result["llm_status"],
                 "speech": result["draft"]["speech"] if result["draft"] else None,
                 "fallback": result["fallback"], "usage": result["usage"]}
+
+    def _weekly_ride(self, payload):
+        """Snapshot/aggregate under disk lock; cloud request always outside it.
+
+        Week dates use the server's local calendar, matching the local browser
+        deployment. A remote deployment must align its timezone with its user;
+        the current request contract contains no client timezone information.
+        """
+        require(type(payload) is dict and set(payload) == {"week_start"}, "Expected week_start only")
+        raw = payload["week_start"]
+        require(type(raw) is str and re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", raw) is not None,
+                "week_start must be an ISO date (YYYY-MM-DD)")
+        try:
+            start = date.fromisoformat(raw)
+            # Keep both preceding/following boundaries representable.
+            start - timedelta(days=7)
+            start + timedelta(days=7)
+        except (ValueError, OverflowError):
+            raise ActionError("invalid_input", "week_start must be an ISO date (YYYY-MM-DD)") from None
+        require(start.weekday() == 0, "week_start must be a Monday")
+        require(start <= self.today(), "week_start must not be in the future")
+        with self._ride_lock:
+            directory = self.ride_dir
+            require(not directory.is_symlink(), "Ride storage unavailable", "storage_unavailable", 503)
+            stored = []
+            for candidate in sorted(directory.glob("*.json")):
+                if candidate.is_symlink() or not candidate.is_file():
+                    continue
+                try:
+                    if candidate.stat().st_size > MAX_RIDE_BODY_BYTES:
+                        continue
+                    memory = validate_session(strict_json(candidate.read_bytes()))
+                    if memory["id"] != candidate.stem:
+                        continue
+                    stored.append(memory)
+                except (RideMemoryError, ActionError, OSError, ValueError):
+                    continue
+            current, previous = split_week_sessions(stored, start)
+            facts = aggregate_ride_weeks(current, previous)
+        # Provider receives detached validated records, never the locked files.
+        result = build_ride_weekly(current, previous,
+                                  api_key=os.environ.get("DASHSCOPE_API_KEY"), http_post=self.llm_post)
+        speech = (result["draft"]["speech"] if result["llm_status"] == "ok" else
+                  weekly_template({**facts["week"], "source": facts["source"]}, facts["previous_week"]))
+        def public_week(week):
+            return {key: week[key] for key in ("count", "total_duration_s")} if week is not None else None
+        return {"speech_status": result["llm_status"], "speech": speech,
+                "fallback": result["fallback"], "usage": result["usage"],
+                "week": public_week(facts["week"]), "previous_week": public_week(facts["previous_week"])}
 
     def _ride_rate_limit(self, method):
         """Bound local disk traffic per single-user app, never an upstream quota.

@@ -19,6 +19,7 @@
 <p class="muted">我是 Mark。心率带直连，本地语音，自定义阈值提醒。没有目标区间就不推算、不提醒越区。</p>
 <p id="compatibility" class="muted">Android Chrome 支持 Web Bluetooth；iOS Safari 不支持。需 HTTPS 或本机 localhost 安全上下文。手机不能用电脑的 127.0.0.1 地址连接。</p>
 <section id="memory-card" class="card" hidden aria-labelledby="memory-heading"><h2 id="memory-heading">Mark 的记忆</h2><p id="memory-recall"></p><p id="memory-source" class="offline" hidden></p><button id="memory-listen" type="button" class="secondary">听 Mark 说</button></section>
+<section id="ride-weekly" class="card" aria-labelledby="ride-weekly-heading"><h2 id="ride-weekly-heading"></h2><p id="ride-weekly-summary"></p><p id="ride-weekly-scope" class="muted"></p><button id="ride-weekly-listen" type="button" class="secondary" disabled></button><p id="ride-weekly-speech" aria-live="polite"></p></section>
 <div class="card">
 <h2>01 / 设定记录</h2>
 <p id="demo-notice" class="offline" hidden></p>
@@ -37,7 +38,7 @@
 'use strict';
 // Device adapter only: ride_memory.py owns the reusable versioned memory contract.
 const PERSONA = Object.freeze({
-  version:'ride-persona/6', name:'Mark', above:'心率超过你设的上限了。', below:'心率低于你设的下限了。', disconnected:'心率信号断了，我看不到读数。', short:'记录太短，我还总结不了。',
+  version:'ride-persona/7', name:'Mark', above:'心率超过你设的上限了。', below:'心率低于你设的下限了。', disconnected:'心率信号断了，我看不到读数。', short:'记录太短，我还总结不了。',
   recall:parts=>'我记得上次'+parts.join('，')+'。记录还很少，这不算趋势。',
   recall_no_history:'我还没有可回放的历史记录。',
   compare_better:(label,amount,unit)=>'我看到'+label+'比上次'+(unit==='分钟' ? '少' : '低')+amount+unit+'。',
@@ -51,7 +52,15 @@ const PERSONA = Object.freeze({
   demo_start:'看 Mark 演示',
   wakelock_unavailable:'此浏览器可能熄屏断连，请保持屏幕常亮',
   fuel:'骑了45分钟了，喝口水、补点吃的。',
-  fuel_again:'又到补给的点了，别忘了喝。'
+  fuel_again:'又到补给的点了，别忘了喝。',
+  weekly_title:'本周', weekly_listen:'听 Mark 说这星期', weekly_empty:'还没有记录',
+  weekly_no_rides:'这周还没骑车，随时开骑我都在。',
+  weekly_current:(count,minutes)=>'这周骑了'+count+'次，一共'+minutes+'分钟。',
+  weekly_comparison:(count,duration,minutes)=>'比上周'+(count>=0 ? '多' : '少')+Math.abs(count)+'次，时长'+(duration>=0 ? '多' : '少')+minutes+'分钟。',
+  weekly_simulated:'模拟记录：', weekly_loading:'Mark 正在看这星期的记录。',
+  weekly_scope:'仅按已读取的记录汇总；列表最多20条，未读取的记录不计入本地预览。',
+  weekly_unavailable:'记录读取失败，暂时无法生成本周总结。'
+
 });
 const SERVICE = 0x180D, CHARACTERISTIC = 0x2A37;
 const OUTSIDE_DWELL_MS = 10000, ALERT_COOLDOWN_MS = 60000, STALE_MS = 5000, MAX_SERIES = 20000;
@@ -67,6 +76,7 @@ let timer = null, simulator = null, lastSession = null, target = null;
 let totals = {below:0, within:0, above:0};
 let recallText = '', recallSpoken = false, comparisonRequest = 0;
 let brainSpeech = '', brainRequest = 0;
+let weeklyFacts = null, weeklyWeekStart = '', weeklyRequest = 0;
 let demoPlaying = false, demoElapsed = 0, demoStep = 0, demoProfile = [];
 let screenLock = null, wakePending = false, wakeEpoch = 0, wakeWarningShown = false;
 let lastCoachSpeech = -Infinity, speechKind = null, nextFuelSeconds = 2700;
@@ -146,15 +156,64 @@ function recallMemory(memory){
   if(memoryNumber(summary.avg_hr))parts.push('样本平均心率'+memoryValue(summary.avg_hr)+' bpm');
   return PERSONA.recall(parts);
 }
+function weeklyMinutes(seconds){return Math.round(seconds/60*10)/10;}
+function weeklyTemplate(week, previous, source){
+  if(!week.count)return PERSONA.weekly_no_rides;
+  let text=PERSONA.weekly_current(week.count,weeklyMinutes(week.total_duration_s));
+  if(previous && previous.count){
+    const duration=week.total_duration_s-previous.total_duration_s;
+    text+=PERSONA.weekly_comparison(week.count-previous.count,duration,weeklyMinutes(Math.abs(duration)));
+  }
+  return (source==='simulated' ? PERSONA.weekly_simulated : '')+text;
+}
+function renderWeekly(history,now=new Date()){
+  weeklyRequest+=1;
+  const monday=new Date(now);monday.setHours(0,0,0,0);monday.setDate(monday.getDate()-(monday.getDay()+6)%7);
+  const end=new Date(monday);end.setDate(end.getDate()+7);
+  const before=new Date(monday);before.setDate(before.getDate()-7);
+  weeklyWeekStart=monday.getFullYear()+'-'+String(monday.getMonth()+1).padStart(2,'0')+'-'+String(monday.getDate()).padStart(2,'0');
+  const entries=history.filter(m=>memoryTime(m)>=before.getTime() && memoryTime(m)<end.getTime());
+  const simulated=entries.length>0 && entries.every(m=>m.source==='simulated');
+  const selected=simulated ? entries : entries.filter(m=>m.source!=='simulated');
+  const aggregate=items=>({count:items.length,total_duration_s:Math.round(items.reduce((total,m)=>total+(memoryNumber(m.summary?.duration_s) ? m.summary.duration_s : 0),0))});
+  const week=aggregate(selected.filter(m=>memoryTime(m)>=monday.getTime()));
+  const prev=aggregate(selected.filter(m=>memoryTime(m)<monday.getTime()));
+  weeklyFacts={week,previous_week:prev.count ? prev : null,source:simulated ? 'simulated' : 'ble_gatt_0x180d'};
+  $('ride-weekly-heading').textContent=PERSONA.weekly_title;
+  $('ride-weekly-listen').textContent=PERSONA.weekly_listen;
+  $('ride-weekly-listen').disabled=history.length===0;
+  $('ride-weekly-summary').textContent=history.length ? weeklyTemplate(week,weeklyFacts.previous_week,weeklyFacts.source) : PERSONA.weekly_empty;
+  $('ride-weekly-scope').textContent=PERSONA.weekly_scope;
+  $('ride-weekly-speech').textContent='';
+  return weeklyFacts;
+}
+async function listenWeekly(){
+  if(!weeklyFacts || $('ride-weekly-listen').disabled)return;
+  const request=++weeklyRequest, snapshot=weeklyFacts, start=weeklyWeekStart;
+  $('ride-weekly-listen').disabled=true;
+  $('ride-weekly-speech').textContent=PERSONA.weekly_loading;
+  let text=weeklyTemplate(snapshot.week,snapshot.previous_week,snapshot.source);
+  try{
+    const response=await fetch('/api/coach/ride/weekly',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify({week_start:start})});
+    if(!response.ok)throw new Error('weekly_unavailable');
+    const result=await response.json();
+    if(result.speech_status==='ok' && result.fallback===null && typeof result.speech==='string' && result.speech.trim() && result.speech.length<=300)text=result.speech;
+  }catch(_){/* Use locally calculated template, never an invented cloud draft. */}
+  if(request!==weeklyRequest)return;
+  $('ride-weekly-speech').textContent=text;$('ride-weekly-listen').disabled=false;
+  // A requested weekly playback must not interrupt live riding alerts.
+  if(!active)speak(text);
+}
 async function loadRecall(){
   try {
     const memories=await fetchMemories();
+    renderWeekly(memories);
     if(!memories.length){console.debug(PERSONA.recall_no_history);return;}
     recallText=recallMemory(memories[0]);
     const notice=sourceNotice([memories[0]]);
     $('memory-recall').textContent=recallText;$('memory-source').textContent=notice;$('memory-source').hidden=!notice;$('memory-card').hidden=false;
     // Rendering never speaks: autoplay is reserved for explicit button handlers.
-  }catch(_){console.debug('Mark memory unavailable; no history invented.');}
+  }catch(_){$('ride-weekly-summary').textContent=PERSONA.weekly_unavailable;$('ride-weekly-listen').disabled=true;console.debug('Mark memory unavailable; no history invented.');}
 }
 function speakRecall(){
   if(!recallText)return false;
@@ -389,6 +448,7 @@ function finishRide(reason=''){
   lastSession=memory;$('download-session').disabled=false;$('connection').textContent='记录已结束';state(reason || '记录结束。平均值为实际样本算术平均，不推断训练效果。');
   const retained=retain(memory); void upload(memory,retained);
 }
+$('ride-weekly-listen').addEventListener('click',listenWeekly);
 $('demo-start').addEventListener('click',startDemo);
 $('memory-listen').addEventListener('click',speakMark);
 $('brain-listen').addEventListener('click',speakMark);
@@ -418,6 +478,7 @@ else if(SIMULATED){$('start-ride').textContent='开始模拟记录';$('compatibi
 else if(!window.isSecureContext || !navigator.bluetooth){$('start-ride').disabled=true;state('当前浏览器不支持 BLE 或不是安全上下文。请使用 HTTPS Android Chrome；iOS Safari 不支持 Web Bluetooth。可用页面底部模拟模式联调。');}
 if(DEMO && (!window.isSecureContext || !navigator.bluetooth)){$('start-ride').disabled=true;state('此浏览器无法连接真实 BLE，但可点击“看 Mark 演示”；演示不使用硬件。');}
 if(!('speechSynthesis' in window))$('compatibility').textContent+=' 系统 TTS 不可用，只有文字提示。';
+renderWeekly([]);
 // Initial memory fetch is same-origin/token protected and never autoplays speech.
 void getToken().then(loadRecall).catch(()=>console.debug('Mark memory unavailable; no history invented.'));
 </script>
