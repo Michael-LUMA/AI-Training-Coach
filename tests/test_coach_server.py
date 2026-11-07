@@ -609,6 +609,57 @@ class CoachServerTests(unittest.TestCase):
         self.assertIsNone(self.app._ride_dir)
         self.assertFalse(self.calls)
 
+    def test_ride_route_requires_token_and_exact_shape(self):
+        headers = self.headers('POST', b'{}'); del headers['X-Coach-Token']
+        self.error('token_denied', lambda: self.app.dispatch('POST', '/api/coach/ride/route', headers, b'{}'))
+        for payload in ({}, {'origin': '116.397,39.908'}, {'destination_address': '天安门'},
+                        {'origin': '116.397,39.908', 'destination_address': '天安门', 'extra': 1},
+                        {'origin': 'bad', 'destination_address': '天安门'},
+                        {'origin': '181,39', 'destination_address': '天安门'},
+                        {'origin': '116.397,39.908', 'destination_address': ''},
+                        {'origin': '116.397,39.908', 'destination_address': 'x' * 101}):
+            with self.subTest(payload=payload):
+                self.error('invalid_input', lambda: self.request('/api/coach/ride/route', payload))
+
+    def test_ride_route_proxies_and_never_leaks_key(self):
+        seen = []
+
+        def nav_get(request, *, timeout):
+            seen.append(request.full_url)
+            if 'geocode' in request.full_url:
+                return 200, {}, json.dumps({'status': '1', 'geocodes': [
+                    {'formatted_address': '北京市东城区天安门', 'location': '116.397477,39.908692'}]}).encode()
+            return 200, {}, json.dumps({'errcode': 0, 'data': {'paths': [
+                {'distance': 5231, 'duration': 1800, 'steps': [
+                    {'instruction': '向东骑行200米右转', 'road': '长安街', 'distance': 200,
+                     'polyline': '116.390,39.908;116.392,39.908'}]}]}}).encode()
+
+        self.app.nav_get = nav_get
+        key_env = patch.dict('os.environ', {'AMAP_API_KEY': 'synthetic-secret-amap-key'})
+        key_env.start(); self.addCleanup(key_env.stop)
+        result = self.request('/api/coach/ride/route', {'origin': '116.397,39.908', 'destination_address': '天安门'})
+        self.assertEqual(result['route_status'], 'ok')
+        self.assertEqual(result['distance_m'], 5231)
+        self.assertEqual(result['steps'][0]['end_lng'], 116.392)
+        self.assertEqual(len(seen), 2)
+        self.assertNotIn('synthetic-secret-amap-key', json.dumps(result))
+        self.assertFalse(self.calls)
+
+    def test_ride_route_not_configured_without_env_key(self):
+        self.app.nav_get = Mock(side_effect=AssertionError('Upstream must not be called without a key'))
+        with patch.dict('os.environ') as env:
+            env.pop('AMAP_API_KEY', None)
+            result = self.request('/api/coach/ride/route', {'origin': '116.397,39.908', 'destination_address': '天安门'})
+        self.assertEqual(result, {'route_status': 'not_configured'})
+        self.app.nav_get.assert_not_called()
+
+    def test_ride_route_rate_limited_with_ride_bucket(self):
+        self.app.nav_get = Mock(side_effect=AssertionError('No upstream without a key'))
+        for _ in range(10):
+            self.request('/api/coach/ride/route', {'origin': '116.397,39.908', 'destination_address': '天安门'})
+        self.error('rate_limited', lambda: self.request('/api/coach/ride/route',
+                                                        {'origin': '116.397,39.908', 'destination_address': '天安门'}))
+
     def test_ride_rejects_nonfinite_and_duplicate_json_fields(self):
         raw_bodies = (b'{"id":"one","id":"two"}', b'{"samples_hz":NaN}', b'{"samples_hz":1e999}')
         for body in raw_bodies:

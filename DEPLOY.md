@@ -18,6 +18,8 @@
 | `LUMA_COACH_MASTER_KEY` | on non-Windows | unset | Master key for credential encryption (HKDF/HMAC construction) |
 | `LUMA_COACH_DB` | no | `.runtime/coach/coach.sqlite3` | Credential DB path |
 | `LUMA_COACH_PUBLIC_ORIGIN` | for public deploy | unset | Bare origin of the public URL, e.g. `https://ai-ride-coach.onrender.com`. Retargets the Host/Origin allowlist from loopback to this hostname; malformed values fail startup |
+| `DASHSCOPE_API_KEY` | no | unset | Qwen key for Mark's post-ride brain drafts; unset returns `not_configured` and the template speaks instead |
+| `AMAP_API_KEY` | no | unset | AMap **Web-service** key for the bicycling route proxy; unset returns `not_configured` and ride recording is unaffected |
 
 Without any encryption backend (non-Windows + no master key) the service **refuses to store keys** (fail closed).
 

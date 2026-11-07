@@ -39,6 +39,7 @@ from ride_gpx import GPXError
 from ride_review import ReviewError
 from ride_memory import validate_session, RideMemoryError
 from ride_brain import build_ride_review
+from ride_nav import plan_route
 from ride_weekly import build_ride_weekly, aggregate_ride_weeks, split_week_sessions, weekly_template
 from ride_server import strict_json, dumps
 
@@ -52,6 +53,7 @@ RIDE_POST = "/api/coach/ride/session"
 RIDE_LIST = "/api/coach/ride/sessions"
 RIDE_REVIEW = "/api/coach/ride/review"
 RIDE_WEEKLY = "/api/coach/ride/weekly"
+RIDE_ROUTE = "/api/coach/ride/route"
 DEFAULT_PORT = 8794
 
 
@@ -143,12 +145,13 @@ def _build_rule_snapshot(record):
 class App:
     """Transport-injectable API; dispatch is testable without binding sockets."""
 
-    def __init__(self, store=None, *, fetch=None, today=None, llm_post=None):
+    def __init__(self, store=None, *, fetch=None, today=None, llm_post=None, nav_get=None):
         self.store = store if store is not None else CoachStore()
         self._billing = None
         self._waitlist = None
         self.fetch = fetch
         self.llm_post = llm_post
+        self.nav_get = nav_get
         self.today = today if today is not None else date.today
         self.token = secrets.token_urlsafe(32)
         # Credential-adjacent ephemeral data; tests/custom DBs stay isolated.
@@ -211,7 +214,7 @@ class App:
             token = headers.get("X-Coach-Token", "")
             require(type(token) is str and token.isascii() and secrets.compare_digest(token, self.token), "Session token required", "token_denied", 403)
         allowed = ((method == "GET" and parsed.path in ("/", "/privacy", "/terms", "/api/coach/config", "/api/coach/activities", "/ride", "/ride.webmanifest", "/icon.svg", RIDE_LIST)) or
-                   (method == "POST" and path in ("/api/coach/connect", "/api/coach/review", "/api/coach/review-l2", "/api/coach/demo-review", "/api/coach/waitlist", "/api/coach/weekly", RIDE_POST, RIDE_REVIEW, RIDE_WEEKLY)))
+                   (method == "POST" and path in ("/api/coach/connect", "/api/coach/review", "/api/coach/review-l2", "/api/coach/demo-review", "/api/coach/waitlist", "/api/coach/weekly", RIDE_POST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE)))
         require(allowed, "Endpoint not found", "not_found", 404)
         if method == "POST":
             require(headers.get("Transfer-Encoding") is None and headers.get("Content-Type") == "application/json", "Fixed-length JSON required", "invalid_body", 415)
@@ -225,7 +228,7 @@ class App:
 
     def dispatch(self, method, path, headers, body=b"", port=DEFAULT_PORT):
         length = self.preflight(method, path, headers, port)
-        if urlsplit(path).path in (RIDE_POST, RIDE_LIST, RIDE_REVIEW, RIDE_WEEKLY):
+        if urlsplit(path).path in (RIDE_POST, RIDE_LIST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE):
             self._ride_rate_limit(method)
         if method == "POST" and path == "/api/coach/billing/webhook":
             require(len(body) == length, "Incomplete request body", "invalid_body")
@@ -274,6 +277,8 @@ class App:
             raise ActionError("invalid_json", "Strict UTF-8 JSON required") from None
         if path == RIDE_POST:
             return self._save_ride(payload)
+        if path == RIDE_ROUTE:
+            return self._route_ride(payload)
         if path == RIDE_WEEKLY:
             return self._weekly_ride(payload)
         if path == RIDE_REVIEW:
@@ -418,6 +423,15 @@ class App:
         return {"speech_status": result["llm_status"], "speech": speech,
                 "fallback": result["fallback"], "usage": result["usage"],
                 "week": public_week(facts["week"]), "previous_week": public_week(facts["previous_week"])}
+
+    def _route_ride(self, payload):
+        """Proxy one bicycling plan; the provider key never reaches the client."""
+        require(type(payload) is dict and set(payload) == {"origin", "destination_address"},
+                "Expected origin and destination_address only")
+        result = plan_route(payload["origin"], payload["destination_address"],
+                            api_key=os.environ.get("AMAP_API_KEY"), http_get=self.nav_get)
+        require(result["route_status"] != "invalid_input", "Invalid origin or destination_address")
+        return result
 
     def _ride_rate_limit(self, method):
         """Bound local disk traffic per single-user app, never an upstream quota.
