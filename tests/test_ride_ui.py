@@ -21,7 +21,8 @@ NODE = shutil.which('node.exe') or (str(cached) if cached.is_file() else shutil.
 HARNESS = r"""
 const fs=require('node:fs'), vm=require('node:vm');
 const input=JSON.parse(fs.readFileSync(0,'utf8'));
-const elements={}, calls=[], spoken=[], debug=[], storage=new Map(), clock={now:0};
+const elements={}, calls=[], spoken=[], debug=[], storage=new Map(), clock={now:0}, intervals=new Map();
+let nextTimer=0, bleCalls=0;
 for(const match of input.html.matchAll(/<[^>]*\bid="([^"]+)"[^>]*>/g)){
   const tag=match[0];
   elements[match[1]]={textContent:'',value:'',hidden:/\shidden(?:\s|>)/.test(tag),disabled:/\sdisabled(?:\s|>)/.test(tag),
@@ -31,13 +32,15 @@ for(const match of input.html.matchAll(/<[^>]*\bid="([^"]+)"[^>]*>/g)){
 }
 const options=input.options || {};
 const sandbox={URLSearchParams,Date,DataView,Uint32Array,Math,Number,JSON,Promise,Error,
-  location:{search:options.simulate ? '?simulate=1' : ''},performance:{now:()=>clock.now},
-  crypto:require('node:crypto').webcrypto,navigator:{bluetooth:{}},
+  location:{search:options.demo ? '?demo=1'+(options.simulate ? '&simulate=1' : '') : options.simulate ? '?simulate=1' : ''},performance:{now:()=>clock.now},
+  crypto:require('node:crypto').webcrypto,navigator:{bluetooth:{requestDevice:async()=>{bleCalls++;throw new Error('No real hardware in offline tests');}}},
   document:{getElementById:id=>elements[id]},console:{debug:(...args)=>debug.push(args.join(' '))},
   localStorage:{setItem:(k,v)=>storage.set(k,v),getItem:k=>storage.get(k),removeItem:k=>storage.delete(k),key:i=>[...storage.keys()][i],get length(){return storage.size;}},
-  setInterval:()=>1,clearInterval(){},setTimeout:()=>1,
+  setInterval:(fn,ms)=>{const id=++nextTimer;intervals.set(id,{fn,ms,next:clock.now+ms});return id;},clearInterval:id=>intervals.delete(id),setTimeout:()=>1,
   SpeechSynthesisUtterance:function(text){this.text=text;},
-  _elements:elements,_calls:calls,_spoken:spoken,_debug:debug,_options:options,_clock:clock,_storage:storage};
+  _elements:elements,_calls:calls,_spoken:spoken,_debug:debug,_options:options,_clock:clock,_storage:storage,
+  _bleCalls:()=>bleCalls,_flush:()=>new Promise(resolve=>setImmediate(resolve)),
+  _advance:async(ms)=>{const end=clock.now+ms;while(true){let nextId=null,next=null;for(const [id,item] of intervals){if(item.next<=end && (!next || item.next<next.next)){nextId=id;next=item;}}if(!next)break;clock.now=next.next;next.next+=next.ms;next.fn();await Promise.resolve();}clock.now=end;await new Promise(resolve=>setImmediate(resolve));}};
 sandbox.window={isSecureContext:true,SpeechSynthesisUtterance:sandbox.SpeechSynthesisUtterance,
   speechSynthesis:{cancel(){},speak:utterance=>spoken.push(utterance.text)},addEventListener(){}};
 sandbox.fetch=async(url,init={})=>{
@@ -53,6 +56,11 @@ sandbox.fetch=async(url,init={})=>{
   if(url==='/api/coach/ride/session'){
     if(options.uploadFail)throw new Error('upload offline');
     return {ok:true,status:200,json:async()=>({status:'saved',id:JSON.parse(init.body).id})};
+  }
+  // TEST_REVIEW_TRANSPORT
+  /* optional ride review response in generic harness */
+  if(url==='/api/coach/ride/review'){
+    return {ok:true,status:200,json:async()=>options.brain || {speech_status:'not_configured',speech:null,fallback:'template',usage:null}};
   }
   throw new Error('Unexpected request: '+url);
 };
@@ -85,7 +93,7 @@ class RideMemoryUI(unittest.TestCase):
         return json.loads(result.stdout)
 
     def test_page_strings_and_existing_csp_with_mock_store(self):
-        for text in ('Mark 的记忆', '这不算趋势', '听 Mark 说', 'ride-persona/4', "name:'Mark'",
+        for text in ('Mark 的记忆', '这不算趋势', '听 Mark 说', 'ride-persona/5', "name:'Mark'",
                      'recall:', 'recall_no_history:', 'compare_better:', 'compare_worse:',
                      'compare_flat:', 'no_compare:', '两次记录还说明不了趋势', 'Record only. Not medical advice.'):
             with self.subTest(text=text):
@@ -132,7 +140,7 @@ class RideMemoryUI(unittest.TestCase):
         result = self.run_js("await $('start-ride').click(); return {spoken:_spoken,version:session.persona_version};", history=[metadata()], simulate=True)
         self.assertEqual(len(result['spoken']), 1)
         self.assertIn('我记得', result['spoken'][0])
-        self.assertEqual(result['version'], 'ride-persona/4')
+        self.assertEqual(result['version'], 'ride-persona/5')
         result = self.run_js("$('memory-listen').click(); await $('start-ride').click(); return _spoken;", history=[metadata()], simulate=True)
         self.assertEqual(len(result), 2)
         self.assertIn('我记得', result[0])
@@ -244,6 +252,131 @@ class RideMemoryUI(unittest.TestCase):
           return $('memory-compare').textContent;
         """, history=[metadata()])
         self.assertEqual(result, 'keep current')
+
+
+    def test_demo_strings_source_notice_and_version(self):
+        for text in ('demo_notice:', 'demo_start:', '看 Mark 演示', 'ride-persona/5',
+                     '这是一段合成的 45 分钟骑行，90 秒放完', 'Mark 说的每句话都是真实逻辑，数据是假的。'):
+            self.assertIn(text,self.html)
+        result=self.run_js("return {notice:$('demo-notice').textContent,hidden:$('demo-notice').hidden,button:$('demo-start').hidden,bar:$('simulated-banner').hidden,startDisabled:$('start-ride').disabled,spoken:_spoken};",demo=True)
+        self.assertFalse(result['hidden']);self.assertFalse(result['button']);self.assertFalse(result['bar'])
+        self.assertFalse(result['startDisabled']);self.assertEqual(result['spoken'],[])
+
+    def test_demo_full_playback_uses_real_pipeline_and_valid_memory(self):
+        result=self.run_js("""
+          let calls=0;const original=receiveHR;receiveHR=(...args)=>{calls++;return original(...args);};
+          $('demo-start').click();const locked=$('demo-start').disabled && $('start-ride').disabled;
+          await _advance(90000);
+          const uploadCall=_calls.find(c=>c.url==='/api/coach/ride/session');
+          return {calls,locked,active,ble:_bleCalls(),uploaded:JSON.parse(uploadCall.body),timeline:$('timeline').textContent,
+                  summary:$('summary').textContent,elapsed:$('elapsed').textContent,bar:$('simulated-banner').hidden,
+                  enabled:!$('demo-start').disabled && !$('start-ride').disabled,spoken:_spoken,
+                  endpoints:_calls.map(c=>c.url),inputs:[$('lower').value,$('upper').value]};
+        """,demo=True)
+        from ride_memory import validate_session
+        item=validate_session(result['uploaded'])
+        self.assertEqual(item['source'],'simulated');self.assertEqual(item['persona_version'],'ride-persona/5')
+        self.assertEqual(item['summary']['duration_s'],2700)
+        self.assertEqual(item['series'][-1]['t'],2700)
+        self.assertEqual(item['samples_hz'],1/30)
+        self.assertEqual(result['calls'],91);self.assertEqual(len(item['series']),91)
+        self.assertEqual(item['summary']['gaps'],0);self.assertEqual(item['summary']['alerts'],1)
+        self.assertEqual(item['series'][0],{'t':0,'hr':95})
+        self.assertEqual(item['series'][6],{'t':180,'hr':152})
+        self.assertEqual(item['series'][26],{'t':780,'hr':152})
+        self.assertEqual(item['series'][32],{'t':960,'hr':120})
+        self.assertEqual(item['series'][-1],{'t':2700,'hr':124})
+        self.assertEqual(sum(item['summary']['time_in_zone_s'].values()),2700)
+        self.assertTrue(result['locked']);self.assertTrue(result['enabled']);self.assertFalse(result['active'])
+        self.assertEqual(result['ble'],0);self.assertFalse(result['bar']);self.assertEqual(result['inputs'],['',''])
+        self.assertIn('2700.000s',result['timeline']);self.assertIn('模拟记录：2700秒',result['summary'])
+        self.assertIn('/api/coach/ride/review',result['endpoints'])
+        self.assertGreaterEqual(result['endpoints'].count('/api/coach/ride/sessions'),2)
+        self.assertIn('心率超过你设的上限了。',result['spoken'])
+
+    def test_demo_dwell_and_cooldown_use_playback_seconds(self):
+        result=self.run_js("""
+          $('demo-start').click();await _advance(14000);
+          const before=alerts;await _advance(3000);const after=alerts;
+          await _advance(10000);return {before,after,end:alerts,elapsed:elapsedSeconds(),active,hr:$('heart-rate').textContent};
+        """,demo=True)
+        self.assertEqual(result['before'],0);self.assertEqual(result['after'],1);self.assertEqual(result['end'],1)
+        self.assertEqual(result['elapsed'],810);self.assertTrue(result['active'])
+
+    def test_demo_custom_target_and_script_are_deterministic(self):
+        scenario="""
+          $('lower').value='120';$('upper').value='150';$('demo-start').click();await _advance(90000);
+          return {series:lastSession.series,target:lastSession.summary.zone_target,notice:$('demo-target').textContent};
+        """
+        a=self.run_js(scenario,demo=True);b=self.run_js(scenario,demo=True)
+        self.assertEqual(a['series'],b['series']);self.assertEqual(a['target'],{'lower':120,'upper':150})
+        self.assertEqual(a['series'][6]['hr'],162);self.assertEqual(a['series'][32]['hr'],135)
+        self.assertIn('你填写的范围',a['notice'])
+
+    def test_demo_early_stop_is_partial_not_fabricated_full_ride(self):
+        result=self.run_js("""
+          $('demo-start').click();await _advance(10000);$('end-ride').click();await _flush();
+          const item=lastSession;await _advance(90000);
+          return {item,unchanged:JSON.stringify(item)===JSON.stringify(lastSession),active,ble:_bleCalls()};
+        """,demo=True)
+        from ride_memory import validate_session
+        item=validate_session(result['item'])
+        self.assertEqual(item['summary']['duration_s'],300)
+        self.assertEqual(item['series'][-1]['t'],300)
+        self.assertEqual(item['source'],'simulated');self.assertTrue(result['unchanged']);self.assertFalse(result['active'])
+        self.assertEqual(result['ble'],0)
+
+    def test_demo_no_ble_and_real_ble_start_stay_mutually_exclusive(self):
+        result=self.run_js("""
+          $('demo-start').click();await $('start-ride').click();const during=_bleCalls();
+          $('end-ride').click();await _flush();await $('start-ride').click();
+          return {during,after:_bleCalls(),active};
+        """,demo=True,simulate=True)
+        self.assertEqual(result['during'],0);self.assertEqual(result['after'],1)
+        self.assertFalse(result['active'])
+
+    def test_real_ble_on_demo_page_never_uses_script_or_fake_thresholds(self):
+        result=self.run_js("""
+          const characteristic={addEventListener(){},removeEventListener(){},async startNotifications(){}};
+          device={addEventListener(){},gatt:{connected:true,async connect(){return {async getPrimaryService(){return {async getCharacteristic(){return characteristic;}};}};},disconnect(){this.connected=false;}}};
+          await $('start-ride').click();receiveHR(123);await _advance(1000);receiveHR(125);$('end-ride').click();await _flush();
+          return {memory:lastSession,notice:$('simulated-banner').textContent,bar:$('simulated-banner').hidden};
+        """,demo=True)
+        from ride_memory import validate_session
+        item=validate_session(result['memory'])
+        self.assertEqual(item['source'],'ble_gatt_0x180d');self.assertEqual(item['samples_hz'],1)
+        self.assertIsNone(item['summary']['zone_target']);self.assertEqual(item['summary']['duration_s'],1)
+        self.assertEqual([p['hr'] for p in item['series']],[123,125])
+        self.assertIn('真实 BLE',result['notice']);self.assertFalse(result['bar'])
+
+    def test_demo_failed_upload_retains_simulated_memory(self):
+        result=self.run_js("""
+          $('demo-start').click();await _advance(90000);
+          return {pending:[..._storage.values()].map(v=>JSON.parse(v)),status:$('save-status').textContent};
+        """,demo=True,uploadFail=True)
+        self.assertEqual(len(result['pending']),1);self.assertEqual(result['pending'][0]['source'],'simulated')
+        self.assertEqual(result['pending'][0]['summary']['duration_s'],2700);self.assertIn('上报失败',result['status'])
+
+    def test_demo_reload_recall_keeps_simulated_context(self):
+        result=self.run_js("return {recall:$('memory-recall').textContent,notice:$('memory-source').textContent,hidden:$('memory-source').hidden};",demo=True,
+                           history=[metadata(avg=130,duration=2700,source='simulated')])
+        self.assertIn('45分钟',result['recall']);self.assertIn('SIMULATED',result['notice']);self.assertFalse(result['hidden'])
+
+    def test_demo_cloud_speech_appends_without_autoplay(self):
+        result=self.run_js("""
+          $('demo-start').click();await _advance(90000);
+          const before=_spoken.length;$('brain-listen').click();
+          return {text:$('brain-speech').textContent,hidden:$('brain-card').hidden,before,after:_spoken.length,spoken:_spoken};
+        """,demo=True,brain={'speech_status':'ok','speech':'模拟记录：我记到45分钟。','fallback':None})
+        self.assertFalse(result['hidden']);self.assertIn('模拟记录：',result['text'])
+        self.assertEqual(result['after'],result['before']+1)
+        self.assertEqual(sum('模拟记录：我记到45分钟。' in text for text in result['spoken']),1)
+
+    def test_demo_rejects_unplayable_thresholds_without_changing_real_inputs(self):
+        for lower,upper in (('65535','65535'),('130.2','130.3'),('140','120')):
+            result=self.run_js("$('lower').value=_options.lower;$('upper').value=_options.upper;$('demo-start').click();return {active,ble:_bleCalls(),disabled:$('demo-start').disabled,inputs:[$('lower').value,$('upper').value]};",demo=True,lower=lower,upper=upper)
+            self.assertFalse(result['active']);self.assertEqual(result['ble'],0);self.assertFalse(result['disabled'])
+            self.assertEqual(result['inputs'],[lower,upper])
 
 
 if __name__ == '__main__':

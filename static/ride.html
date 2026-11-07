@@ -19,6 +19,9 @@
 <section id="memory-card" class="card" hidden aria-labelledby="memory-heading"><h2 id="memory-heading">Mark 的记忆</h2><p id="memory-recall"></p><p id="memory-source" class="offline" hidden></p><button id="memory-listen" type="button" class="secondary">听 Mark 说</button></section>
 <div class="card">
 <h2>01 / 设定记录</h2>
+<p id="demo-notice" class="offline" hidden></p>
+<p id="demo-target" class="muted" hidden></p>
+<button id="demo-start" type="button" hidden>看 Mark 演示</button>
 <div class="row"><label>自定义下限（bpm，可留空）<input id="lower" type="number" min="0" max="65535" step="1" inputmode="numeric" placeholder="由你填写"></label><label>自定义上限（bpm，可留空）<input id="upper" type="number" min="0" max="65535" step="1" inputmode="numeric" placeholder="由你填写"></label></div>
 <p class="muted">上下限须同时填写或同时留空；仅为你设定的提醒阈值，不是医学安全范围。不根据年龄、LTHR 或演示值猜测训练区间。</p>
 <div class="row"><button id="start-ride" type="button">连接心率带并开始</button><button id="end-ride" type="button" class="secondary" disabled>结束骑行</button><button id="reconnect" type="button" class="secondary" disabled>重新连接</button></div>
@@ -32,7 +35,7 @@
 'use strict';
 // Device adapter only: ride_memory.py owns the reusable versioned memory contract.
 const PERSONA = Object.freeze({
-  version:'ride-persona/4', name:'Mark', above:'心率超过你设的上限了。', below:'心率低于你设的下限了。', disconnected:'心率信号断了，我看不到读数。', short:'记录太短，我还总结不了。',
+  version:'ride-persona/5', name:'Mark', above:'心率超过你设的上限了。', below:'心率低于你设的下限了。', disconnected:'心率信号断了，我看不到读数。', short:'记录太短，我还总结不了。',
   recall:parts=>'我记得上次'+parts.join('，')+'。记录还很少，这不算趋势。',
   recall_no_history:'我还没有可回放的历史记录。',
   compare_better:(label,amount,unit)=>'我看到'+label+'比上次'+(unit==='分钟' ? '少' : '低')+amount+unit+'。',
@@ -41,11 +44,16 @@ const PERSONA = Object.freeze({
   no_compare:(reason='上次记录字段不全')=>'我这次无法对比：'+reason+'。',
   compare_caution:'两次记录还说明不了趋势。',
   simulated:'SIMULATED · 合成记录，不是真实骑行',
-  start:'开始记录。', thinking:'Mark 想了想'
+  start:'开始记录。', thinking:'Mark 想了想',
+  demo_notice:'演示模式：这是一段合成的 45 分钟骑行，90 秒放完。Mark 说的每句话都是真实逻辑，数据是假的。',
+  demo_start:'看 Mark 演示'
 });
 const SERVICE = 0x180D, CHARACTERISTIC = 0x2A37;
 const OUTSIDE_DWELL_MS = 10000, ALERT_COOLDOWN_MS = 60000, STALE_MS = 5000, MAX_SERIES = 20000;
-const SIMULATED = new URLSearchParams(location.search).get('simulate') === '1';
+const DEMO = new URLSearchParams(location.search).get('demo') === '1';
+const SIMULATED = new URLSearchParams(location.search).get('simulate') === '1' || DEMO;
+const DEMO_DURATION_S = 2700, DEMO_PLAYBACK_S = 90, DEMO_STEP_S = DEMO_DURATION_S / DEMO_PLAYBACK_S;
+const DEMO_DEFAULT_TARGET = Object.freeze({lower:100, upper:140});
 const $ = id => document.getElementById(id);
 let token = '', session = null, active = false, connecting = false, device = null, characteristic = null;
 let startedMs = 0, startedMono = 0, previous = null, lastSignal = null, gapOpen = false;
@@ -54,6 +62,7 @@ let timer = null, simulator = null, lastSession = null, target = null;
 let totals = {below:0, within:0, above:0};
 let recallText = '', recallSpoken = false, comparisonRequest = 0;
 let brainSpeech = '', brainRequest = 0;
+let demoPlaying = false, demoElapsed = 0, demoStep = 0, demoProfile = [];
 const PENDING_PREFIX = 'luma.ride.pending.';
 function state(text){$('status').textContent = text;}
 function cancelSpeech(){if ('speechSynthesis' in window) window.speechSynthesis.cancel();}
@@ -153,7 +162,7 @@ function readTarget(){
   if (!a || !b || !Number.isFinite(lower) || !Number.isFinite(upper) || lower < 0 || upper > 65535 || lower > upper) throw new Error('请填写有序的非负上下限，或同时留空。');
   return {lower, upper};
 }
-function elapsedSeconds(){return Math.max(0, Math.round(performance.now() - startedMono) / 1000);}
+function elapsedSeconds(){return demoPlaying ? demoElapsed : Math.max(0, Math.round(performance.now() - startedMono) / 1000);}
 function zone(hr){return !target ? null : hr < target.lower ? 'below' : hr > target.upper ? 'above' : 'within';}
 function resetOutside(){outsideSince = null; outsideKind = null; cancelSpeech();}
 function drawTimeline(){ $('timeline').textContent = session.series.slice(-60).map(p => p.t.toFixed(3) + 's  ' + ('gap' in p ? 'gap — 信号缺失' : p.hr + ' bpm')).join('\n'); }
@@ -181,7 +190,7 @@ function receiveHR(hr, now = performance.now()){
   if (!addPoint({t, hr})) return;
   const point = session.series[session.series.length-1];
   previous = {t:point.t, hr, mono:now}; lastSignal = now; gapOpen = false;
-  $('heart-rate').textContent = String(hr); $('connection').textContent = SIMULATED ? 'SIMULATED · 合成信号' : 'BLE · 实时读数'; $('connection').classList.remove('offline');
+  $('heart-rate').textContent = String(hr); $('connection').textContent = session.source === 'simulated' ? 'SIMULATED · 合成信号' : 'BLE · 实时读数'; $('connection').classList.remove('offline');
   const kind = zone(hr); $('zone-state').textContent = kind === null ? '未设置目标区间，仅记录' : kind === 'within' ? '位于自定义范围内' : kind === 'above' ? '高于自定义上限' : '低于自定义下限';
   if (kind === null || kind === 'within') {resetOutside(); return;}
   if (outsideKind !== kind) {outsideSince = now; outsideKind = kind; cancelSpeech();}
@@ -196,12 +205,15 @@ function parseHeartRate(value){
   return is16 ? value.getUint16(1, true) : value.getUint8(1);
 }
 function onHeartRate(event){try {receiveHR(parseHeartRate(event.target.value));} catch (_) {markGap(); state('心率数据格式异常，已标记缺口，没有补数。');}}
-function begin(){
+function begin(options={}){
   brainRequest+=1;brainSpeech='';$('brain-card').hidden=true;
   comparisonRequest+=1;$('memory-compare').hidden=true;$('compare-source').hidden=true;
-  target = readTarget(); startedMs = Date.now(); startedMono = performance.now();
+  target = options.target === undefined ? readTarget() : options.target; startedMs = Date.now(); startedMono = performance.now();
   const random = new Uint32Array(4); crypto.getRandomValues(random);
   session = {schema_version:'luma-ride-memory/1', id:'ride-' + [...random].map(n=>n.toString(16).padStart(8,'0')).join(''), started_at:new Date(startedMs).toISOString(), ended_at:null, samples_hz:1, series:[], summary:null, coach_notes:[], persona_version:PERSONA.version, source:SIMULATED ? 'simulated' : 'ble_gatt_0x180d'};
+  if(options.source)session.source=options.source;
+  if(options.samplesHz)session.samples_hz=options.samplesHz;
+  $('demo-start').disabled=true;
   active = true; previous = null; lastSignal = null; gapOpen = false; outsideSince = null; outsideKind = null; lastAlert = -Infinity; alerts = 0; totals = {below:0, within:0, above:0};
   $('lower').disabled = $('upper').disabled = true; $('start-ride').disabled = true; $('end-ride').disabled = false; $('timeline').textContent = ''; $('summary').textContent = '记录中，结束后总结。';
   timer = setInterval(()=>{if (!active) return; const s=Math.floor(elapsedSeconds()); $('elapsed').textContent = String(Math.floor(s/60)).padStart(2,'0') + ':' + String(s%60).padStart(2,'0'); if (lastSignal !== null && performance.now()-lastSignal > STALE_MS) markGap();}, 500);
@@ -211,7 +223,8 @@ async function connectBLE(){
   if (!device) {device = await navigator.bluetooth.requestDevice({filters:[{services:[SERVICE]}]}); device.addEventListener('gattserverdisconnected',()=>{markGap(); if(active) {state('BLE 已断开。缺口如实记录，可静止后重连。'); $('reconnect').disabled=false;}});}
   if (characteristic) characteristic.removeEventListener('characteristicvaluechanged', onHeartRate);
   const server = await device.gatt.connect(); const service = await server.getPrimaryService(SERVICE); characteristic = await service.getCharacteristic(CHARACTERISTIC);
-  if (!active) begin();
+  if (!active) begin(DEMO ? {source:'ble_gatt_0x180d'} : {});
+  if(DEMO)$('simulated-banner').textContent='SIMULATED · 演示入口；当前记录来自真实 BLE，未使用剧本数据';
   characteristic.addEventListener('characteristicvaluechanged', onHeartRate); await characteristic.startNotifications();
   // Start a freshness window even before the first notification arrives.
   lastSignal = performance.now(); $('reconnect').disabled = false; state('已连接，等待实际心率读数。语音只作自定义阈值提示。');
@@ -219,10 +232,10 @@ async function connectBLE(){
 async function startRide(){
   if (active || connecting) return;
   try {
-    readTarget(); connecting=true; $('start-ride').disabled=true;
+    readTarget(); connecting=true; $('start-ride').disabled=true;$('demo-start').disabled=true;
     // Warm up browser speech in a user gesture, without inventing a recorded alert.
     if(recallSpoken || !speakRecall())speak(PERSONA.start);
-    if (SIMULATED) {
+    if (SIMULATED && !DEMO) {
       begin(); state('SIMULATED：仅演示；所有记录永久带 simulated 来源。');
       const generate = ()=>{const seconds=elapsedSeconds(), midpoint=target ? (target.lower+target.upper)/2 : 130; const amplitude=target ? Math.min(4,(target.upper-target.lower)/4) : 4;
         const demoHigh = seconds%60 >= 30 && seconds%60 < 46;
@@ -231,7 +244,49 @@ async function startRide(){
       generate(); simulator=setInterval(generate,1000);
     } else await connectBLE();
   } catch(error) {state(error.message || '连接失败，未生成假读数。'); if(active) markGap();}
-  finally {connecting=false; $('start-ride').disabled=active;}
+  finally {connecting=false; $('start-ride').disabled=active;$('demo-start').disabled=active;}
+}
+// Synthetic script knots use ride seconds; interpolation is ONLY for fake HR.
+// Real BLE samples and gaps remain untouched. Dwell/cooldown still use real ms.
+function demoHeartRate(scriptSeconds){
+  for(let i=1;i<demoProfile.length;i++){
+    const [end,b]=demoProfile[i], [start,a]=demoProfile[i-1];
+    if(scriptSeconds<=end)return Math.round(a+(b-a)*(scriptSeconds-start)/(end-start));
+  }
+  return demoProfile[demoProfile.length-1][1];
+}
+function tickDemo(){
+  if(!active || !demoPlaying)return;
+  // If the browser was suspended, retain a gap at the PREVIOUS script position.
+  // This avoids inventing live coverage or pushing the final point past 2700s.
+  if(lastSignal!==null && performance.now()-lastSignal>STALE_MS)markGap();
+  demoStep+=1;demoElapsed=Math.min(DEMO_DURATION_S,demoStep*DEMO_STEP_S);
+  receiveHR(demoHeartRate(demoElapsed));
+  const minutes=Math.floor(demoElapsed/60), seconds=demoElapsed%60;
+  $('elapsed').textContent=String(minutes).padStart(2,'0')+':'+String(seconds).padStart(2,'0')+' · SIMULATED / 30×';
+  if(demoElapsed===DEMO_DURATION_S)finishRide('SIMULATED 演示已结束：剧本45分钟，正常前台播放90秒；不是实际运动时长。');
+}
+function startDemo(){
+  if(!DEMO || active || connecting)return;
+  try {
+    const configured=readTarget(), bounds=configured || {...DEMO_DEFAULT_TARGET};
+    if(bounds.upper>=65535 || Math.ceil(bounds.lower)>Math.floor(bounds.upper))throw new Error('演示范围须包含整数心率且上限小于65535，才能演示越区与回区；这不限制真实记录。');
+    const high=Math.min(65535,Math.ceil(bounds.upper)+12), within=Math.round((Math.ceil(bounds.lower)+Math.floor(bounds.upper))/2);
+    const ending=Math.min(Math.floor(bounds.upper),within+4);
+    demoProfile=[[0,95],[180,high],[780,high],[960,within],[2400,within],[2700,ending]];
+    demoPlaying=true;demoElapsed=0;demoStep=0;
+    begin({target:bounds,source:'simulated',samplesHz:1/DEMO_STEP_S});
+    $('simulated-banner').textContent='SIMULATED · 合成45分钟剧本，30×快进；不是实际运动记录';
+    $('demo-target').textContent=(configured ? '演示使用你填写的范围：' : '演示专用虚构阈值：')+bounds.lower+'–'+bounds.upper+' bpm；不是个人训练区间，真实 BLE 仍只使用输入框原值。';
+    $('demo-target').hidden=false;
+    state('SIMULATED · 前台播放通常90秒，后台挂起可能延长；剧本时间用于记录，越区等待和冷却仍按实际播放时间。');
+    speak(PERSONA.simulated+'。开始演示记录。');
+    receiveHR(demoHeartRate(0));
+    simulator=setInterval(tickDemo,1000);
+  }catch(error){
+    if(active && demoPlaying)finishRide('演示停止：'+error.message);
+    else {demoPlaying=false;$('demo-start').disabled=false;state(error.message || '无法开始演示。');}
+  }
 }
 function buildMemory(){
   const duration = Math.max(elapsedSeconds(), session.series.length ? session.series[session.series.length-1].t : 0);
@@ -271,18 +326,19 @@ async function upload(memory, retained){
 }
 function finishRide(reason=''){
   if(!active)return;
-  const memory=buildMemory(); active=false; clearInterval(timer);clearInterval(simulator);resetOutside();
+  const memory=buildMemory(); active=false;demoPlaying=false;$('demo-start').disabled=false; clearInterval(timer);clearInterval(simulator);resetOutside();
   if(device && device.gatt.connected)device.gatt.disconnect();
   $('end-ride').disabled=true;$('reconnect').disabled=true;$('start-ride').disabled=false;$('lower').disabled=$('upper').disabled=false;
   const text=summarize(memory);$('summary').textContent=text;if(memory.coach_notes.length<200)memory.coach_notes.push(text);speak(text);
   lastSession=memory;$('download-session').disabled=false;$('connection').textContent='记录已结束';state(reason || '记录结束。平均值为实际样本算术平均，不推断训练效果。');
   const retained=retain(memory); void upload(memory,retained);
 }
+$('demo-start').addEventListener('click',startDemo);
 $('memory-listen').addEventListener('click',speakMark);
 $('brain-listen').addEventListener('click',speakMark);
 $('start-ride').addEventListener('click',startRide);
 $('end-ride').addEventListener('click',()=>finishRide());
-$('reconnect').addEventListener('click',async()=>{if(!active || SIMULATED || connecting)return;connecting=true;$('reconnect').disabled=true;try{await connectBLE();}catch(error){markGap();state(error.message || '重新连接失败，缺口仍保留。');}finally{connecting=false;$('reconnect').disabled=!active;}});
+$('reconnect').addEventListener('click',async()=>{if(!active || session.source==='simulated' || connecting)return;connecting=true;$('reconnect').disabled=true;try{await connectBLE();}catch(error){markGap();state(error.message || '重新连接失败，缺口仍保留。');}finally{connecting=false;$('reconnect').disabled=!active;}});
 $('retry-upload').addEventListener('click',async()=>{
   $('retry-upload').disabled=true;
   try {
@@ -295,8 +351,16 @@ $('retry-upload').addEventListener('click',async()=>{
 $('download-session').addEventListener('click',()=>{if(!lastSession)return;const url=URL.createObjectURL(new Blob([JSON.stringify(lastSession,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download=lastSession.id+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
 window.addEventListener('beforeunload',event=>{if(active){event.preventDefault();event.returnValue='';}});
 $('simulated-banner').hidden=!SIMULATED;
-if(SIMULATED){$('start-ride').textContent='开始模拟记录';$('compatibility').textContent='SIMULATED · 无需心率带，点击后生成合成数据；每分钟有一次越区演示，仅在你填写上下限后进行阈值提醒。演示值不代表你的训练区间。';}
+if(DEMO){
+  $('demo-notice').textContent=PERSONA.demo_notice;$('demo-notice').hidden=false;
+  $('demo-start').textContent=PERSONA.demo_start;$('demo-start').hidden=false;
+  $('demo-target').textContent='未填范围时仅演示使用虚构100–140 bpm阈值；不填入真实记录，不代表你的训练区间。';$('demo-target').hidden=false;
+  $('compatibility').textContent+=' 演示无需 BLE；“连接心率带并开始”仍用于独立真实记录。不支持 BLE 时仅演示可用。';
+  $('simulated-banner').textContent='SIMULATED · 演示入口：剧本数据是假的，真实 BLE 记录必须另行连接';
+}
+else if(SIMULATED){$('start-ride').textContent='开始模拟记录';$('compatibility').textContent='SIMULATED · 无需心率带，点击后生成合成数据；每分钟有一次越区演示，仅在你填写上下限后进行阈值提醒。演示值不代表你的训练区间。';}
 else if(!window.isSecureContext || !navigator.bluetooth){$('start-ride').disabled=true;state('当前浏览器不支持 BLE 或不是安全上下文。请使用 HTTPS Android Chrome；iOS Safari 不支持 Web Bluetooth。可用页面底部模拟模式联调。');}
+if(DEMO && (!window.isSecureContext || !navigator.bluetooth)){$('start-ride').disabled=true;state('此浏览器无法连接真实 BLE，但可点击“看 Mark 演示”；演示不使用硬件。');}
 if(!('speechSynthesis' in window))$('compatibility').textContent+=' 系统 TTS 不可用，只有文字提示。';
 // Initial memory fetch is same-origin/token protected and never autoplays speech.
 void getToken().then(loadRecall).catch(()=>console.debug('Mark memory unavailable; no history invented.'));
