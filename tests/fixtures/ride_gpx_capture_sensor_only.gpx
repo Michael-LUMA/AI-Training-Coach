@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="LUMA Web Bluetooth Capture" xmlns="http://www.topografix.com/GPX/1/1" xmlns:luma="urn:luma:ride-capture:1" xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1">
+<metadata><name>无 GPS 轨迹的心率采集</name><desc>仅浏览器接收时间序列；无经纬度、距离、爬升。断线不插值；不是标准轨迹点导出。</desc><time>2026-11-06T00:00:00.000Z</time></metadata>
+<extensions><luma:sensorSeries schema_version="luma-ride-capture/1" gps="none" started_at="2026-11-06T00:00:00.000Z" ended_at="2026-11-06T00:00:02.000Z">
+<luma:segment>
+<luma:sample time="2026-11-06T00:00:00.000Z"><gpxtpx:hr>100</gpxtpx:hr></luma:sample>
+<luma:sample time="2026-11-06T00:00:01.000Z"><gpxtpx:hr>120</gpxtpx:hr></luma:sample>
+<luma:sample time="2026-11-06T00:00:02.000Z"><gpxtpx:hr>140</gpxtpx:hr></luma:sample>
+</luma:segment>
+</luma:sensorSeries></extensions></gpx>

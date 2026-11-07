@@ -1,0 +1,3 @@
+﻿<?xml version="1.0"?>
+<!DOCTYPE gpx [<!ENTITY secret SYSTEM "file:///LUMA_SYNTHETIC_DO_NOT_READ">]>
+<gpx><trk><trkseg><trkpt lat="0" lon="0"><ele>&secret;</ele></trkpt></trkseg></trk></gpx>

@@ -1,0 +1,88 @@
+{
+  "schema": "luma-synthetic-ocr-v1",
+  "synthetic_only": true,
+  "normalization": "remove Unicode whitespace only",
+  "font": "Microsoft YaHei",
+  "font_sha256": "d79c55e68b1131eea0cc1c47be4f572d964f28c682e143db2ad09c1e4cb07a3f",
+  "jpeg_quality": 95,
+  "cases": [
+    {
+      "id": "latin-large",
+      "file": "latin-large.jpg",
+      "sha256": "557edf94a2a2f8344b533d45b9542724fa0389c23ac87d8e9c42a1f0c87e4e38",
+      "width": 640,
+      "height": 480,
+      "task": "read_text",
+      "mode": "exact_text",
+      "expected": "LUMA\nSTOP AND EXPLORE",
+      "rendered_text": "LUMA\nSTOP AND EXPLORE",
+      "blur_radius": null,
+      "reference_source": "programmatically rendered synthetic text; blank image has no text"
+    },
+    {
+      "id": "chinese-large",
+      "file": "chinese-large.jpg",
+      "sha256": "974080e09b969253ced49aa1c8f827e12b3dead68d64397c1276bc7693548518",
+      "width": 640,
+      "height": 480,
+      "task": "read_text",
+      "mode": "exact_text",
+      "expected": "停下来\n看看眼前",
+      "rendered_text": "停下来\n看看眼前",
+      "blur_radius": null,
+      "reference_source": "programmatically rendered synthetic text; blank image has no text"
+    },
+    {
+      "id": "digits-large",
+      "file": "digits-large.jpg",
+      "sha256": "0b6efcd8a4445d10a132d5c72f6b8c8b75b3a460dde4f3174b1a2ff33c4c8c18",
+      "width": 640,
+      "height": 480,
+      "task": "read_text",
+      "mode": "exact_text",
+      "expected": "A7 B4\n2026 1018",
+      "rendered_text": "A7 B4\n2026 1018",
+      "blur_radius": null,
+      "reference_source": "programmatically rendered synthetic text; blank image has no text"
+    },
+    {
+      "id": "blank-white",
+      "file": "blank-white.jpg",
+      "sha256": "789967604d6fec42dcc790dbe0c42677b5af6f9429cc9fd85c3540d93c54ea85",
+      "width": 640,
+      "height": 480,
+      "task": "read_text",
+      "mode": "refusal",
+      "expected": "没有可可靠辨认的文字",
+      "rendered_text": "",
+      "blur_radius": null,
+      "reference_source": "programmatically rendered synthetic text; blank image has no text"
+    },
+    {
+      "id": "blank-dark",
+      "file": "blank-dark.jpg",
+      "sha256": "49b0b380124f132a3e2cd2d2604aa31eb12c360db30168760c5f9fa9a8c2f215",
+      "width": 640,
+      "height": 480,
+      "task": "read_text",
+      "mode": "refusal",
+      "expected": "没有可可靠辨认的文字",
+      "rendered_text": "",
+      "blur_radius": null,
+      "reference_source": "programmatically rendered synthetic text; blank image has no text"
+    },
+    {
+      "id": "blurred-control",
+      "file": "blurred-control.jpg",
+      "sha256": "d90796656b968db3abda153bbe02530c66d4502d7236af8e4d3b63fc84741242",
+      "width": 640,
+      "height": 480,
+      "task": "read_text",
+      "mode": "manual_only",
+      "expected": null,
+      "rendered_text": "LUMA\nSTOP AND EXPLORE",
+      "blur_radius": 14,
+      "reference_source": "programmatically rendered synthetic text; blank image has no text"
+    }
+  ]
+}

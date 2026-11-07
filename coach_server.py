@@ -1,0 +1,368 @@
+"""Loopback-first English coach MVP. Remote binding is explicit, not public authentication.
+
+中文摘要：独立 SQLite 加密保存密钥（无可用后端则拒绝），严格同源和 token；复盘仅按用户请求生成。
+"""
+from __future__ import annotations
+
+import argparse
+import base64
+import hashlib
+import json
+import ipaddress
+import os
+import warnings
+import re
+import secrets
+import sqlite3
+from contextlib import closing
+from datetime import date, timedelta
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
+
+from action_cards import ActionError, require
+from coach_icu_client import IntervalsClient, ICUClientError
+from coach_icu import normalize_activity
+from coach_demo import build_demo_review
+from coach_keystore import KeyStore
+from coach_review_en import build_review
+from coach_waitlist import WaitlistStore
+from coach_billing import BillingStore, verify as verify_billing
+from ride_gpx import GPXError
+from ride_review import ReviewError
+from ride_server import strict_json, dumps
+
+BRAND_NAME = "AI Ride Coach"
+SUPPORT_EMAIL = "support@example.invalid"  # Placeholder; replace before public launch.
+ROOT = Path(__file__).resolve().parent
+DEFAULT_DB = ROOT / ".runtime/coach/coach.sqlite3"
+MAX_BODY_BYTES = 8192
+DEFAULT_PORT = 8794
+
+
+class CoachStore:
+    """Dedicated encrypted credential DB; not a multi-user vault.
+
+    Legacy plaintext rows are rejected; reconnect using a fresh database.
+    """
+
+    def __init__(self, path=None, *, keystore=None):
+        path = os.environ.get("LUMA_COACH_DB", str(DEFAULT_DB)) if path is None else path
+        if not str(path).strip() or "\x00" in str(path):
+            raise ValueError("LUMA_COACH_DB must be a non-empty filesystem path")
+        self.path = Path(path)
+        self.keystore = keystore if keystore is not None else KeyStore()
+
+    @property
+    def encryption_status(self):
+        return self.keystore.status
+
+    def save_key(self, key):
+        encrypted = self.keystore.encrypt(key)  # Fail before creating/writing the DB.
+        self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        with closing(sqlite3.connect(self.path, timeout=5)) as db:
+            self.path.chmod(0o600)  # Windows still relies on inherited account ACLs.
+            db.execute("PRAGMA secure_delete=ON")
+            with db:
+                db.execute("CREATE TABLE IF NOT EXISTS credential (id INTEGER PRIMARY KEY CHECK(id=1), api_key TEXT NOT NULL)")
+                db.execute("INSERT OR REPLACE INTO credential VALUES (1, ?)", (encrypted,))
+
+    def get_key(self):
+        if not self.path.exists():
+            return None
+        # Read-only: querying connection state must not create an empty store.
+        with closing(sqlite3.connect(self.path.resolve().as_uri() + "?mode=ro", uri=True, timeout=5)) as db:
+            row = db.execute("SELECT api_key FROM credential WHERE id=1").fetchone()
+            return self.keystore.decrypt(row[0]) if row else None
+
+
+def _masked(key):
+    # Never echo the whole key, even if it has four characters or fewer.
+    return "****" + (key[-4:] if len(key) > 4 else "") if key else None
+
+
+def _page(filename="coach.html"):
+    text = (ROOT / "static" / filename).read_text(encoding="utf-8-sig")
+    def hashes(tag):
+        return " ".join("'sha256-" + base64.b64encode(hashlib.sha256(part.encode()).digest()).decode() + "'"
+                        for part in re.findall(r"<" + tag + r">(.*?)</" + tag + r">", text, re.S))
+    csp = ("default-src 'none'; script-src " + hashes("script") + "; style-src " + hashes("style") +
+           "; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
+    return text.encode("utf-8"), csp
+
+
+def _public_origin():
+    """Optional deployed origin, e.g. https://app.onrender.com (bare origin only).
+
+    When set, Host/Origin checks target this origin instead of loopback;
+    the loopback defense-in-depth then applies to the public hostname.
+    """
+    raw = os.environ.get("LUMA_COACH_PUBLIC_ORIGIN", "").strip()
+    if not raw:
+        return None
+    parsed = urlsplit(raw)
+    if (parsed.scheme not in ("https", "http") or not parsed.netloc or
+            parsed.path not in ("", "/") or parsed.query or parsed.fragment or
+            parsed.username or parsed.password or len(raw) > 253):
+        raise ValueError("LUMA_COACH_PUBLIC_ORIGIN must be a bare origin like https://app.example.com")
+    return parsed.scheme + "://" + parsed.netloc
+
+
+class App:
+    """Transport-injectable API; dispatch is testable without binding sockets."""
+
+    def __init__(self, store=None, *, fetch=None, today=None):
+        self.store = store if store is not None else CoachStore()
+        self._billing = None
+        self._waitlist = None
+        self.fetch = fetch
+        self.today = today if today is not None else date.today
+        self.token = secrets.token_urlsafe(32)
+
+    @property
+    def billing(self):
+        """Lazy billing metadata store, separate from credentials and waitlist."""
+        if self._billing is None:
+            self._billing = BillingStore(self.store.path.with_name("billing.db"), credential_path=self.store.path)
+        return self._billing
+
+    @property
+    def waitlist(self):
+        """Resolve the separate local store only when the waitlist is used."""
+        if self._waitlist is None:
+            self._waitlist = WaitlistStore(self.store.path.with_name("waitlist.db"), credential_path=self.store.path)
+        return self._waitlist
+
+    def preflight(self, method, path, headers, port):
+        origin = _public_origin() or ("http://127.0.0.1:" + str(port))
+        if hasattr(headers, "get_all"):
+            for name in ("Host", "Origin", "Sec-Fetch-Site", "X-Coach-Token", "Content-Type", "Content-Length", "Transfer-Encoding", "creem-signature"):
+                require(len(headers.get_all(name, [])) <= 1, "Duplicate security headers", "invalid_input")
+        # Server-to-server callback: signature replaces browser token and Host allowlist.
+        # Never expose browser routes by this exception; forwarded headers are ignored.
+        if method == "POST" and path == "/api/coach/billing/webhook":
+            require(bool(os.environ.get("CREEM_WEBHOOK_SECRET", "").strip()), "Billing is not configured", "billing_not_configured", 503)
+            require(headers.get("Host") is not None and headers.get("Origin") is None and headers.get("Sec-Fetch-Site") in (None, "none"), "Server callback required", "origin_denied", 403)
+            require(headers.get("Transfer-Encoding") is None and headers.get("Content-Type") == "application/json", "Fixed-length JSON required", "invalid_body", 415)
+            raw = headers.get("Content-Length", "")
+            require(type(raw) is str and re.fullmatch(r"[0-9]{1,8}", raw) is not None and 0 < int(raw) <= MAX_BODY_BYTES, "Body size exceeds limit", "body_too_large", 413)
+            return int(raw)
+        # Public liveness only: no secrets, DB, token or upstream dependencies.
+        # Render probes may use their own Host. All other routes stay strict.
+        if method == "GET" and path == "/health":
+            require(headers.get("Host") is not None, "Host required", "host_denied", 403)
+            require(headers.get("Origin") is None and headers.get("Sec-Fetch-Site") in (None, "none"),
+                    "Cross-origin access denied", "origin_denied", 403)
+            return 0
+        require(headers.get("Host") == urlsplit(origin).netloc, "Loopback Host required", "host_denied", 403)
+        require((headers.get("Origin") is None and method == "GET") or headers.get("Origin") == origin,
+                "Cross-origin access denied", "origin_denied", 403)
+        require(headers.get("Sec-Fetch-Site") in (None, "same-origin", "none"), "Cross-site access denied", "origin_denied", 403)
+        require(type(path) is str and len(path) <= 2048 and path.startswith("/") and not path.startswith("//"), "Invalid request target")
+        parsed = urlsplit(path)
+        require(not parsed.scheme and not parsed.netloc and not parsed.fragment, "Invalid request target")
+        require(method in ("GET", "POST"), "Method not allowed", "method_not_allowed", 405)
+        public = method == "GET" and parsed.path in ("/", "/privacy", "/terms", "/api/coach/config")
+        if not public:
+            token = headers.get("X-Coach-Token", "")
+            require(type(token) is str and token.isascii() and secrets.compare_digest(token, self.token), "Session token required", "token_denied", 403)
+        allowed = ((method == "GET" and parsed.path in ("/", "/privacy", "/terms", "/api/coach/config", "/api/coach/activities")) or
+                   (method == "POST" and path in ("/api/coach/connect", "/api/coach/review", "/api/coach/demo-review", "/api/coach/waitlist")))
+        require(allowed, "Endpoint not found", "not_found", 404)
+        if method == "POST":
+            require(headers.get("Transfer-Encoding") is None and headers.get("Content-Type") == "application/json", "Fixed-length JSON required", "invalid_body", 415)
+            raw = headers.get("Content-Length", "")
+            require(type(raw) is str and re.fullmatch(r"[0-9]{1,8}", raw) is not None, "Body length invalid", "body_too_large", 413)
+            length = int(raw)
+            require(0 < length <= MAX_BODY_BYTES, "Body size exceeds limit", "body_too_large", 413)
+            return length
+        return 0
+
+    def dispatch(self, method, path, headers, body=b"", port=DEFAULT_PORT):
+        length = self.preflight(method, path, headers, port)
+        if method == "POST" and path == "/api/coach/billing/webhook":
+            require(len(body) == length, "Incomplete request body", "invalid_body")
+            require(verify_billing(body, headers.get("creem-signature", ""), os.environ.get("CREEM_WEBHOOK_SECRET", "")), "Invalid webhook signature", "billing_signature_invalid", 403)
+            try:
+                event = strict_json(body)
+            except ActionError:
+                raise ActionError("invalid_json", "Strict UTF-8 JSON required") from None
+            return self.billing.handle(event)
+        if method == "GET":
+            if path == "/health":
+                return {"status": "ok"}
+            parsed = urlsplit(path)
+            if parsed.path in ("/", "/privacy", "/terms"):
+                return _page({"/": "coach.html", "/privacy": "privacy.html", "/terms": "terms.html"}[parsed.path])
+            if path == "/api/coach/config":
+                key = self.store.get_key()
+                return {"billing_enabled": bool(os.environ.get("CREEM_WEBHOOK_SECRET", "").strip()), "subscription_status": self.billing.current_status(), "brand_name": BRAND_NAME, "support_email": SUPPORT_EMAIL, "token": self.token, "connected": key is not None,
+                        "masked_key": _masked(key), "verified": False, **self.store.encryption_status,
+                        "mode": "local_only", "external_requests": "Only after explicit list/review actions"}
+            parsed = urlsplit(path)
+            require(parsed.path == "/api/coach/activities", "Endpoint not found", "not_found", 404)
+            try:
+                query = parse_qs(parsed.query, keep_blank_values=True, strict_parsing=True, max_num_fields=1)
+            except ValueError:
+                raise ActionError("invalid_input", "Expected one days parameter") from None
+            require(set(query) == {"days"} and len(query["days"]) == 1 and re.fullmatch(r"[0-9]{1,3}", query["days"][0]) is not None, "Expected one days parameter")
+            days = int(query["days"][0])
+            require(1 <= days <= 90, "Days must be between 1 and 90")
+            end = self.today()
+            activities = self._client().list_activities((end - timedelta(days=days-1)).isoformat(), end.isoformat())
+            # Return only display fields, not arbitrary upstream properties.
+            return {"activities": [{k: activity.get(k) for k in ("id", "name", "start_date_local", "type", "distance", "moving_time")}
+                                   for activity in activities]}
+        require(len(body) == length, "Incomplete request body", "invalid_body")
+        try:
+            payload = strict_json(body)
+        except ActionError:
+            raise ActionError("invalid_json", "Strict UTF-8 JSON required") from None
+        if path == "/api/coach/waitlist":
+            require(type(payload) is dict and set(payload) == {"email"}, "Expected email only")
+            status = self.waitlist.register(payload["email"])
+            return {"status": status, "message": "Your request has been recorded. No email has been sent."}
+        if path == "/api/coach/demo-review":
+            require(type(payload) is dict and not payload, "Demo expects an empty object")
+            return build_demo_review()
+        required = {"api_key"} if path == "/api/coach/connect" else {"activity_id"}
+        require(type(payload) is dict and set(payload) == required, "Request fields do not match")
+        if path == "/api/coach/connect":
+            key = payload["api_key"]
+            IntervalsClient(key, fetch=self.fetch)  # Validate locally, never fetch.
+            self.store.save_key(key)
+            return {"connected": True, "masked_key": _masked(key), "verified": False, **self.store.encryption_status}
+        api = self._client()
+        activity = api.get_activity(payload["activity_id"])
+        warnings = []
+        def optional(label, call, fallback):
+            try:
+                return call()
+            except ICUClientError as error:
+                if error.code != "not_found":
+                    raise
+                warnings.append({"code": "optional_data_missing", "field": label})
+                return fallback
+        streams = optional("streams", lambda: api.get_streams(payload["activity_id"]), [])
+        settings = optional("sport_settings", api.get_sport_settings, None)
+        # Wellness follows the reported activity date, not the server's current day.
+        day = activity.get("start_date_local") or activity.get("start_date")
+        wellness = None
+        try:
+            day = date.fromisoformat(day[:10]).isoformat() if type(day) is str else None
+        except ValueError:
+            day = None
+        if day:
+            wellness = optional("wellness", lambda: api.get_wellness(day), None)
+        else:
+            warnings.append({"code": "optional_data_missing", "field": "wellness_date"})
+        try:
+            record = normalize_activity(activity, streams, settings, wellness)
+            review = build_review(record)
+        except (GPXError, ReviewError, TypeError, ValueError, OverflowError, RecursionError):
+            raise ActionError("invalid_upstream_data", "Activity data could not be normalized", 502) from None
+        return {"review": review, "warnings": warnings, "verified": False}
+
+    def _client(self):
+        key = self.store.get_key()
+        require(key is not None, "Connect an API key first", "auth_required", 401)
+        return IntervalsClient(key, fetch=self.fetch)
+
+
+def _bind_config(host=None, port=None):
+    """Resolve CLI/factory > environment > defaults, rejecting unsafe bindings.
+
+    Only IPv4 literals are supported by the existing IPv4 HTTP server. No DNS
+    resolution or forwarded-header trust is introduced. Raises ValueError.
+    """
+    host = os.environ.get("LUMA_COACH_HOST", "127.0.0.1") if host is None else host
+    _public_origin()  # fail fast on a malformed deployed origin
+    try:
+        address = ipaddress.IPv4Address(host)
+    except (ipaddress.AddressValueError, TypeError):
+        raise ValueError("LUMA_COACH_HOST must be an IPv4 literal") from None
+    port = os.environ.get("LUMA_COACH_PORT", str(DEFAULT_PORT)) if port is None else port
+    if isinstance(port, bool) or not re.fullmatch(r"[0-9]{1,5}", str(port)):
+        raise ValueError("LUMA_COACH_PORT must be an integer from 1024 to 65535")
+    port = int(port)
+    if not 1024 <= port <= 65535 or port in (8765, 8791, 8793):
+        raise ValueError("Choose a non-reserved port from 1024 to 65535")
+    if not address.is_loopback:
+        if os.environ.get("LUMA_COACH_ALLOW_REMOTE") != "1":
+            raise ValueError("Non-loopback binding requires LUMA_COACH_ALLOW_REMOTE=1")
+        warnings.warn("REMOTE BINDING: single-user coach has no public user authentication; "
+                      "keep private. Business routes still require loopback Host/Origin.",
+                      RuntimeWarning, stacklevel=2)
+    return str(address), port
+
+
+def create_server(port=None, app=None, *, host=None):
+    """Create a validated server; explicit arguments override environment values."""
+    host, port = _bind_config(host, port)
+    app = app if app is not None else App()
+    class Handler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.0"
+
+        def log_message(self, *args):
+            pass
+
+        def reply(self, status, value):
+            page = status == 200 and type(value) is tuple
+            raw, csp = value if page else (dumps(value).encode("utf-8"), "default-src 'none'; frame-ancestors 'none'; base-uri 'none'")
+            self.send_response(status)
+            for key, text in {"Content-Type": "text/html; charset=utf-8" if page else "application/json; charset=utf-8",
+                              "Content-Length": str(len(raw)), "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+                              "X-Frame-Options": "DENY", "Referrer-Policy": "no-referrer", "Content-Security-Policy": csp}.items():
+                self.send_header(key, text)
+            if not page and value.get("retry_after") is not None:
+                self.send_header("Retry-After", value["retry_after"])
+            self.end_headers()
+            try:
+                self.wfile.write(raw)
+            except (BrokenPipeError, ConnectionError):
+                pass
+
+        def handle_request(self):
+            try:
+                self.connection.settimeout(15)
+                length = app.preflight(self.command, self.path, self.headers, self.server.server_port)
+                body = self.rfile.read(length) if length else b""
+                self.reply(200, app.dispatch(self.command, self.path, self.headers, body, self.server.server_port))
+            except ActionError as error:
+                value = {"error_code": error.code, "message": str(error), "retryable": getattr(error, "retryable", False)}
+                if getattr(error, "retry_after", None) is not None:
+                    value["retry_after"] = error.retry_after
+                self.reply(error.status, value)
+            except sqlite3.Error:
+                self.reply(503, {"error_code": "storage_unavailable", "message": "Local credential storage unavailable", "retryable": False})
+            except (TimeoutError, ConnectionError):
+                self.reply(408, {"error_code": "request_timeout", "message": "Request timed out", "retryable": False})
+            except OSError:
+                self.reply(503, {"error_code": "storage_unavailable", "message": "Local resource unavailable", "retryable": False})
+            except Exception:
+                self.reply(500, {"error_code": "internal_error", "message": "Request failed; no automatic retry", "retryable": False})
+        do_GET = do_POST = do_OPTIONS = do_PUT = do_DELETE = handle_request
+    server = ThreadingHTTPServer((host, port), Handler)
+    server.daemon_threads = True
+    return server
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--host", default=None)
+    parser.add_argument("--port", type=int, default=None)
+    args = parser.parse_args()
+    try:
+        server = create_server(args.port, host=args.host)
+    except ValueError as error:
+        parser.error(str(error))
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+
+
+if __name__ == "__main__":
+    main()

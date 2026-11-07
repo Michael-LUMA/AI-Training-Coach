@@ -1,0 +1,328 @@
+{
+  "format": "LUMA-synthetic-model-contract-v1",
+  "scope": "Manually authored backend-shaped dictionaries; no recognition/model calls; not accuracy fixtures.",
+  "cases": [
+    {
+      "id": "qwen-candidate",
+      "kind": "return",
+      "input_marker": "synthetic-contract:qwen-candidate",
+      "context": {
+        "task": "describe",
+        "backend": "qwen"
+      },
+      "payload": {
+        "summary": "合成候选：路牌",
+        "detections": [],
+        "backend": "qwen",
+        "task": "describe",
+        "model": "synthetic-qwen",
+        "truncated": false,
+        "inference_ms": 5.2
+      },
+      "expected_state": "candidate",
+      "expected_issue_codes": []
+    },
+    {
+      "id": "ocr-candidate",
+      "kind": "return",
+      "input_marker": "synthetic-contract:ocr-candidate",
+      "context": {
+        "task": "read_text",
+        "backend": "windows-ocr"
+      },
+      "payload": {
+        "summary": "LUMA TEST\n123",
+        "recognized_text": "LUMA TEST\n123",
+        "raw_text": "LUMA TEST 123",
+        "lines": [
+          "LUMA TEST",
+          "123"
+        ],
+        "no_text": false,
+        "detections": [],
+        "backend": "windows-ocr",
+        "task": "read_text",
+        "model": "synthetic-ocr",
+        "truncated": false,
+        "inference_ms": 1,
+        "recognition_ms": 0
+      },
+      "expected_state": "candidate",
+      "expected_issue_codes": []
+    },
+    {
+      "id": "ocr-empty",
+      "kind": "return",
+      "input_marker": "synthetic-contract:ocr-empty",
+      "context": {
+        "task": "read_text",
+        "backend": "windows-ocr"
+      },
+      "payload": {
+        "summary": "没有可可靠辨认的文字",
+        "recognized_text": "",
+        "raw_text": "",
+        "lines": [],
+        "no_text": true,
+        "detections": [],
+        "backend": "windows-ocr",
+        "task": "read_text",
+        "model": "synthetic-ocr",
+        "truncated": false,
+        "inference_ms": 1,
+        "recognition_ms": 0
+      },
+      "expected_state": "empty",
+      "expected_issue_codes": []
+    },
+    {
+      "id": "qwen-refusal",
+      "kind": "return",
+      "input_marker": "synthetic-contract:qwen-refusal",
+      "context": {
+        "task": "read_text",
+        "backend": "qwen"
+      },
+      "payload": {
+        "summary": "没有可可靠辨认的文字。",
+        "detections": [],
+        "backend": "qwen",
+        "task": "read_text",
+        "model": "synthetic-qwen",
+        "truncated": false,
+        "inference_ms": 5.2
+      },
+      "expected_state": "candidate",
+      "expected_issue_codes": []
+    },
+    {
+      "id": "qwen-truncated",
+      "kind": "return",
+      "input_marker": "synthetic-contract:qwen-truncated",
+      "context": {
+        "task": "describe",
+        "backend": "qwen"
+      },
+      "payload": {
+        "summary": "合成未完成片段",
+        "detections": [],
+        "backend": "qwen",
+        "task": "describe",
+        "model": "synthetic-qwen",
+        "truncated": true,
+        "inference_ms": 5.2
+      },
+      "expected_state": "candidate",
+      "expected_issue_codes": []
+    },
+    {
+      "id": "legacy-detector",
+      "kind": "return",
+      "input_marker": "synthetic-contract:legacy-detector",
+      "context": {
+        "task": "describe",
+        "backend": "mobilenet"
+      },
+      "payload": {
+        "summary": "可能有自行车",
+        "detections": [
+          {
+            "class_id": 2,
+            "label": "自行车",
+            "confidence": 0.8,
+            "box": [
+              0,
+              0,
+              1,
+              1
+            ]
+          }
+        ],
+        "model": "synthetic-mobilenet",
+        "inference_ms": 2
+      },
+      "expected_state": "candidate",
+      "expected_issue_codes": []
+    },
+    {
+      "id": "future-local-canonical",
+      "kind": "return",
+      "input_marker": "synthetic-contract:future-local-canonical",
+      "context": {
+        "task": "describe",
+        "backend": "future-local"
+      },
+      "payload": {
+        "summary": "假设未来本地后端已映射为此格式",
+        "detections": []
+      },
+      "expected_state": "candidate",
+      "expected_issue_codes": []
+    },
+    {
+      "id": "qwen-empty",
+      "kind": "return",
+      "input_marker": "synthetic-contract:qwen-empty",
+      "context": {
+        "task": "describe",
+        "backend": "qwen"
+      },
+      "payload": {
+        "summary": " \n ",
+        "detections": [],
+        "backend": "qwen",
+        "task": "describe",
+        "model": "synthetic-qwen",
+        "truncated": false,
+        "inference_ms": 5.2
+      },
+      "expected_state": "empty",
+      "expected_issue_codes": []
+    },
+    {
+      "id": "invalid-summary",
+      "kind": "return",
+      "input_marker": "synthetic-contract:invalid-summary",
+      "context": {
+        "task": "describe",
+        "backend": "qwen"
+      },
+      "payload": {
+        "summary": null,
+        "detections": [],
+        "backend": "qwen",
+        "task": "describe",
+        "model": "synthetic-qwen",
+        "truncated": false,
+        "inference_ms": 5.2
+      },
+      "expected_state": "invalid",
+      "expected_issue_codes": [
+        "text_type_or_limit"
+      ]
+    },
+    {
+      "id": "invalid-task",
+      "kind": "return",
+      "input_marker": "synthetic-contract:invalid-task",
+      "context": {
+        "task": "describe",
+        "backend": "qwen"
+      },
+      "payload": {
+        "summary": "合成候选：路牌",
+        "detections": [],
+        "backend": "qwen",
+        "task": "read_text",
+        "model": "synthetic-qwen",
+        "truncated": false,
+        "inference_ms": 5.2
+      },
+      "expected_state": "invalid",
+      "expected_issue_codes": [
+        "source_mismatch"
+      ]
+    },
+    {
+      "id": "invalid-ocr-empty-flag",
+      "kind": "return",
+      "input_marker": "synthetic-contract:invalid-ocr-empty-flag",
+      "context": {
+        "task": "read_text",
+        "backend": "windows-ocr"
+      },
+      "payload": {
+        "summary": "LUMA TEST\n123",
+        "recognized_text": "LUMA TEST\n123",
+        "raw_text": "LUMA TEST 123",
+        "lines": [
+          "LUMA TEST",
+          "123"
+        ],
+        "no_text": true,
+        "detections": [],
+        "backend": "windows-ocr",
+        "task": "read_text",
+        "model": "synthetic-ocr",
+        "truncated": false,
+        "inference_ms": 1,
+        "recognition_ms": 0
+      },
+      "expected_state": "invalid",
+      "expected_issue_codes": [
+        "ocr_empty_mismatch"
+      ]
+    },
+    {
+      "id": "invalid-detection",
+      "kind": "return",
+      "input_marker": "synthetic-contract:invalid-detection",
+      "context": {
+        "task": "describe",
+        "backend": "qwen"
+      },
+      "payload": {
+        "summary": "合成候选：路牌",
+        "detections": [
+          {
+            "class_id": 1,
+            "label": "合成目标",
+            "confidence": 0.8,
+            "box": [
+              0,
+              0,
+              0,
+              1
+            ]
+          }
+        ],
+        "backend": "qwen",
+        "task": "describe",
+        "model": "synthetic-qwen",
+        "truncated": false,
+        "inference_ms": 5.2
+      },
+      "expected_state": "invalid",
+      "expected_issue_codes": [
+        "detection_box"
+      ]
+    },
+    {
+      "id": "unsupported-error-envelope",
+      "kind": "return",
+      "input_marker": "synthetic-contract:unsupported-error-envelope",
+      "context": {
+        "task": "describe",
+        "backend": "qwen"
+      },
+      "payload": {
+        "summary": "合成候选：路牌",
+        "detections": [],
+        "backend": "qwen",
+        "task": "describe",
+        "model": "synthetic-qwen",
+        "truncated": false,
+        "inference_ms": 5.2,
+        "error": "synthetic backend failure"
+      },
+      "expected_state": "invalid",
+      "expected_issue_codes": [
+        "unsupported_error_envelope"
+      ]
+    },
+    {
+      "id": "explicit-timeout",
+      "kind": "failure",
+      "input_marker": "synthetic-contract:explicit-timeout",
+      "context": {
+        "task": "describe",
+        "backend": "qwen"
+      },
+      "error_code": "timeout",
+      "expected_state": "call_failed",
+      "expected_issue_codes": [
+        "timeout"
+      ]
+    }
+  ]
+}

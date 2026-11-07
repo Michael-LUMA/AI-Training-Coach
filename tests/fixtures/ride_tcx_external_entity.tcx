@@ -1,0 +1,3 @@
+﻿<?xml version="1.0"?>
+<!DOCTYPE TrainingCenterDatabase [<!ENTITY secret SYSTEM "file:///LUMA_SYNTHETIC_DO_NOT_READ">]>
+<TrainingCenterDatabase><Activities><Activity><Lap><Track><Trackpoint><AltitudeMeters>&secret;</AltitudeMeters></Trackpoint></Track></Lap></Activity></Activities></TrainingCenterDatabase>

@@ -1,0 +1,23 @@
+# Render blueprint — AI Ride Coach (single stdlib Python process, no build).
+# Deploy: Render dashboard → New → Blueprint → pick this repo.
+services:
+  - type: web
+    name: ai-ride-coach
+    runtime: python
+    plan: free
+    buildCommand: ""
+    startCommand: python coach_server.py --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.5
+      - key: LUMA_COACH_ALLOW_REMOTE
+        value: "1"
+      # Render generates a strong master key for credential encryption.
+      - key: LUMA_COACH_MASTER_KEY
+        generateValue: true
+      # Fill after the first deploy assigns the public domain, e.g.
+      # https://ai-ride-coach.onrender.com — without it browser requests
+      # are denied by the Host/Origin allowlist (fail closed by design).
+      - key: LUMA_COACH_PUBLIC_ORIGIN
+        sync: false

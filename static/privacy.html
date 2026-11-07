@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Privacy notice</title>
+<style>body{max-width:820px;margin:2rem auto;padding:0 1.2rem;font:17px/1.65 system-ui,sans-serif;color:#182632;background:#f5f8fa}main{background:white;padding:1.5rem;border-radius:12px}a{color:#075c91}h1,h2{line-height:1.3}code{overflow-wrap:anywhere}.notice{border-left:4px solid #986300;padding:.6rem 1rem;background:#fff5dc}nav{margin:1rem 0}#config-status{font-size:.9rem}</style></head><body>
+<header><p id="brand">Local cycling review pilot</p><h1 id="page-title">Privacy notice</h1><p>Last updated: November 7, 2026</p></header>
+<nav aria-label="Main"><a href="/">Review app</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></nav>
+<p id="config-status" role="status">Loading brand and contact configuration…</p>
+<main><p class="notice">This notice describes the current single-user, local pilot, not a hosted service. It is not a claim that public-launch compliance review is complete.</p>
+<h2>What is stored and processed</h2>
+<p>You paste your own Intervals.icu API key. The pilot stores it in a dedicated local SQLite database, encrypted by the available backend. Saving is refused if no encryption backend is available. Windows uses current-user DPAPI. The alternative masterkey backend is a constrained, unaudited standard-library construction, not audited encryption; keep the master key secret and separate from database backups.</p>
+<p>Only after you request an activity list or review does the pilot send authenticated requests to Intervals.icu. It processes activity details and streams, sport settings such as FTP and zones, and wellness data such as training load, sleep or resting heart rate where available.</p>
+<p>Activity data and generated reviews are held temporarily in process memory and the current browser page. This version has no persistent activity-data cache or review database. Responses use no-store; it does not deliberately save activity data in browser storage. It cannot guarantee erasure of OS memory, browser session recovery, or files you export yourself.</p>
+<p>If you submit the optional waitlist, your lowercase email address and initial submission time are stored in a separate local <code>waitlist.db</code> beside the credential database. This file is not encrypted by the credential keystore and relies on filesystem permissions. It records your opt-in for product updates, but this pilot sends no email and does not synchronize the list to a hosted service. First and repeat submissions receive the same acknowledgement. Remove this file and its SQLite sidecars with the server stopped to delete waitlist records; remove backups separately.</p>
+<h2>Purpose and limits</h2>
+<p>Data is used to show your activities and produce the review you request. We do not sell your data and do not use it to train models. This pilot has no analytics, advertising SDKs, external fonts or CDN. Reviews are rule-based; no external AI model receives your activity data.</p>
+<h2>Third parties</h2>
+<p>The current external integration is the Intervals.icu API, which receives your API key and requested activity identifiers/date ranges under its own policies. An optional Creem webhook skeleton can accept signed server callbacks when the operator configures a secret. It stores event identifiers/types/timestamps and subscription identifiers, customer email when supplied, status and update time in a separate local <code>billing.db</code>. It does not store raw callback bodies, card details or the webhook secret. Billing metadata is not encrypted by the credential keystore; remove this file and its SQLite sidecars with the server stopped to delete it. There is no checkout, charging or paid-access enforcement in this pilot; no outbound Creem request is made. Provider terms, operator identity and launch data handling still require review before payments are enabled. Your browser, operating system, network and Intervals.icu remain outside this local app's control.</p>
+<h2>Retention and deletion</h2>
+<p>The saved key remains until you remove the local store. This version has no in-app delete button. To delete the saved key and all app-managed persistent local data: stop the server, close the app's browser pages, then manually delete the dedicated <code>.runtime/coach/</code> directory under the application directory (or the dedicated store location configured by your operator), including the SQLite database and any journal, WAL or SHM files. Do not delete unrelated directories. Restarting should show no connected key.</p>
+<p>Close the browser pages and stop the process to release the temporary activity cache and reviews. Remove your own exports and backups separately; deleting the local store does not delete backups, guarantee physical secure erasure, or remove data held by Intervals.icu. Revoke the API key in Intervals.icu if you no longer want it usable. A separately provisioned master key is not removed by deleting SQLite.</p>
+<h2>Before a hosted launch</h2>
+<p>This local notice must be updated if hosting, accounts, persistent activity caching, model services or payments are introduced. Do not expose this pilot as a multi-user service.</p>
+<h2>Contact</h2><p>Support email: <span id="support-email">Configuration pending</span>. This is a placeholder, not a monitored support address. A working contact and the operator's identity must be published before public launch. Never send an API key by email.</p>
+</main><script>'use strict';
+(async () => {
+  try {
+    const response = await fetch('/api/coach/config', {cache:'no-store', credentials:'same-origin'});
+    if (!response.ok) throw new Error('Configuration unavailable');
+    const config = await response.json();
+    if (typeof config.brand_name !== 'string' || typeof config.support_email !== 'string') throw new Error('Invalid configuration');
+    document.getElementById('brand').textContent = config.brand_name;
+    document.title = document.getElementById('page-title').textContent + ' | ' + config.brand_name;
+    document.getElementById('support-email').textContent = config.support_email;
+    document.getElementById('config-status').textContent = 'Local configuration loaded. No activity request was sent.';
+  } catch (_) {
+    document.getElementById('config-status').textContent = 'Brand/contact configuration unavailable. This policy remains readable; no activity request was sent.';
+  }
+})();</script></body></html>

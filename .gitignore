@@ -1,0 +1,7 @@
+# Runtime secrets and local state — never commit.
+.runtime/
+.venv/
+__pycache__/
+*.pyc
+*.sqlite3
+*.db

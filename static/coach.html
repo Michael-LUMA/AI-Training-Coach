@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ride review</title>
+<style>
+:root{color-scheme:dark;--bg:#07090C;--volt:#D4F23B;--amber:#F5A623;--coral:#FF5C5C;--cyan:#5CC8FF;--muted:#9A9FA8;--line:rgba(212,242,59,.10);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:15px;line-height:1.6;color:#F2F4EE;background:var(--bg);font-variant-numeric:tabular-nums}
+*{box-sizing:border-box}body{max-width:1184px;margin:auto;padding:24px 32px 64px;background:radial-gradient(ellipse 85% 520px at 50% 0,rgba(212,242,59,.07),transparent 100%);overflow-wrap:anywhere}a{color:var(--cyan);text-underline-offset:4px}a:hover{color:#B9E8FF}nav{display:flex;justify-content:flex-end;gap:14px;font-size:12px;color:var(--muted)}header{padding:38px 0 24px}.brand-row{display:flex;align-items:center;gap:20px}.brand-row>div{min-width:0}.logo-mark{position:relative;display:block;flex-shrink:0;width:62px;height:62px;background:rgba(212,242,59,.07);border:1px solid rgba(212,242,59,.25);border-radius:16px;box-shadow:0 0 32px rgba(212,242,59,.06)}.logo-mark:before{content:"";position:absolute;width:27px;height:27px;left:16px;top:16px;border-top:5px solid var(--volt);border-right:5px solid var(--volt)}.logo-mark:after{content:"";position:absolute;width:34px;height:5px;left:13px;top:29px;background:var(--volt);transform:rotate(-45deg)}.eyebrow{margin:0 0 6px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.15em;opacity:.5}h1{font-size:clamp(32px,4.5vw,54px);font-weight:700;letter-spacing:-.04em;line-height:1.12;margin:0}header>p{max-width:680px;margin:18px 0 0;font-size:15px}h2{display:flex;align-items:center;gap:12px;margin:0 0 18px;font-size:18px;line-height:1.35;letter-spacing:-.02em}h3{margin:30px 0 16px;font-size:11px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:var(--muted)}p{margin:12px 0}p,li{line-height:1.6}.muted,.disclaimer{color:var(--muted)}.workflow{display:grid;grid-template-columns:1.15fr 1fr;gap:20px;align-items:start}.step-card,.waitlist-card,.metric{min-width:0;background:rgba(255,255,255,0.03);border:1px solid var(--line);border-radius:16px;box-shadow:0 16px 40px rgba(0,0,0,.18);transition:transform 150ms,border-color 150ms}.step-card,.waitlist-card{padding:28px}.step-card:hover,.waitlist-card:hover,.metric:hover{transform:translateY(-2px);border-color:rgba(212,242,59,.30)}.step-card:focus-within{border-color:rgba(212,242,59,.45);box-shadow:0 0 28px rgba(212,242,59,.05)}.step-number{display:inline-grid;place-items:center;flex-shrink:0;width:32px;height:32px;border:1px solid rgba(212,242,59,.20);border-radius:10px;font-size:11px;letter-spacing:.03em;color:var(--volt);background:rgba(212,242,59,.04)}.step-card:focus-within .step-number{background:var(--volt);color:var(--bg)}.step-copy{font-size:14px;color:var(--muted);margin-bottom:22px}.step-copy strong{color:#D9DDD2;font-weight:500}.review-card{grid-column:1/-1;border-top-color:rgba(212,242,59,.25)}.review-card>p{font-size:14px}.review-card:has(.metric-grid){border-color:rgba(212,242,59,.28);box-shadow:0 0 32px rgba(212,242,59,.035)}#status{position:relative;margin:0 0 24px;padding:12px 16px 12px 34px;border:1px solid rgba(92,200,255,.12);border-radius:10px;background:rgba(92,200,255,.025);color:var(--cyan);font-size:12px}#status:before{content:"";position:absolute;left:16px;top:20px;width:5px;height:5px;border-radius:50%;background:var(--cyan)}label{display:block;margin:18px 0 12px;font-size:12px;color:#C8CDC3}input,button{font:inherit;border-radius:10px;min-height:46px;border:1px solid var(--line)}input{display:block;width:100%;min-width:0;margin-top:8px;padding:12px 14px;background:rgba(0,0,0,.25);color:#F2F4EE}input:focus{border-color:var(--volt)}button{padding:12px 18px;background:var(--volt);color:var(--bg);font-size:13px;font-weight:700;cursor:pointer;transition:background 150ms,transform 150ms}button:hover:not(:disabled){background:#E2FF56;transform:translateY(-1px)}button:disabled{opacity:.4;cursor:wait}.secondary{border-color:rgba(212,242,59,.30);background:transparent;color:var(--volt)}.secondary:hover:not(:disabled){background:rgba(212,242,59,.09)}:focus-visible{outline:2px solid var(--cyan);outline-offset:4px}.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}#connection{display:flex;flex-wrap:wrap;align-items:center;gap:10px;font-size:12px;margin-top:18px}.connection-badge{display:inline-block;padding:3px 9px;border:1px solid rgba(212,242,59,.25);border-radius:6px;color:var(--volt);background:rgba(212,242,59,.05)}#activities{list-style:none;padding:0;margin-bottom:0}#activities li{display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid var(--line);padding:14px 0;font-size:13px}#activities button{min-height:36px;padding:6px 12px;flex-shrink:0}#review{min-width:0}#review>h3:first-child{margin-top:22px}.demo-banner{border:1px solid rgba(255,92,92,.35);border-left:3px solid var(--coral);border-radius:10px;background:rgba(255,92,92,.06);color:var(--coral);padding:12px 16px;font-size:13px;font-weight:600}.metric-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0}.metric{padding:20px}.metric dt{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}.metric dd{margin:8px 0 0;display:flex;flex-wrap:wrap;align-items:baseline;gap:6px}.metric-value{font-size:clamp(40px,4vw,52px);font-weight:700;line-height:1.15;letter-spacing:-.03em;color:var(--volt);font-variant-numeric:tabular-nums}.metric-unit{font-size:12px;color:var(--muted)}.metric-note{display:block;flex-basis:100%;font-size:11px;line-height:1.6;color:var(--muted);margin-top:4px}.metric-missing .metric-value{color:var(--muted)}.fact-notes{padding-left:20px;font-size:13px;color:var(--muted)}.fact-notes li{margin:8px 0}.zone-chart{padding:22px;background:rgba(255,255,255,0.03);border:1px solid var(--line);border-radius:16px;box-shadow:0 16px 40px rgba(0,0,0,.12)}.zone-row{display:grid;grid-template-columns:130px minmax(0,1fr) 56px;align-items:center;gap:16px;margin:14px 0;--zone-color:var(--volt)}.zone-row:first-child{margin-top:0}.zone-row:last-child{margin-bottom:0}.zone-tempo{--zone-color:var(--amber)}.zone-high{--zone-color:var(--coral)}.zone-label{display:flex;align-items:baseline;gap:12px;min-width:0}.zone-label strong{color:var(--zone-color);font-size:13px}.zone-range{color:var(--muted);font-size:11px}.zone-track{height:10px;border-radius:3px;background:rgba(255,255,255,.045);overflow:hidden}.zone-fill{height:100%;background:var(--zone-color);border-radius:3px}.zone-percentage{text-align:right;font-size:13px;color:var(--zone-color)}.zone-caption{font-size:12px;color:var(--muted)}.inference-card,.suggestion-card{min-width:0;margin:12px 0;padding:16px 20px;border:1px solid var(--line);border-left:3px solid var(--amber);border-radius:0 12px 12px 0;background:rgba(255,255,255,.03)}.suggestion-card{border-left-color:var(--volt)}.inference-card>p:first-child,.suggestion-card>p:first-child{margin-top:0}.inference-card>p,.suggestion-card>p{font-size:14px}.evidence{color:var(--muted);font-size:11px;line-height:1.6;margin-bottom:0}.disclaimer{font-size:12px;line-height:1.6}details{margin-top:24px;border-top:1px solid var(--line);padding-top:18px;color:var(--muted);font-size:12px}summary{cursor:pointer;color:var(--cyan)}pre{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;max-width:100%;font-family:ui-monospace,Consolas,monospace;font-size:11px}.waitlist-card{margin-top:24px;position:relative;border-color:rgba(212,242,59,.12)}.waitlist-card>p{max-width:740px}.waitlist-card h2{color:var(--volt);font-size:24px}.waitlist-card .muted{font-size:13px}.pricing{display:flex;align-items:baseline;flex-wrap:wrap;gap:12px;margin:22px 0;padding:18px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}.price{color:var(--volt);font-size:clamp(19px,2.5vw,28px);font-weight:700;letter-spacing:-.03em}.price-note{color:var(--muted);font-size:11px}#waitlist-form{display:flex;align-items:flex-end;gap:12px;max-width:680px}#waitlist-form label{flex:1;min-width:0;margin:0}#waitlist-form button{flex-shrink:0}#waitlist-feedback{color:var(--cyan);font-size:12px}
+@media(max-width:760px){body{padding:20px 20px 40px}header{padding:30px 0 22px}.workflow{grid-template-columns:1fr}.step-card,.waitlist-card{padding:22px}.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.metric{padding:16px}.metric-value{font-size:40px}.zone-chart{padding:16px}.zone-row{grid-template-columns:100px minmax(0,1fr) 44px;gap:10px}.zone-label{gap:8px}.zone-range{font-size:10px}.zone-percentage{font-size:12px}.brand-row{gap:14px}.logo-mark{width:56px;height:56px}.logo-mark:before{left:13px;top:13px}.logo-mark:after{left:10px;top:26px}}
+@media(max-width:440px){body{padding:16px 16px 32px}nav{font-size:11px}h1{font-size:32px}h2{font-size:16px}.eyebrow{font-size:10px}.step-card,.waitlist-card{padding:18px}.metric-grid{gap:10px}.metric{padding:12px}.metric-unit{font-size:11px}.metric dt{font-size:10px;letter-spacing:.06em}.actions{flex-direction:column}.actions button{width:100%}.zone-row{grid-template-columns:82px minmax(0,1fr) 42px;gap:8px}.zone-label{display:block}.zone-range{display:block}.zone-track{height:8px}#waitlist-form{display:block}#waitlist-form button{width:100%;margin-top:12px}.price{font-size:21px}.inference-card,.suggestion-card{padding:14px}.step-copy{font-size:14px}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important}button:hover:not(:disabled),.step-card:hover,.waitlist-card:hover,.metric:hover{transform:none}}
+</style></head>
+<body><nav aria-label="Policies"><a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></nav><header><div class="brand-row"><span class="logo-mark" aria-hidden="true"></span><div><p class="eyebrow">Ride smarter · Local pilot</p><h1 id="brand">Ride review</h1></div></div><p class="muted">Your AI cycling coach — rule-based drafts, not a training prescription.</p></header>
+<p id="status" role="status" aria-live="polite">Loading local configuration…</p>
+<main class="workflow"><section class="step-card"><h2><span class="step-number" aria-hidden="true">01</span>1. Connect Intervals.icu</h2><p class="step-copy">Your API key is stored in a dedicated local SQLite file, <strong>encrypted when a backend is available; otherwise saving is refused</strong>. It is not verified when saved. Only use this pilot on your own trusted computer. Listing or reviewing sends requests to Intervals.icu.</p><label>API key <input id="key" type="password" autocomplete="off" spellcheck="false" maxlength="4096"></label><div class="actions"><button id="connect" disabled>Save key locally</button><button id="demo" class="secondary" disabled>Try a demo review</button></div><p id="connection" class="muted"></p></section>
+<section class="step-card"><h2><span class="step-number" aria-hidden="true">02</span>2. Choose an activity</h2><p class="step-copy">Choose your recent riding window, then request one review at a time.</p><label>Recent days <input id="days" type="number" min="1" max="90" value="14"></label><button id="list" disabled>Load activities</button><ul id="activities"></ul></section>
+<section class="step-card review-card"><h2><span class="step-number" aria-hidden="true">03</span>3. Review</h2><p class="muted">Facts, rule inferences and suggestions stay separate. Missing data is not estimated.</p><div id="review">No review yet.</div></section>
+</main><section class="waitlist-card" aria-labelledby="waitlist-title"><h2 id="waitlist-title">Join the waitlist</h2><p>Make your cycling records clearer with evidence-led English coaching summaries.</p><p class="muted">Opt in to product updates. This local pilot stores your email separately on this computer; it does not send email or sync a hosted list. <a href="/privacy">Privacy and deletion</a>.</p><div class="pricing"><span class="price">$4.99/month or $39/year (save 35%)</span><span class="price-note">Launch pricing — not yet charging</span></div><form id="waitlist-form"><label>Email <input id="waitlist-email" type="email" autocomplete="email" maxlength="254" required></label><button id="waitlist-submit" type="submit" disabled>Join waitlist</button></form><p id="waitlist-feedback" role="status" aria-live="polite"></p></section>
+<script>
+'use strict';
+let token = '';
+const el = id => document.getElementById(id);
+function status(text) { el('status').textContent = text; }
+async function api(path, payload) {
+  const headers = {'X-Coach-Token': token};
+  const options = {method: payload === undefined ? 'GET' : 'POST', headers, cache: 'no-store', credentials: 'same-origin'};
+  if (payload !== undefined) { headers['Content-Type'] = 'application/json'; options.body = JSON.stringify(payload); }
+  const response = await fetch(path, options);
+  const data = await response.json();
+  if (!response.ok) throw new Error((data.message || 'Request failed') + ' [' + (data.error_code || response.status) + ']' + (data.retry_after ? ' Retry-After: ' + data.retry_after : ''));
+  return data;
+}
+async function run(action) {
+  document.querySelectorAll('button').forEach(button => button.disabled = true);
+  status('Working… No automatic retries.');
+  try { await action(); } catch (error) { status(error.message); }
+  finally { document.querySelectorAll('button').forEach(button => button.disabled = !token); }
+}
+function connection(data) {
+  const storage = data.encrypted_at_rest ? 'Encrypted storage: ' + data.key_storage_backend : 'Encrypted storage unavailable; saving is refused.';
+  const target = el('connection'); target.replaceChildren();
+  if (data.connected) {
+    addText(target, 'span', 'Connected ✓').className = 'connection-badge';
+    addText(target, 'span', 'Saved: ' + data.masked_key + ' · Not verified · ' + storage);
+  } else { target.textContent = 'No API key connected. ' + storage; }
+}
+function addText(parent, tag, text) { const node = document.createElement(tag); node.textContent = text; parent.append(node); return node; }
+function render(review, synthetic = false) {
+  const root = el('review'); root.replaceChildren();
+  if (synthetic) { const banner = addText(root, 'p', 'DEMO — synthetic sample data, not your ride'); banner.className = 'demo-banner'; banner.setAttribute('role', 'note'); }
+  addText(root, 'h3', 'Facts');
+  const metrics = review.facts.metrics || {};
+  const context = review.facts.coach_context || {};
+  const available = metric => metric && typeof metric.value === 'number' && Number.isFinite(metric.value) && metric.value >= 0;
+  const specs = [
+    ['Continuous duration', metrics.continuous_duration_s, 'min', 60, 'Valid continuous time; not elapsed or moving time.'],
+    ['Elapsed duration', metrics.elapsed_duration_s, 'min', 60],
+    ['Moving duration', metrics.moving_duration_s, 'min', 60],
+    ['Distance', metrics.distance_m, 'km', 1000],
+    ['Elevation gain', metrics.elevation_gain_m, 'm', 1],
+    ['Avg Power', metrics.average_power_w, 'W', 1],
+    ['Avg HR', metrics.average_heart_rate_bpm, 'bpm', 1],
+    ['Avg Cadence', metrics.average_cadence_rpm, 'rpm', 1],
+    ['Load', context.training_load, '', 1, 'Reported training load; not a readiness score.'],
+    ['Avg Speed', metrics.average_speed_mps, 'km/h', 1 / 3.6]
+  ].filter(spec => spec[1] !== undefined);
+  if (specs.length) {
+    const grid = addText(root, 'dl', ''); grid.className = 'metric-grid';
+    specs.forEach(([label, metric, unit, divisor, note]) => {
+      const hasValue = available(metric);
+      const badge = addText(grid, 'div', ''); badge.className = hasValue ? 'metric' : 'metric metric-missing';
+      addText(badge, 'dt', label);
+      const value = addText(badge, 'dd', '');
+      addText(value, 'span', hasValue ? (metric.value / divisor).toLocaleString('en-US', {maximumFractionDigits: 1}) : '--').className = 'metric-value';
+      if (unit) addText(value, 'span', unit).className = 'metric-unit';
+      if (!hasValue) addText(value, 'span', metric && metric.missing_reason ? metric.missing_reason : 'Insufficient data: value unavailable.').className = 'metric-note';
+      if (note) addText(value, 'span', note).className = 'metric-note';
+    });
+  }
+  const facts = addText(root, 'ul', ''); facts.className = 'fact-notes';
+  review.facts.messages.forEach(text => addText(facts, 'li', text));
+  const zones = review.facts.zones && review.facts.zones.power;
+  if (zones) {
+    // Suppress the whole chart rather than inventing a share for missing bins.
+    const bins = zones.bins;
+    const validBins = Array.isArray(bins) && bins.length > 0 && bins.every(bin =>
+      bin && Number.isInteger(bin.zone) && bin.zone > 0 &&
+      typeof bin.percentage === 'number' && Number.isFinite(bin.percentage) && bin.percentage >= 0 && bin.percentage <= 100 &&
+      typeof bin.lower_w === 'number' && Number.isFinite(bin.lower_w) && bin.lower_w >= 0 &&
+      (bin.upper_w === null || (typeof bin.upper_w === 'number' && Number.isFinite(bin.upper_w) && bin.upper_w >= bin.lower_w)));
+    if (validBins) {
+      addText(root, 'h3', 'Power zone distribution');
+      const chart = addText(root, 'div', ''); chart.className = 'zone-chart';
+      chart.setAttribute('role', 'group'); chart.setAttribute('aria-label', 'Power zone distribution, percentage of classified time');
+      bins.forEach(bin => {
+        const row = addText(chart, 'div', '');
+        row.className = 'zone-row' + (bin.zone >= 5 ? ' zone-high' : bin.zone >= 3 ? ' zone-tempo' : '');
+        const label = addText(row, 'div', ''); label.className = 'zone-label';
+        addText(label, 'strong', 'Z' + bin.zone);
+        const range = bin.upper_w === null ? bin.lower_w + 'W+' : bin.lower_w + '\u2013' + bin.upper_w + 'W';
+        addText(label, 'span', range).className = 'zone-range';
+        const track = addText(row, 'div', ''); track.className = 'zone-track'; track.setAttribute('aria-hidden', 'true');
+        const fill = addText(track, 'div', ''); fill.className = 'zone-fill'; fill.style.width = bin.percentage + '%';
+        addText(row, 'span', bin.percentage.toFixed(1) + '%').className = 'zone-percentage';
+      });
+      addText(root, 'p', 'Classified time only: ' + zones.classified_duration_s + ' s \u00b7 Excluded edges: ' + zones.excluded_edges).className = 'zone-caption';
+    }
+    (zones.limitations || []).forEach(text => { addText(root, 'p', text).className = 'disclaimer'; });
+  }
+  addText(root, 'h3', 'Rule inferences');
+  if (!review.rule_inferences.length) addText(root, 'p', 'Insufficient data for additional rule inferences.').className = 'muted';
+  review.rule_inferences.forEach(item => {
+    const card = addText(root, 'div', ''); card.className = 'inference-card';
+    addText(card, 'p', item.text);
+    addText(card, 'pre', 'Evidence: ' + JSON.stringify(item.basis_refs, null, 2)).className = 'evidence';
+    (item.limitations || []).forEach(text => { addText(card, 'p', text).className = 'evidence'; });
+  });
+  addText(root, 'h3', 'Suggestions (unconfirmed draft)');
+  review.training_suggestion.items.forEach(item => {
+    const card = addText(root, 'div', ''); card.className = 'suggestion-card';
+    addText(card, 'p', item.text);
+    if (item.basis_refs) addText(card, 'pre', 'Evidence: ' + JSON.stringify(item.basis_refs, null, 2)).className = 'evidence';
+  });
+  addText(root, 'p', review.training_suggestion.disclaimer).className = 'disclaimer';
+  const details = addText(root, 'details', ''); addText(details, 'summary', 'Structured evidence and data-quality warnings');
+  addText(details, 'pre', JSON.stringify({metrics: review.facts.metrics, context: review.facts.coach_context, warnings: review.facts.warnings}, null, 2));
+}
+el('waitlist-form').addEventListener('submit', event => {
+  event.preventDefault();
+  if (!token || el('waitlist-submit').disabled) return;
+  run(async () => {
+    el('waitlist-feedback').textContent = 'Saving your request?';
+    try {
+      const result = await api('/api/coach/waitlist', {email:el('waitlist-email').value});
+      el('waitlist-feedback').textContent = result.message;
+      el('waitlist-email').value = '';
+      status('Waitlist request recorded locally. No email sent.');
+    } catch (error) { el('waitlist-feedback').textContent = error.message; throw error; }
+  });
+});
+el('connect').addEventListener('click', () => run(async () => {
+  const key = el('key').value; el('key').value = '';
+  const data = await api('/api/coach/connect', {api_key:key}); connection(data);
+  el('activities').replaceChildren(); el('review').textContent = 'No review yet.';
+  status('Key saved locally. No verification request was sent.');
+}));
+el('demo').addEventListener('click', () => run(async () => {
+  el('review').textContent = 'Preparing synthetic demo…';
+  const result = await api('/api/coach/demo-review', {});
+  render(result.review, result.synthetic === true);
+  status('Demo ready. Synthetic sample only; no API key or external request used.');
+}));
+el('list').addEventListener('click', () => run(async () => {
+  const days = Number(el('days').value);
+  if (!Number.isInteger(days) || days < 1 || days > 90) throw new Error('Choose 1–90 days.');
+  const data = await api('/api/coach/activities?days=' + days);
+  el('activities').replaceChildren();
+  data.activities.forEach(activity => {
+    const item = addText(el('activities'), 'li', String(activity.name || activity.id) + ' · ' + String(activity.start_date_local || 'Date unavailable'));
+    const button = addText(item, 'button', 'Review');
+    button.addEventListener('click', () => run(async () => {
+      el('review').textContent = 'Loading selected activity…';
+      const result = await api('/api/coach/review', {activity_id:activity.id}); render(result.review);
+      result.warnings.forEach(warning => addText(el('review'), 'p', warning.code + ': ' + warning.field));
+      status('Draft ready. Nothing was scheduled or submitted.');
+    }));
+  });
+  status(data.activities.length ? 'Choose an activity to request a review.' : 'No activities found in this period.');
+}));
+(async () => {
+  try { const data = await api('/api/coach/config'); token = data.token; el('brand').textContent = data.brand_name; document.title = data.brand_name; connection(data); status('Ready. External requests occur only after your list/review action.'); document.querySelectorAll('button').forEach(button => button.disabled = false);
+    const params = new URLSearchParams(location.search);
+    if (params.get('autodemo') === '1') { el('demo').click(); }
+    if (params.get('autoflow') === '1' && data.connected === true) {
+      // Explicit opt-in via URL: replay the list -> first-review clicks.
+      el('list').click();
+      const pick = () => { const button = el('activities').querySelector('button');
+        if (button) { button.click(); } else { setTimeout(pick, 200); } };
+      setTimeout(pick, 300);
+    } }
+  catch (error) { status(error.message); }
+})();
+</script></body></html>

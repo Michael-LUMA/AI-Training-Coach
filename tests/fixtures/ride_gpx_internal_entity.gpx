@@ -1,0 +1,3 @@
+﻿<?xml version="1.0"?>
+<!DOCTYPE gpx [<!ENTITY a "12345"><!ENTITY b "&a;&a;&a;&a;">]>
+<gpx><trk><trkseg><trkpt lat="0" lon="0"><ele>&b;</ele></trkpt></trkseg></trk></gpx>
