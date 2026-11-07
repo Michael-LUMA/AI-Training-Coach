@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
@@ -12,9 +12,9 @@
 <div id="simulated-banner" hidden role="status">SIMULATED · 合成心率演示，不是真实骑行记录</div>
 <nav><a href="/">AI Ride Coach</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></nav>
 <main>
-<p class="eyebrow">Local voice · Honest memory</p>
+<p class="eyebrow">Mark · Local voice · Honest memory</p>
 <h1>记录此刻，<br>不替你做判断。</h1>
-<p class="muted">心率带直连，本地语音，自定义阈值提醒。没有目标区间就不推算、不提醒越区。</p>
+<p class="muted">我是 Mark。心率带直连，本地语音，自定义阈值提醒。没有目标区间就不推算、不提醒越区。</p>
 <p id="compatibility" class="muted">Android Chrome 支持 Web Bluetooth；iOS Safari 不支持。需 HTTPS 或本机 localhost 安全上下文。手机不能用电脑的 127.0.0.1 地址连接。</p>
 <div class="card">
 <h2>01 / 设定记录</h2>
@@ -30,7 +30,7 @@
 <script>
 'use strict';
 // Device adapter only: ride_memory.py owns the reusable versioned memory contract.
-const PERSONA = Object.freeze({version:'ride-persona/1', above:'当前心率高于你设置的上限。', below:'当前心率低于你设置的下限。', disconnected:'心率信号已断开，当前读数不可用。', short:'记录太短，无法总结。'});
+const PERSONA = Object.freeze({version:'ride-persona/2', name:'Mark', above:'心率超过你设的上限了。', below:'心率低于你设的下限了。', disconnected:'心率信号断了，我看不到读数。', short:'记录太短，我还总结不了。'});
 const SERVICE = 0x180D, CHARACTERISTIC = 0x2A37;
 const OUTSIDE_DWELL_MS = 10000, ALERT_COOLDOWN_MS = 60000, STALE_MS = 5000, MAX_SERIES = 20000;
 const SIMULATED = new URLSearchParams(location.search).get('simulate') === '1';
