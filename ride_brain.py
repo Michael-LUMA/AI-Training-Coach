@@ -1,4 +1,4 @@
-﻿"""Mark's bounded Chinese post-ride language layer.
+"""Mark's bounded Chinese post-ride language layer.
 
 中文摘要：仅发送已校验聚合事实；中英文数字按维度核验，整稿拒绝时静默回退模板。
 No environment lookup, persistence, retries or logging. The shared HTTP adapter
@@ -28,6 +28,11 @@ SYSTEM_PROMPT = """你是 Mark，像同行的朋友，用第一人称“我”�
 可以建议下次记录缺失的数据。不要编号、日期或使用隐含数量的修辞。
 每个数字（包括中文数字）都必须对应事实及其单位；允许秒/分钟/小时等价
 换算与按相同小数位四舍五入。不得用秒数冒充心率或样本数。
+口吻要求：像朋友骑完车随口聊，一两句短句为主，最多三句；时长一律用
+display 里的分钟数（duration_min/previous_duration_min/duration_diff_min），
+心率差异用 differences 里的整数；不堆数字，挑最有话说的一两个。
+语气范例（数字仅示例，必须用本次事实里的真实数字）：
+{"speech":"今天骑了42分钟，平均心率131，比上次低4，挺稳的一次。"}
 source=simulated 是合成演示，绝不能当成真实骑行；有模拟来源须明确说模拟。
 只输出 JSON {"speech":"..."}，speech 非空且最多300字，不要额外字段。
 """
@@ -121,23 +126,43 @@ def _summary(value):
     return result,numbers
 
 
+def _friendly_minutes(seconds):
+    """Whole minutes as int, else one-decimal float; 42 not 42.0."""
+    minutes=(Decimal(str(seconds))/60).quantize(Decimal('0.1'))
+    return int(minutes) if minutes==minutes.to_integral() else float(minutes)
+
+
 def _facts(session, previous_summary):
     memory=validate_session(session)  # Detached before projecting; never send raw samples/notes/IDs.
     summary,numbers=_summary(memory['summary'])
     count=sum('hr' in point for point in memory['series'])
     facts={'summary':summary,'sample_count':count,'source':memory['source']}
     numbers.append((Decimal(count),None))
+    display={}
+    if summary.get('duration_s') is not None:
+        display['duration_min']=_friendly_minutes(summary['duration_s'])
+        numbers.append((Decimal(str(display['duration_min'])),'min'))
     if previous_summary is not None:
         previous,extra=_summary(previous_summary);numbers.extend(extra)
         facts['previous_summary']=previous;facts['comparison_count']=2
         numbers.append((Decimal(2),None))
+        if previous.get('duration_s') is not None:
+            display['previous_duration_min']=_friendly_minutes(previous['duration_s'])
+            numbers.append((Decimal(str(display['previous_duration_min'])),'min'))
         differences={}
         for key in ('avg_hr','duration_s'):
             if summary.get(key) is not None and previous.get(key) is not None:
                 delta=Decimal(str(summary[key]))-Decimal(str(previous[key]))
-                differences[key]=float(delta)
-                numbers.extend([(delta,'bpm' if key=='avg_hr' else 's'),(abs(delta),'bpm' if key=='avg_hr' else 's')])
+                unit='bpm' if key=='avg_hr' else 's'
+                differences[key]=int(delta) if delta==delta.to_integral() else float(delta)
+                numbers.extend([(delta,unit),(abs(delta),unit)])
+        if 'duration_s' in differences:
+            delta_min=_friendly_minutes(abs(Decimal(str(summary['duration_s']))-Decimal(str(previous['duration_s']))))
+            display['duration_diff_min']=delta_min
+            numbers.append((Decimal(str(delta_min)),'min'))
         facts['differences']=differences
+    if display:
+        facts['display']=display
     return facts,numbers
 
 
