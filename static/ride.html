@@ -31,14 +31,14 @@
 <p id="status" role="status" aria-live="polite">准备记录。语音需点击开始激活；请先在静止状态连接设备。</p>
 </div>
 <div class="grid"><section class="card"><span id="connection" class="pill">未连接</span><p><span id="heart-rate" class="hr">—</span> <span class="muted">bpm</span></p><p id="zone-state">未设置目标区间</p><p id="elapsed" class="muted">00:00</p></section><section class="card"><h2>02 / 原始时间轴</h2><p class="muted">仅展示最近 60 个实际点。断线标记 gap，不插值、不用旧读数补齐。超过 5 秒没有新读数也标记信号缺口。</p><pre id="timeline" aria-label="原始心率与断线记录"></pre></section></div>
-<section class="card"><h2>03 / 骑后一句话</h2><p id="summary">结束后根据记录生成。没有数据的部分保持缺失。</p><section id="brain-card" hidden aria-labelledby="brain-heading"><h3 id="brain-heading">Mark 想了想</h3><p id="brain-speech"></p><button id="brain-listen" type="button" class="secondary">听 Mark 说</button></section><p id="memory-compare" aria-live="polite" hidden></p><p id="compare-source" class="offline" hidden></p><p id="save-status" role="status" aria-live="polite">本片存储为 ephemeral：重启或重新部署可能丢失，请保留下载备份。</p><div class="row"><button id="retry-upload" type="button" class="secondary">重试上传本机待传记录</button><button id="download-session" type="button" class="secondary" disabled>下载本次 JSON 备份</button></div></section>
+<section class="card"><h2>03 / 骑后一句话</h2><p id="summary">结束后根据记录生成。没有数据的部分保持缺失。</p><section id="brain-card" hidden aria-labelledby="brain-heading"><h3 id="brain-heading">Mark 想了想</h3><p id="brain-speech"></p><button id="brain-listen" type="button" class="secondary">听 Mark 说</button></section><p id="memory-compare" aria-live="polite" hidden></p><p id="compare-source" class="offline" hidden></p><p id="save-status" role="status" aria-live="polite">本片存储为 ephemeral：重启或重新部署可能丢失，请保留下载备份。</p><div class="row"><button id="retry-upload" type="button" class="secondary">重试上传本机待传记录</button><button id="download-session" type="button" class="secondary" disabled>下载本次 JSON 备份</button><button id="download-gpx" type="button" class="secondary" disabled>下载 GPX 备份（无 GPS）</button></div><p class="muted">GPX 备份只含心率时间轴与断线标记，没有 GPS 坐标；用于存档与复盘，不能直接导入需要轨迹的平台。</p></section>
 <footer><p>Record only. Not medical advice.</p><p>语音只报告记录和你设定的阈值，不提供训练处方或效果承诺。后台、锁屏、系统省电或浏览器挂起可能停止 BLE、计时或语音；本页不是可靠的安全报警器。请勿在骑行中操作屏幕。</p><p>心率数据保存在当前设备及本服务的临时目录；共用电脑请勿视为多用户私密空间。模拟来源会随记录保留，绝不转为真实来源。</p><p>AI Ride Coach · Early access · <a href="?simulate=1">打开模拟模式</a></p></footer>
 </main>
 <script>
 'use strict';
 // Device adapter only: ride_memory.py owns the reusable versioned memory contract.
 const PERSONA = Object.freeze({
-  version:'ride-persona/7', name:'Mark', above:'心率超过你设的上限了。', below:'心率低于你设的下限了。', disconnected:'心率信号断了，我看不到读数。', short:'记录太短，我还总结不了。',
+  version:'ride-persona/8', name:'Mark', above:'心率超过你设的上限了。', below:'心率低于你设的下限了。', disconnected:'心率信号断了，我看不到读数。', short:'记录太短，我还总结不了。',
   recall:parts=>'我记得上次'+parts.join('，')+'。记录还很少，这不算趋势。',
   recall_no_history:'我还没有可回放的历史记录。',
   compare_better:(label,amount,unit)=>'我看到'+label+'比上次'+(unit==='分钟' ? '少' : '低')+amount+unit+'。',
@@ -53,6 +53,11 @@ const PERSONA = Object.freeze({
   wakelock_unavailable:'此浏览器可能熄屏断连，请保持屏幕常亮',
   fuel:'骑了45分钟了，喝口水、补点吃的。',
   fuel_again:'又到补给的点了，别忘了喝。',
+  milestone:(minutes)=>'骑了'+minutes+'分钟了。',
+  milestone_avg:(avg)=>'平均心率'+avg+'，',
+  milestone_within:'在区间内。', milestone_above:'高于上限。', milestone_below:'低于下限。',
+  milestone_compare_flat:'和上次差不多。',
+  milestone_compare:(direction,amount)=>'比上次'+direction+amount+'。',
   weekly_title:'本周', weekly_listen:'听 Mark 说这星期', weekly_empty:'还没有记录',
   weekly_no_rides:'这周还没骑车，随时开骑我都在。',
   weekly_current:(count,minutes)=>'这周骑了'+count+'次，一共'+minutes+'分钟。',
@@ -80,9 +85,18 @@ let weeklyFacts = null, weeklyWeekStart = '', weeklyRequest = 0;
 let demoPlaying = false, demoElapsed = 0, demoStep = 0, demoProfile = [];
 let screenLock = null, wakePending = false, wakeEpoch = 0, wakeWarningShown = false;
 let lastCoachSpeech = -Infinity, speechKind = null, nextFuelSeconds = 2700;
-const COACH_SPEECH_GAP_MS = 20000;
+let nextMilestoneSeconds = 1800, previousRideAvgHr = null;
+const COACH_SPEECH_GAP_MS = 20000, MILESTONE_STEP_S = 1800;
 const PENDING_PREFIX = 'luma.ride.pending.';
 function state(text){$('status').textContent = text;}
+// Best-effort media ducking: ask the platform to duck music while Mark speaks.
+// navigator.audioSession exists only on newer Chromium; elsewhere this is a quiet no-op.
+function duckAudio(on){
+  try {
+    const audioSession = navigator.audioSession;
+    if (audioSession && 'type' in audioSession) audioSession.type = on ? 'transient' : 'auto';
+  } catch (_) { /* ducking is best effort; speech itself must never break */ }
+}
 // One pending request at a time; stale requests are released after hide/end.
 function warnWakeLock(){
   if(wakeWarningShown)return;
@@ -120,9 +134,10 @@ function speak(text, kind='other', enqueue=false){
   try {
     if(!enqueue)cancelSpeech();
     const utterance = new SpeechSynthesisUtterance(text); utterance.lang = 'zh-CN'; utterance.rate = 1.0;
-    speechKind=kind;utterance.onend=utterance.onerror=()=>{if(speechKind===kind)speechKind=null;};
+    speechKind=kind;duckAudio(true);
+    utterance.onend=utterance.onerror=()=>{if(speechKind===kind)speechKind=null;duckAudio(false);};
     window.speechSynthesis.speak(utterance); return true;
-  }catch (_) {state('系统语音不可用；文字记录仍可继续。'); return false;}
+  }catch (_) {state('系统语音不可用；文字记录仍可继续。');duckAudio(false); return false;}
 }
 function noteAndSpeak(text,kind='other'){
   if(session && session.coach_notes.length < 199)session.coach_notes.push(text);
@@ -135,6 +150,31 @@ function remindFuel(){
   if(!active || elapsedSeconds()<nextFuelSeconds || !coachCanSpeak())return;
   noteAndSpeak(nextFuelSeconds===2700 ? PERSONA.fuel : PERSONA.fuel_again,'fuel');
   nextFuelSeconds+=2700;
+}
+// Time-based milestones (Oakley-style): every 30 minutes Mark reports the ride
+// so far and, when memory exists, how it compares to the previous ride's average.
+function currentAvgHr(){
+  const hrs=session.series.filter(p=>'hr' in p).map(p=>p.hr);
+  return hrs.length ? hrs.reduce((a,b)=>a+b,0)/hrs.length : null;
+}
+function buildMilestoneText(minutes){
+  let text=PERSONA.milestone(minutes);
+  const avg=currentAvgHr();
+  if(avg===null)return text;
+  text+=PERSONA.milestone_avg(memoryValue(avg));
+  if(target)text+=avg<target.lower ? PERSONA.milestone_below : avg>target.upper ? PERSONA.milestone_above : PERSONA.milestone_within;
+  else text=text.slice(0,-1)+'。';
+  if(memoryNumber(previousRideAvgHr)){
+    const delta=avg-previousRideAvgHr, tolerance=previousRideAvgHr*.03;
+    text+=Math.abs(delta)<=tolerance+Number.EPSILON*Math.max(1,avg,previousRideAvgHr)*4 ? PERSONA.milestone_compare_flat : PERSONA.milestone_compare(delta<0?'低':'高',memoryValue(Math.abs(delta)));
+  }
+  return text;
+}
+function remindMilestone(){
+  if(!active || elapsedSeconds()<nextMilestoneSeconds || !coachCanSpeak())return;
+  const minutes=Math.round(nextMilestoneSeconds/60);
+  nextMilestoneSeconds+=MILESTONE_STEP_S;
+  noteAndSpeak(buildMilestoneText(minutes),'milestone');
 }
 // Metadata only; no raw series request and no inference from missing fields.
 function memoryNumber(value){return typeof value === 'number' && Number.isFinite(value) && value >= 0;}
@@ -209,6 +249,8 @@ async function loadRecall(){
     const memories=await fetchMemories();
     renderWeekly(memories);
     if(!memories.length){console.debug(PERSONA.recall_no_history);return;}
+    const latestAvg=memories[0].summary && memories[0].summary.avg_hr;
+    previousRideAvgHr=memoryNumber(latestAvg) ? latestAvg : null;
     recallText=recallMemory(memories[0]);
     const notice=sourceNotice([memories[0]]);
     $('memory-recall').textContent=recallText;$('memory-source').textContent=notice;$('memory-source').hidden=!notice;$('memory-card').hidden=false;
@@ -305,7 +347,7 @@ function receiveHR(hr, now = performance.now()){
   previous = {t:point.t, hr, mono:now}; lastSignal = now; gapOpen = false;
   $('heart-rate').textContent = String(hr); $('connection').textContent = session.source === 'simulated' ? 'SIMULATED · 合成信号' : 'BLE · 实时读数'; $('connection').classList.remove('offline');
   const kind = zone(hr); $('zone-state').textContent = kind === null ? '未设置目标区间，仅记录' : kind === 'within' ? '位于自定义范围内' : kind === 'above' ? '高于自定义上限' : '低于自定义下限';
-  remindFuel();
+  remindFuel(); remindMilestone();
   if (kind === null || kind === 'within') {resetOutside(); return;}
   if (outsideKind !== kind) {outsideSince = now; outsideKind = kind; if(speechKind==='zone')cancelSpeech();}
   if (now - outsideSince >= OUTSIDE_DWELL_MS && now - lastAlert >= ALERT_COOLDOWN_MS && coachCanSpeak(now)) {
@@ -328,10 +370,10 @@ function begin(options={}){
   if(options.source)session.source=options.source;
   if(options.samplesHz)session.samples_hz=options.samplesHz;
   $('demo-start').disabled=true;
-  nextFuelSeconds=2700;lastCoachSpeech=-Infinity;
+  nextFuelSeconds=2700;nextMilestoneSeconds=MILESTONE_STEP_S;lastCoachSpeech=-Infinity;
   active = true; void requestScreenLock(); previous = null; lastSignal = null; gapOpen = false; outsideSince = null; outsideKind = null; lastAlert = -Infinity; alerts = 0; totals = {below:0, within:0, above:0};
   $('lower').disabled = $('upper').disabled = true; $('start-ride').disabled = true; $('end-ride').disabled = false; $('timeline').textContent = ''; $('summary').textContent = '记录中，结束后总结。';
-  timer = setInterval(()=>{if (!active) return; remindFuel(); const s=Math.floor(elapsedSeconds()); $('elapsed').textContent = String(Math.floor(s/60)).padStart(2,'0') + ':' + String(s%60).padStart(2,'0'); if (lastSignal !== null && performance.now()-lastSignal > STALE_MS) markGap();}, 500);
+  timer = setInterval(()=>{if (!active) return; remindFuel(); remindMilestone(); const s=Math.floor(elapsedSeconds()); $('elapsed').textContent = String(Math.floor(s/60)).padStart(2,'0') + ':' + String(s%60).padStart(2,'0'); if (lastSignal !== null && performance.now()-lastSignal > STALE_MS) markGap();}, 500);
 }
 async function connectBLE(){
   if (!window.isSecureContext || !navigator.bluetooth) throw new Error('此浏览器不能连接 BLE：请使用 HTTPS 下的 Android Chrome；iOS Safari 不支持 Web Bluetooth。');
@@ -423,6 +465,38 @@ function retain(memory){
   try {localStorage.setItem(PENDING_PREFIX+memory.id, JSON.stringify(memory)); return true;}
   catch (_) {$('save-status').textContent='浏览器本地存储不可用或已满；记录仍在本页内存，请立即下载 JSON 备份。关闭页面会丢失未保存数据。'; return false;}
 }
+// Sensor-only GPX export: heart-rate timeline + honest gap markers, no GPS track.
+// Shares the urn:luma:ride-capture:1 extension shape with the capture page builder.
+function buildRideGpx(memory){
+  if(!memory || memory.schema_version!=='luma-ride-memory/1' || !Array.isArray(memory.series))throw new Error('记录结构无效，不能生成 GPX');
+  const startedMs=Date.parse(memory.started_at);
+  if(!Number.isFinite(startedMs))throw new Error('开始时间无效，不能生成 GPX');
+  const escapeXml=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));
+  const iso=t=>new Date(startedMs+Math.round(t*1000)).toISOString();
+  const lines=['<?xml version="1.0" encoding="UTF-8"?>',
+    '<gpx version="1.1" creator="Mark Ride" xmlns="http://www.topografix.com/GPX/1/1" xmlns:luma="urn:luma:ride-capture:1" xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1">',
+    '<metadata><name>无 GPS 轨迹的心率记录</name><desc>仅心率时间轴；无经纬度、距离、爬升。断线标 gap，不插值。不能直接导入需要 GPS 轨迹的平台。</desc><time>'+new Date(startedMs).toISOString()+'</time></metadata>',
+    '<extensions><luma:sensorSeries schema_version="'+escapeXml(memory.schema_version)+'" gps="none" source="'+escapeXml(memory.source || '')+'">'];
+  let count=0, inSegment=false, previousT=-1;
+  for(const point of memory.series){
+    if(!point || typeof point.t!=='number' || !Number.isFinite(point.t) || point.t<0)throw new Error('采样时间无效，不能生成 GPX');
+    if(point.t<=previousT)throw new Error('采样时间未递增，不能生成 GPX');
+    previousT=point.t;
+    if('hr' in point){
+      if(!Number.isInteger(point.hr) || point.hr<0 || point.hr>65535)throw new Error('心率值无效，不能生成 GPX');
+      if(!inSegment){lines.push('<luma:segment>');inSegment=true;}
+      if(++count>MAX_SERIES)throw new Error('采样数超过上限，不能生成 GPX');
+      lines.push('<luma:sample time="'+iso(point.t)+'"><gpxtpx:hr>'+point.hr+'</gpxtpx:hr></luma:sample>');
+    }else{
+      if(inSegment){lines.push('</luma:segment>');inSegment=false;}
+      lines.push('<luma:gap time="'+iso(point.t)+'" reason="signal_gap"/>');
+    }
+  }
+  if(inSegment)lines.push('</luma:segment>');
+  if(!count)throw new Error('没有心率采样，不生成空 GPX');
+  lines.push('</luma:sensorSeries></extensions></gpx>');
+  return lines.join('\n');
+}
 async function getToken(){
   const response=await fetch('/api/coach/config',{cache:'no-store'}); if(!response.ok) throw new Error('无法获取会话令牌');
   const config=await response.json(); if(typeof config.token !== 'string' || !config.token) throw new Error('会话令牌缺失'); token=config.token;
@@ -443,9 +517,10 @@ function finishRide(reason=''){
   if(!active)return;
   const memory=buildMemory(); active=false;demoPlaying=false;$('demo-start').disabled=false; clearInterval(timer);clearInterval(simulator);releaseScreenLock();resetOutside();
   if(device && device.gatt.connected)device.gatt.disconnect();
+  if(memoryNumber(memory.summary.avg_hr))previousRideAvgHr=memory.summary.avg_hr;
   $('end-ride').disabled=true;$('reconnect').disabled=true;$('start-ride').disabled=false;$('lower').disabled=$('upper').disabled=false;
   const text=summarize(memory);$('summary').textContent=text;if(memory.coach_notes.length<200)memory.coach_notes.push(text);speak(text,'summary',speechKind==='fuel');
-  lastSession=memory;$('download-session').disabled=false;$('connection').textContent='记录已结束';state(reason || '记录结束。平均值为实际样本算术平均，不推断训练效果。');
+  lastSession=memory;$('download-session').disabled=false;$('download-gpx').disabled=false;$('connection').textContent='记录已结束';state(reason || '记录结束。平均值为实际样本算术平均，不推断训练效果。');
   const retained=retain(memory); void upload(memory,retained);
 }
 $('ride-weekly-listen').addEventListener('click',listenWeekly);
@@ -465,6 +540,13 @@ $('retry-upload').addEventListener('click',async()=>{
   finally{$('retry-upload').disabled=false;}
 });
 $('download-session').addEventListener('click',()=>{if(!lastSession)return;const url=URL.createObjectURL(new Blob([JSON.stringify(lastSession,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download=lastSession.id+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
+$('download-gpx').addEventListener('click',()=>{
+  if(!lastSession)return;
+  try {
+    const url=URL.createObjectURL(new Blob([buildRideGpx(lastSession)],{type:'application/gpx+xml'}));
+    const link=document.createElement('a');link.href=url;link.download=lastSession.id+'.gpx';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }catch(error){$('save-status').textContent='GPX 生成失败：'+error.message+'。JSON 备份不受影响。';}
+});
 window.addEventListener('beforeunload',event=>{if(active){event.preventDefault();event.returnValue='';}});
 $('simulated-banner').hidden=!SIMULATED;
 if(DEMO){

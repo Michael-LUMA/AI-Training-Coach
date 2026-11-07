@@ -93,7 +93,7 @@ class RideMemoryUI(unittest.TestCase):
         return json.loads(result.stdout)
 
     def test_page_strings_and_existing_csp_with_mock_store(self):
-        for text in ('Mark 的记忆', '这不算趋势', '听 Mark 说', 'ride-persona/7', "name:'Mark'",
+        for text in ('Mark 的记忆', '这不算趋势', '听 Mark 说', 'ride-persona/8', "name:'Mark'",
                      'recall:', 'recall_no_history:', 'compare_better:', 'compare_worse:',
                      'compare_flat:', 'no_compare:', '两次记录还说明不了趋势', 'Record only. Not medical advice.'):
             with self.subTest(text=text):
@@ -140,7 +140,7 @@ class RideMemoryUI(unittest.TestCase):
         result = self.run_js("await $('start-ride').click(); return {spoken:_spoken,version:session.persona_version};", history=[metadata()], simulate=True)
         self.assertEqual(len(result['spoken']), 1)
         self.assertIn('我记得', result['spoken'][0])
-        self.assertEqual(result['version'], 'ride-persona/7')
+        self.assertEqual(result['version'], 'ride-persona/8')
         result = self.run_js("$('memory-listen').click(); await $('start-ride').click(); return _spoken;", history=[metadata()], simulate=True)
         self.assertEqual(len(result), 2)
         self.assertIn('我记得', result[0])
@@ -255,7 +255,7 @@ class RideMemoryUI(unittest.TestCase):
 
 
     def test_demo_strings_source_notice_and_version(self):
-        for text in ('demo_notice:', 'demo_start:', '看 Mark 演示', 'ride-persona/7',
+        for text in ('demo_notice:', 'demo_start:', '看 Mark 演示', 'ride-persona/8',
                      '这是一段合成的 45 分钟骑行，90 秒放完', 'Mark 说的每句话都是真实逻辑，数据是假的。'):
             self.assertIn(text,self.html)
         result=self.run_js("return {notice:$('demo-notice').textContent,hidden:$('demo-notice').hidden,button:$('demo-start').hidden,bar:$('simulated-banner').hidden,startDisabled:$('start-ride').disabled,spoken:_spoken};",demo=True)
@@ -275,7 +275,7 @@ class RideMemoryUI(unittest.TestCase):
         """,demo=True)
         from ride_memory import validate_session
         item=validate_session(result['uploaded'])
-        self.assertEqual(item['source'],'simulated');self.assertEqual(item['persona_version'],'ride-persona/7')
+        self.assertEqual(item['source'],'simulated');self.assertEqual(item['persona_version'],'ride-persona/8')
         self.assertEqual(item['summary']['duration_s'],2700)
         self.assertEqual(item['series'][-1]['t'],2700)
         self.assertEqual(item['samples_hz'],1/30)
@@ -379,7 +379,7 @@ class RideMemoryUI(unittest.TestCase):
             self.assertEqual(result['inputs'],[lower,upper])
 
     def test_s5_strings_and_manifest_link(self):
-        for text in ("wakelock_unavailable:", "fuel:", "fuel_again:", "ride-persona/7",
+        for text in ("wakelock_unavailable:", "fuel:", "fuel_again:", "ride-persona/8",
                      "骑了45分钟了，喝口水、补点吃的。", "又到补给的点了，别忘了喝。",
                      'rel="manifest"', "ride.webmanifest"):
             with self.subTest(text=text):
@@ -418,6 +418,99 @@ class RideMemoryUI(unittest.TestCase):
         """, simulate=True)
         self.assertIn('请保持屏幕常亮', result['status'])
         self.assertTrue(result['active'])
+
+    def test_s7_strings_milestone_gpx_and_ducking(self):
+        for text in ("milestone:", "milestone_compare_flat:", "ride-persona/8",
+                     "buildRideGpx", "下载 GPX 备份", "audioSession", "signal_gap",
+                     "不能直接导入需要 GPS 轨迹的平台"):
+            with self.subTest(text=text):
+                self.assertIn(text, self.html)
+
+    def test_milestone_speaks_at_30min_with_memory_comparison(self):
+        result = self.run_js("""
+          $('lower').value='100';$('upper').value='140';
+          await $('start-ride').click();
+          await _advance(1810000);
+          return {spoken:_spoken, notes:session ? session.coach_notes : []};
+        """, history=[metadata(avg=130)], simulate=True)
+        milestones = [t for t in result['spoken'] if '骑了30分钟了' in t]
+        self.assertEqual(len(milestones), 1)
+        self.assertIn('在区间内。', milestones[0])
+        self.assertIn('和上次差不多。', milestones[0])
+        self.assertIn('平均心率', milestones[0])
+        self.assertTrue(any('骑了30分钟了' in n for n in result['notes']))
+
+    def test_milestone_defers_until_speech_gap_allows(self):
+        result = self.run_js("""
+          await $('start-ride').click();
+          await _advance(1799000);
+          window.speechSynthesis.speaking = true;
+          await _advance(20000);
+          const during=_spoken.filter(t=>t.includes('分钟了'));
+          window.speechSynthesis.speaking = false;
+          await _advance(30000);
+          const after=_spoken.filter(t=>t.includes('分钟了'));
+          return {during, after};
+        """, simulate=True)
+        self.assertEqual(result['during'], [])
+        self.assertEqual(len(result['after']), 1)
+        self.assertTrue(result['after'][0].startswith('骑了30分钟了。'))
+
+    def test_build_ride_gpx_contract_and_wellformed_xml(self):
+        result = self.run_js("""
+          const memory={schema_version:'luma-ride-memory/1',id:'ride-x',started_at:'2026-11-07T08:00:00.000Z',source:'ble_gatt_0x180d',
+            series:[{t:0,hr:120},{t:5,gap:true},{t:6,hr:121},{t:7,hr:122}]};
+          const gpx=buildRideGpx(memory);
+          let emptyErr='',badHr='',badOrder='';
+          try{buildRideGpx({schema_version:'luma-ride-memory/1',started_at:memory.started_at,series:[{t:0,gap:true}]});}catch(e){emptyErr=e.message;}
+          try{buildRideGpx({schema_version:'luma-ride-memory/1',started_at:memory.started_at,series:[{t:0,hr:12.5}]});}catch(e){badHr=e.message;}
+          try{buildRideGpx({schema_version:'luma-ride-memory/1',started_at:memory.started_at,series:[{t:2,hr:120},{t:1,hr:121}]});}catch(e){badOrder=e.message;}
+          return {gpx,emptyErr,badHr,badOrder};
+        """)
+        gpx = result['gpx']
+        self.assertTrue(gpx.startswith('<?xml'))
+        self.assertIn('<gpxtpx:hr>120</gpxtpx:hr>', gpx)
+        self.assertIn('reason="signal_gap"', gpx)
+        self.assertIn('time="2026-11-07T08:00:05.000Z"', gpx)
+        self.assertEqual(gpx.count('<luma:segment>'), 2)
+        self.assertIn('没有心率采样', result['emptyErr'])
+        self.assertIn('心率值无效', result['badHr'])
+        self.assertIn('未递增', result['badOrder'])
+        import xml.etree.ElementTree as ET
+        root = ET.fromstring(gpx)
+        self.assertEqual(root.tag, '{http://www.topografix.com/GPX/1/1}gpx')
+
+    def test_gpx_download_button_uses_finished_session(self):
+        result = self.run_js("""
+          let captured=null;
+          Blob=function(parts){captured=parts[0];};
+          URL={createObjectURL(){return 'blob:fake';},revokeObjectURL(){}};
+          let link=null;
+          document.createElement=()=>{link={click(){this.clicked=true;}};return link;};
+          await $('start-ride').click();
+          await _advance(5000);
+          $('end-ride').click();await _flush();
+          const disabled=$('download-gpx').disabled;
+          $('download-gpx').click();
+          return {disabled, gpx:captured, name:link ? link.download : '', status:$('save-status').textContent};
+        """, simulate=True)
+        self.assertFalse(result['disabled'])
+        self.assertIn('<gpxtpx:hr>', result['gpx'])
+        self.assertTrue(result['name'].endswith('.gpx'))
+        self.assertNotIn('GPX 生成失败', result['status'])
+
+    def test_ducking_toggles_audio_session_and_survives_denial(self):
+        result = self.run_js("""
+          navigator.audioSession={type:'auto'};
+          $('memory-listen').click();
+          const duringType=navigator.audioSession.type;
+          navigator.audioSession={get type(){return 'auto';},set type(v){throw new Error('denied');}};
+          let survived=true;
+          try{speak('测试');}catch(e){survived=false;}
+          return {duringType, survived};
+        """, history=[metadata()])
+        self.assertEqual(result['duringType'], 'transient')
+        self.assertTrue(result['survived'])
 
 
 if __name__ == '__main__':
