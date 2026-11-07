@@ -297,11 +297,15 @@ class RideMemoryUI(unittest.TestCase):
         self.assertEqual(item['samples_hz'],1/30)
         self.assertEqual(result['calls'],91);self.assertEqual(len(item['series']),91)
         self.assertEqual(item['summary']['gaps'],0);self.assertEqual(item['summary']['alerts'],1)
-        self.assertEqual(item['series'][0],{'t':0,'hr':95})
-        self.assertEqual(item['series'][6],{'t':180,'hr':152})
-        self.assertEqual(item['series'][26],{'t':780,'hr':152})
-        self.assertEqual(item['series'][32],{'t':960,'hr':120})
-        self.assertEqual(item['series'][-1],{'t':2700,'hr':124})
+        for index, expected in ((0, {'t':0,'hr':95}), (6, {'t':180,'hr':152}), (26, {'t':780,'hr':152}),
+                                (32, {'t':960,'hr':120}), (-1, {'t':2700,'hr':124})):
+            with self.subTest(index=index):
+                self.assertEqual({key: item['series'][index][key] for key in ('t','hr')}, expected)
+                self.assertTrue(60 <= item['series'][index]['cad'] <= 120)
+                self.assertTrue(0 <= item['series'][index]['pwr'] <= 400)
+        self.assertIsNotNone(item['summary']['avg_power'])
+        self.assertIsNotNone(item['summary']['avg_cadence'])
+        self.assertGreater(item['summary']['max_power'], 0)
         self.assertEqual(sum(item['summary']['time_in_zone_s'].values()),2700)
         self.assertTrue(result['locked']);self.assertTrue(result['enabled']);self.assertFalse(result['active'])
         self.assertEqual(result['ble'],0);self.assertFalse(result['bar']);self.assertEqual(result['inputs'],['',''])
@@ -309,6 +313,27 @@ class RideMemoryUI(unittest.TestCase):
         self.assertIn('/api/coach/ride/review',result['endpoints'])
         self.assertGreaterEqual(result['endpoints'].count('/api/coach/ride/sessions'),2)
         self.assertIn('心率超过你设的上限了。',result['spoken'])
+        self.assertIn('平均功率', '。'.join(result['spoken']))  # milestone carries demo watts/rpm
+        self.assertIn('样本平均功率', result['summary'])
+
+    def test_demo_aux_channels_are_deterministic_and_reach_exports(self):
+        scenario = """
+          $('demo-start').click();await _advance(90000);
+          const memory=JSON.parse(_calls.find(c=>c.url==='/api/coach/ride/session').body);
+          return {series:memory.series,auxLive:$('aux-live').textContent,gpx:buildRideGpx(memory)};
+        """
+        a = self.run_js(scenario, demo=True)
+        b = self.run_js(scenario, demo=True)
+        self.assertEqual(a['series'], b['series'])  # no RNG anywhere in the demo script
+        hr_points = [point for point in a['series'] if 'hr' in point]
+        self.assertEqual(len(hr_points), 91)
+        for point in hr_points:
+            self.assertTrue(60 <= point['cad'] <= 120)
+            self.assertTrue(0 <= point['pwr'] <= 400)
+        self.assertIn('踏频', a['auxLive'])
+        self.assertIn('功率', a['auxLive'])
+        self.assertIn('<gpxtpx:cad>', a['gpx'])
+        self.assertIn('<luma:pwr>', a['gpx'])
 
     def test_demo_dwell_and_cooldown_use_playback_seconds(self):
         result=self.run_js("""

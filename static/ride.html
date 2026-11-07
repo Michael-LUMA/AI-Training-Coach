@@ -693,12 +693,26 @@ function demoHeartRate(scriptSeconds){
   }
   return demoProfile[demoProfile.length-1][1];
 }
+// Synthetic aux channels for the DEMO script only: deterministic functions of
+// script time (no RNG, so demo runs are byte-identical), SIMULATED like the HR.
+function demoCadence(scriptSeconds){
+  return Math.round(88+6*Math.sin(scriptSeconds/37)+2*Math.sin(scriptSeconds/11));
+}
+function demoPower(scriptSeconds){
+  return Math.max(0,Math.round((demoHeartRate(scriptSeconds)-55)*1.9+8*Math.sin(scriptSeconds/17)));
+}
+function demoFeedAux(scriptSeconds){
+  latestCad={value:demoCadence(scriptSeconds),mono:performance.now()};
+  latestPwr={value:demoPower(scriptSeconds),mono:performance.now()};
+  drawAuxLive();
+}
 function tickDemo(){
   if(!active || !demoPlaying)return;
   // If the browser was suspended, retain a gap at the PREVIOUS script position.
   // This avoids inventing live coverage or pushing the final point past 2700s.
   if(lastSignal!==null && performance.now()-lastSignal>STALE_MS)markGap();
   demoStep+=1;demoElapsed=Math.min(DEMO_DURATION_S,demoStep*DEMO_STEP_S);
+  demoFeedAux(demoElapsed);
   receiveHR(demoHeartRate(demoElapsed));
   const minutes=Math.floor(demoElapsed/60), seconds=demoElapsed%60;
   $('elapsed').textContent=String(minutes).padStart(2,'0')+':'+String(seconds).padStart(2,'0')+' · SIMULATED / 30×';
@@ -719,6 +733,7 @@ function startDemo(){
     $('demo-target').hidden=false;
     state('SIMULATED · 前台播放通常90秒，后台挂起可能延长；剧本时间用于记录，越区等待和冷却仍按实际播放时间。');
     speak(PERSONA.simulated+'。开始演示记录。');
+    demoFeedAux(0);
     receiveHR(demoHeartRate(0));
     simulator=setInterval(tickDemo,1000);
   }catch(error){
