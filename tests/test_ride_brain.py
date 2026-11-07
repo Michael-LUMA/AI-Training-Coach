@@ -127,6 +127,31 @@ class RideBrainTests(unittest.TestCase):
         self.assertEqual(brain.build_ride_review(item,api_key='key',http_post=transport())['llm_status'],'rejected_unsafe_speech')
         self.assertEqual(brain.build_ride_review(item,api_key='key',http_post=transport('我看到模拟心率120 bpm。'))['llm_status'],'ok')
 
+    def v2memory(self):
+        item=memory()
+        item['schema_version']='luma-ride-memory/2'
+        item['series']=[{'t':0,'hr':120,'cad':88,'pwr':190},{'t':60,'hr':120,'pwr':240}]
+        item['summary'].update(avg_cadence=88,avg_power=215,max_power=240)
+        return item
+
+    def test_v2_power_cadence_projected_and_verified_with_chinese_units(self):
+        post=transport('我记到这次平均功率215瓦，最大240瓦，平均踏频88转。')
+        result=brain.build_ride_review(self.v2memory(),api_key='synthetic-key',http_post=post)
+        self.assertEqual(result['llm_status'],'ok')
+        payload=json.loads(post.call_args.args[0].data)
+        facts=json.loads(payload['messages'][1]['content'])
+        self.assertEqual(facts['summary']['avg_power'],215)
+        self.assertEqual(facts['summary']['max_power'],240)
+        self.assertEqual(facts['summary']['avg_cadence'],88)
+
+    def test_v2_invented_power_rejected_and_v1_watts_rejected(self):
+        result=brain.build_ride_review(self.v2memory(),api_key='key',http_post=transport('平均功率300瓦。'))
+        self.assertEqual(result['llm_status'],'rejected_unverifiable_number')
+        result=brain.build_ride_review(memory(),api_key='key',http_post=transport('平均功率215瓦。'))
+        self.assertEqual(result['llm_status'],'rejected_unverifiable_number')
+        result=brain.build_ride_review(self.v2memory(),api_key='key',http_post=transport('平均踏频89转。'))
+        self.assertEqual(result['llm_status'],'rejected_unverifiable_number')
+
 
 class RideBrainEndpointTests(unittest.TestCase):
     def setUp(self):
@@ -199,7 +224,7 @@ class RideBrainUITests(unittest.TestCase):
 
     def test_ui_thinking_and_persona_contract(self):
         text=(ROOT/'static/ride.html').read_text(encoding='utf-8')
-        self.assertIn("thinking:'Mark 想了想'",text);self.assertIn('ride-persona/9',text)
+        self.assertIn("thinking:'Mark 想了想'",text);self.assertIn('ride-persona/10',text)
 
     def test_success_appends_without_autoplay_and_listen_uses_speech(self):
         result=self.run_js("""

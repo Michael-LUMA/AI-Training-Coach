@@ -1,4 +1,4 @@
-﻿"""Synthetic v1 memory contract tests: no devices, network, DB or model calls."""
+"""Synthetic v1 memory contract tests: no devices, network, DB or model calls."""
 import copy
 import json
 import sys
@@ -186,6 +186,60 @@ class RideMemoryTests(unittest.TestCase):
     def test_input_cycles_fail_with_contract_error_not_recursion(self):
         value = memory(); value['series'][0]['hr'] = value; self.reject(value)
         value = memory(); value['coach_notes'].append(value); self.reject(value)
+
+    def v2(self):
+        """Synthetic v2 record: some HR points carry cadence and/or power."""
+        value = memory()
+        value['schema_version'] = 'luma-ride-memory/2'
+        value['series'] = [{'t': 0, 'hr': 120, 'cad': 88, 'pwr': 190},
+                           {'t': 1, 'gap': True},
+                           {'t': 30, 'hr': 140, 'pwr': 240}]
+        value['summary'].update(avg_cadence=88, avg_power=215, max_power=240)
+        return value
+
+    def test_v2_valid_roundtrip_and_backward_compatible_v1(self):
+        value = self.v2(); before = copy.deepcopy(value)
+        self.assertEqual(validate_session(value), before)
+        self.assertEqual(value, before)  # no mutation
+        self.assertEqual(validate_session(memory()), memory())  # v1 untouched
+
+    def test_v2_summary_requires_exact_ten_fields(self):
+        for key in ('avg_cadence', 'avg_power', 'max_power'):
+            value = self.v2(); del value['summary'][key]
+            with self.subTest(missing=key): self.reject(value)
+        value = self.v2(); value['summary']['unknown'] = 1; self.reject(value)
+        value = memory(); value['summary']['avg_power'] = None  # v1 stays closed
+        self.reject(value)
+
+    def test_v2_cadence_power_ranges_and_gap_purity(self):
+        for field, bad in (('cad', -1), ('cad', 256), ('cad', 88.5), ('cad', True), ('cad', '88'),
+                           ('pwr', -1), ('pwr', 65536), ('pwr', 190.5), ('pwr', None)):
+            value = self.v2(); value['series'][0][field] = bad
+            with self.subTest(field=field, bad=bad): self.reject(value)
+        value = self.v2(); value['series'][1]['cad'] = 88  # gaps never carry sensors
+        self.reject(value)
+        value = self.v2(); value['series'][1]['pwr'] = 240
+        self.reject(value)
+
+    def test_v2_stats_must_match_recorded_samples(self):
+        for updates in ({'avg_cadence': 89}, {'avg_power': 216}, {'max_power': 239},
+                        {'avg_power': None}, {'max_power': None}):
+            value = self.v2(); value['summary'].update(updates)
+            with self.subTest(updates=updates): self.reject(value)
+
+    def test_v2_absent_channels_stay_null_not_zero_filled(self):
+        value = self.v2()
+        for point in value['series']:
+            point.pop('cad', None); point.pop('pwr', None)
+        value['summary'].update(avg_cadence=None, avg_power=None, max_power=None)
+        self.assertEqual(validate_session(value), value)
+        for key in ('avg_cadence', 'avg_power', 'max_power'):
+            bad = self.v2()
+            for point in bad['series']:
+                point.pop('cad', None); point.pop('pwr', None)
+            bad['summary'].update(avg_cadence=None, avg_power=None, max_power=None)
+            bad['summary'][key] = 0
+            with self.subTest(key=key): self.reject(bad)
 
 
 if __name__ == '__main__':

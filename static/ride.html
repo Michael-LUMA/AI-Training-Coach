@@ -30,9 +30,11 @@
 <div class="row"><label style="display:flex;flex-direction:row;align-items:center;gap:10px;flex:none"><input id="crash-detect" type="checkbox" style="width:auto"> 跌倒检测（实验）</label></div>
 <p class="muted">开启后，骑行中侦测到疑似摔倒会先问你，30 秒无响应就在本机发出警报音。手机需放在身上（骑行服口袋）才有效，放车把包或背包里会不准；屏幕熄灭时手机可能停发传感器数据，检测会失效。网页版不能自动发短信或打电话——它可能漏报或误报，不是可靠的安全设备。</p>
 <div class="row"><button id="start-ride" type="button">连接心率带并开始</button><button id="end-ride" type="button" class="secondary" disabled>结束骑行</button><button id="reconnect" type="button" class="secondary" disabled>重新连接</button></div>
+<div class="row"><button id="connect-aux" type="button" class="secondary">加连功率计/踏频计（可选）</button></div>
+<p class="muted">可选第二步：连接功率计或踏频计（CSC/Cycling Power 标准协议）。只连接心率带也能正常记录，功率和踏频会如实留空。</p>
 <p id="status" role="status" aria-live="polite">准备记录。语音需点击开始激活；请先在静止状态连接设备。</p>
 </div>
-<div class="grid"><section class="card"><span id="connection" class="pill">未连接</span><p><span id="heart-rate" class="hr">—</span> <span class="muted">bpm</span></p><p id="zone-state">未设置目标区间</p><p id="elapsed" class="muted">00:00</p></section><section class="card"><h2>02 / 原始时间轴</h2><p class="muted">仅展示最近 60 个实际点。断线标记 gap，不插值、不用旧读数补齐。超过 5 秒没有新读数也标记信号缺口。</p><pre id="timeline" aria-label="原始心率与断线记录"></pre></section></div>
+<div class="grid"><section class="card"><span id="connection" class="pill">未连接</span><p><span id="heart-rate" class="hr">—</span> <span class="muted">bpm</span></p><p id="zone-state">未设置目标区间</p><p id="aux-live" class="muted">未连接功率/踏频计</p><p id="elapsed" class="muted">00:00</p></section><section class="card"><h2>02 / 原始时间轴</h2><p class="muted">仅展示最近 60 个实际点。断线标记 gap，不插值、不用旧读数补齐。超过 5 秒没有新读数也标记信号缺口。</p><pre id="timeline" aria-label="原始心率与断线记录"></pre></section></div>
 <section id="fall-card" class="card" hidden style="border-color:var(--red)"><h2>疑似摔倒</h2><p id="fall-countdown" class="hr" style="font-size:64px">30</p><p id="fall-message"></p><button id="fall-ok" type="button">我没事，别报警</button></section>
 <section class="card"><h2>03 / 骑后一句话</h2><p id="summary">结束后根据记录生成。没有数据的部分保持缺失。</p><section id="brain-card" hidden aria-labelledby="brain-heading"><h3 id="brain-heading">Mark 想了想</h3><p id="brain-speech"></p><button id="brain-listen" type="button" class="secondary">听 Mark 说</button></section><p id="memory-compare" aria-live="polite" hidden></p><p id="compare-source" class="offline" hidden></p><p id="save-status" role="status" aria-live="polite">本片存储为 ephemeral：重启或重新部署可能丢失，请保留下载备份。</p><div class="row"><button id="retry-upload" type="button" class="secondary">重试上传本机待传记录</button><button id="download-session" type="button" class="secondary" disabled>下载本次 JSON 备份</button><button id="download-gpx" type="button" class="secondary" disabled>下载 GPX 备份（无 GPS）</button></div><p class="muted">GPX 备份只含心率时间轴与断线标记，没有 GPS 坐标；用于存档与复盘，不能直接导入需要轨迹的平台。</p></section>
 <footer><p>Record only. Not medical advice.</p><p>语音只报告记录和你设定的阈值，不提供训练处方或效果承诺。后台、锁屏、系统省电或浏览器挂起可能停止 BLE、计时或语音；本页不是可靠的安全报警器。请勿在骑行中操作屏幕。</p><p>心率数据保存在当前设备及本服务的临时目录；共用电脑请勿视为多用户私密空间。模拟来源会随记录保留，绝不转为真实来源。</p><p>AI Ride Coach · Early access · <a href="?simulate=1">打开模拟模式</a></p></footer>
@@ -41,7 +43,7 @@
 'use strict';
 // Device adapter only: ride_memory.py owns the reusable versioned memory contract.
 const PERSONA = Object.freeze({
-  version:'ride-persona/9', name:'Mark', above:'心率超过你设的上限了。', below:'心率低于你设的下限了。', disconnected:'心率信号断了，我看不到读数。', short:'记录太短，我还总结不了。',
+  version:'ride-persona/10', name:'Mark', above:'心率超过你设的上限了。', below:'心率低于你设的下限了。', disconnected:'心率信号断了，我看不到读数。', short:'记录太短，我还总结不了。',
   recall:parts=>'我记得上次'+parts.join('，')+'。记录还很少，这不算趋势。',
   recall_no_history:'我还没有可回放的历史记录。',
   compare_better:(label,amount,unit)=>'我看到'+label+'比上次'+(unit==='分钟' ? '少' : '低')+amount+unit+'。',
@@ -61,6 +63,9 @@ const PERSONA = Object.freeze({
   milestone_within:'在区间内。', milestone_above:'高于上限。', milestone_below:'低于下限。',
   milestone_compare_flat:'和上次差不多。',
   milestone_compare:(direction,amount)=>'比上次'+direction+amount+'。',
+  milestone_power:(watts)=>'平均功率'+watts+'瓦。',
+  milestone_cadence:(rpm)=>'平均踏频'+rpm+'转。',
+  aux_none:'未连接功率/踏频计',
   fall_alert:'我好像检测到一次摔倒。如果你没事，点一下我没事，或者继续骑，我就不报警。',
   fall_cancel:'收到，你没事就好。',
   fall_alarm:'警报，检测到摔倒，骑手没有回应。请旁边的人立刻查看骑手。',
@@ -74,6 +79,7 @@ const PERSONA = Object.freeze({
 
 });
 const SERVICE = 0x180D, CHARACTERISTIC = 0x2A37;
+const CSC_SERVICE = 0x1816, CSC_MEASUREMENT = 0x2A5B, POWER_SERVICE = 0x1818, POWER_MEASUREMENT = 0x2A63;
 const OUTSIDE_DWELL_MS = 10000, ALERT_COOLDOWN_MS = 60000, STALE_MS = 5000, MAX_SERIES = 20000;
 const DEMO = new URLSearchParams(location.search).get('demo') === '1';
 const SIMULATED = new URLSearchParams(location.search).get('simulate') === '1' || DEMO;
@@ -81,6 +87,8 @@ const DEMO_DURATION_S = 2700, DEMO_PLAYBACK_S = 90, DEMO_STEP_S = DEMO_DURATION_
 const DEMO_DEFAULT_TARGET = Object.freeze({lower:100, upper:140});
 const $ = id => document.getElementById(id);
 let token = '', session = null, active = false, connecting = false, device = null, characteristic = null;
+let auxDevice = null, auxCadChar = null, auxPwrChar = null, auxConnecting = false;
+let crankPrev = null, latestCad = null, latestPwr = null;
 let startedMs = 0, startedMono = 0, previous = null, lastSignal = null, gapOpen = false;
 let outsideSince = null, outsideKind = null, lastAlert = -Infinity, alerts = 0;
 let timer = null, simulator = null, lastSession = null, target = null;
@@ -174,6 +182,10 @@ function buildMilestoneText(minutes){
     const delta=avg-previousRideAvgHr, tolerance=previousRideAvgHr*.03;
     text+=Math.abs(delta)<=tolerance+Number.EPSILON*Math.max(1,avg,previousRideAvgHr)*4 ? PERSONA.milestone_compare_flat : PERSONA.milestone_compare(delta<0?'低':'高',memoryValue(Math.abs(delta)));
   }
+  const pwrs=session.series.filter(p=>'pwr' in p).map(p=>p.pwr);
+  if(pwrs.length)text+=PERSONA.milestone_power(memoryValue(pwrs.reduce((a,b)=>a+b,0)/pwrs.length));
+  const cads=session.series.filter(p=>'cad' in p).map(p=>p.cad);
+  if(cads.length)text+=PERSONA.milestone_cadence(memoryValue(cads.reduce((a,b)=>a+b,0)/cads.length));
   return text;
 }
 function remindMilestone(){
@@ -405,6 +417,9 @@ function receiveHR(hr, now = performance.now()){
   if (previous && target && now - previous.mono <= STALE_MS) totals[zone(previous.hr)] += Math.max(0, t - previous.t);
   if (!addPoint({t, hr})) return;
   const point = session.series[session.series.length-1];
+  // Attach aux channels only while their readings are fresh; stale/absent stays absent.
+  if (latestCad && now - latestCad.mono <= STALE_MS) point.cad = latestCad.value;
+  if (latestPwr && now - latestPwr.mono <= STALE_MS) point.pwr = latestPwr.value;
   previous = {t:point.t, hr, mono:now}; lastSignal = now; gapOpen = false;
   $('heart-rate').textContent = String(hr); $('connection').textContent = session.source === 'simulated' ? 'SIMULATED · 合成信号' : 'BLE · 实时读数'; $('connection').classList.remove('offline');
   const kind = zone(hr); $('zone-state').textContent = kind === null ? '未设置目标区间，仅记录' : kind === 'within' ? '位于自定义范围内' : kind === 'above' ? '高于自定义上限' : '低于自定义下限';
@@ -421,13 +436,102 @@ function parseHeartRate(value){
   if (is16 && value.byteLength < 3) throw new Error('uint16 心率数据被截断');
   return is16 ? value.getUint16(1, true) : value.getUint8(1);
 }
+// CSC Measurement (0x2A5B): crank revolution deltas -> integer cadence rpm.
+// Wheel-revolution bytes are skipped per the flags bit; uint16 event-time wraps.
+function parseCadence(value){
+  if (!(value instanceof DataView) || value.byteLength < 1) throw new Error('无效踏频特征数据');
+  const flags = value.getUint8(0);
+  let offset = 1;
+  if (flags & 1) { // wheel revolution data present: uint32 revs + uint16 time, not used
+    if (value.byteLength < offset + 6) throw new Error('轮速数据被截断');
+    offset += 6;
+  }
+  if (!(flags & 2)) return null; // no crank data in this notification: nothing new to say
+  if (value.byteLength < offset + 4) throw new Error('曲柄数据被截断');
+  const revs = value.getUint16(offset, true), time = value.getUint16(offset + 2, true);
+  const previous = crankPrev;
+  crankPrev = {revs, time};
+  if (!previous) return null; // first notification primes the delta, invents no cadence
+  const dRevs = (revs - previous.revs + 65536) % 65536;
+  const dTime = (time - previous.time + 65536) % 65536; // 1/1024 second units
+  if (dTime === 0 || dRevs === 0) return null; // coasting or duplicate: keep last known, not zero
+  const rpm = Math.round(dRevs * 60 * 1024 / dTime);
+  if (!Number.isInteger(rpm) || rpm < 0 || rpm > 255) return null; // implausible wrap artifact
+  return rpm;
+}
+// Cycling Power Measurement (0x2A63): instantaneous power is always int16 at byte 2.
+function parsePower(value){
+  if (!(value instanceof DataView) || value.byteLength < 4) throw new Error('无效功率特征数据');
+  const watts = value.getInt16(2, true);
+  return watts >= 0 && watts <= 65535 ? watts : null; // negative spikes are sensor artifacts, not work
+}
+function drawAuxLive(){
+  const parts = [];
+  if (latestCad) parts.push('踏频 ' + latestCad.value + ' rpm');
+  if (latestPwr) parts.push('功率 ' + latestPwr.value + ' W');
+  $('aux-live').textContent = parts.length ? parts.join(' · ') : PERSONA.aux_none;
+}
+function onCadence(event){
+  try {
+    const rpm = parseCadence(event.target.value);
+    if (rpm === null) return;
+    latestCad = {value: rpm, mono: performance.now()}; drawAuxLive();
+  } catch (_) { /* malformed notification: keep last known, never invent */ }
+}
+function onPower(event){
+  try {
+    const watts = parsePower(event.target.value);
+    if (watts === null) return;
+    latestPwr = {value: watts, mono: performance.now()}; drawAuxLive();
+  } catch (_) { /* malformed notification: keep last known, never invent */ }
+}
+async function connectAux(){
+  if (auxConnecting) return;
+  if (!window.isSecureContext || !navigator.bluetooth) {state('此浏览器不能连接 BLE：请使用 HTTPS 下的 Android Chrome。'); return;}
+  auxConnecting = true; $('connect-aux').disabled = true;
+  try {
+    if (!auxDevice) {
+      auxDevice = await navigator.bluetooth.requestDevice({filters: [{services: [POWER_SERVICE]}, {services: [CSC_SERVICE]}], optionalServices: [POWER_SERVICE, CSC_SERVICE]});
+      auxDevice.addEventListener('gattserverdisconnected', () => {
+        latestCad = null; latestPwr = null; crankPrev = null; auxCadChar = null; auxPwrChar = null;
+        drawAuxLive(); $('aux-live').textContent = '功率/踏频已断开，可重新加连；心率记录不受影响。';
+        $('connect-aux').disabled = false;
+      });
+    }
+    const server = await auxDevice.gatt.connect();
+    let found = 0;
+    try {
+      const service = await server.getPrimaryService(CSC_SERVICE);
+      auxCadChar = await service.getCharacteristic(CSC_MEASUREMENT);
+      auxCadChar.addEventListener('characteristicvaluechanged', onCadence);
+      await auxCadChar.startNotifications(); found += 1;
+    } catch (_) { auxCadChar = null; } // device simply has no cadence service: honest absence
+    try {
+      const service = await server.getPrimaryService(POWER_SERVICE);
+      auxPwrChar = await service.getCharacteristic(POWER_MEASUREMENT);
+      auxPwrChar.addEventListener('characteristicvaluechanged', onPower);
+      await auxPwrChar.startNotifications(); found += 1;
+    } catch (_) { auxPwrChar = null; } // device simply has no power service: honest absence
+    if (!found) {
+      state('这台设备没有可用的功率或踏频服务，未记录任何假数据。');
+      auxDevice.gatt.disconnect(); auxDevice = null; $('connect-aux').disabled = false;
+      return;
+    }
+    state('已连接' + (auxPwrChar ? '功率' : '') + (auxPwrChar && auxCadChar ? '/' : '') + (auxCadChar ? '踏频' : '') + '。数据只在读数新鲜（5 秒内）时写入记录。');
+    drawAuxLive();
+  } catch (error) {
+    state(error.message || '功率/踏频连接失败，未生成假读数。');
+    $('connect-aux').disabled = false;
+  } finally { auxConnecting = false; }
+}
 function onHeartRate(event){try {receiveHR(parseHeartRate(event.target.value));} catch (_) {markGap(); state('心率数据格式异常，已标记缺口，没有补数。');}}
 function begin(options={}){
   brainRequest+=1;brainSpeech='';$('brain-card').hidden=true;
   comparisonRequest+=1;$('memory-compare').hidden=true;$('compare-source').hidden=true;
   target = options.target === undefined ? readTarget() : options.target; startedMs = Date.now(); startedMono = performance.now();
   const random = new Uint32Array(4); crypto.getRandomValues(random);
-  session = {schema_version:'luma-ride-memory/1', id:'ride-' + [...random].map(n=>n.toString(16).padStart(8,'0')).join(''), started_at:new Date(startedMs).toISOString(), ended_at:null, samples_hz:1, series:[], summary:null, coach_notes:[], persona_version:PERSONA.version, source:SIMULATED ? 'simulated' : 'ble_gatt_0x180d'};
+  session = {schema_version:'luma-ride-memory/2', id:'ride-' + [...random].map(n=>n.toString(16).padStart(8,'0')).join(''), started_at:new Date(startedMs).toISOString(), ended_at:null, samples_hz:1, series:[], summary:null, coach_notes:[], persona_version:PERSONA.version, source:SIMULATED ? 'simulated' : 'ble_gatt_0x180d'};
+  latestCad = null; latestPwr = null; crankPrev = null; drawAuxLive();
   if(options.source)session.source=options.source;
   if(options.samplesHz)session.samples_hz=options.samplesHz;
   $('demo-start').disabled=true;
@@ -510,8 +614,13 @@ function startDemo(){
 function buildMemory(){
   const duration = Math.max(elapsedSeconds(), session.series.length ? session.series[session.series.length-1].t : 0);
   const hrs=session.series.filter(p=>'hr' in p).map(p=>p.hr);
+  const cads=session.series.filter(p=>'cad' in p).map(p=>p.cad);
+  const pwrs=session.series.filter(p=>'pwr' in p).map(p=>p.pwr);
   session.ended_at=new Date(startedMs+Math.round(duration*1000)).toISOString();
-  session.summary={duration_s:duration,avg_hr:hrs.length ? hrs.reduce((a,b)=>a+b,0)/hrs.length : null,max_hr:hrs.length ? Math.max(...hrs) : null,time_in_zone_s:target ? {...totals} : null,zone_target:target ? {...target} : null,gaps:session.series.filter(p=>'gap' in p).length,alerts};
+  session.summary={duration_s:duration,avg_hr:hrs.length ? hrs.reduce((a,b)=>a+b,0)/hrs.length : null,max_hr:hrs.length ? Math.max(...hrs) : null,time_in_zone_s:target ? {...totals} : null,zone_target:target ? {...target} : null,gaps:session.series.filter(p=>'gap' in p).length,alerts,
+    avg_cadence:cads.length ? cads.reduce((a,b)=>a+b,0)/cads.length : null,
+    avg_power:pwrs.length ? pwrs.reduce((a,b)=>a+b,0)/pwrs.length : null,
+    max_power:pwrs.length ? Math.max(...pwrs) : null};
   return session;
 }
 function summarize(memory){
@@ -521,6 +630,8 @@ function summarize(memory){
   if(s.time_in_zone_s){const z=s.time_in_zone_s, observed=z.below+z.within+z.above;
     text+=observed > 0 ? '在可归类的'+observed.toFixed(1)+'秒中，低于、范围内、高于自定义阈值的占比分别为'+[z.below,z.within,z.above].map(n=>(n/observed*100).toFixed(0)+'%').join('、')+'；未观测时间不计入。' : '没有足够连续读数计算区间占比。';
   } else text+='未设置区间，不计算区间占比。';
+  if(s.avg_power!=null)text+='样本平均功率'+s.avg_power.toFixed(1)+' W，最大'+s.max_power+' W。';
+  if(s.avg_cadence!=null)text+='样本平均踏频'+s.avg_cadence.toFixed(1)+' rpm。';
   return text;
 }
 function retain(memory){
@@ -530,7 +641,7 @@ function retain(memory){
 // Sensor-only GPX export: heart-rate timeline + honest gap markers, no GPS track.
 // Shares the urn:luma:ride-capture:1 extension shape with the capture page builder.
 function buildRideGpx(memory){
-  if(!memory || memory.schema_version!=='luma-ride-memory/1' || !Array.isArray(memory.series))throw new Error('记录结构无效，不能生成 GPX');
+  if(!memory || (memory.schema_version!=='luma-ride-memory/1' && memory.schema_version!=='luma-ride-memory/2') || !Array.isArray(memory.series))throw new Error('记录结构无效，不能生成 GPX');
   const startedMs=Date.parse(memory.started_at);
   if(!Number.isFinite(startedMs))throw new Error('开始时间无效，不能生成 GPX');
   const escapeXml=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));
@@ -546,9 +657,13 @@ function buildRideGpx(memory){
     previousT=point.t;
     if('hr' in point){
       if(!Number.isInteger(point.hr) || point.hr<0 || point.hr>65535)throw new Error('心率值无效，不能生成 GPX');
+      if('cad' in point && (!Number.isInteger(point.cad) || point.cad<0 || point.cad>255))throw new Error('踏频值无效，不能生成 GPX');
+      if('pwr' in point && (!Number.isInteger(point.pwr) || point.pwr<0 || point.pwr>65535))throw new Error('功率值无效，不能生成 GPX');
       if(!inSegment){lines.push('<luma:segment>');inSegment=true;}
       if(++count>MAX_SERIES)throw new Error('采样数超过上限，不能生成 GPX');
-      lines.push('<luma:sample time="'+iso(point.t)+'"><gpxtpx:hr>'+point.hr+'</gpxtpx:hr></luma:sample>');
+      lines.push('<luma:sample time="'+iso(point.t)+'"><gpxtpx:hr>'+point.hr+'</gpxtpx:hr>'
+        +('cad' in point ? '<gpxtpx:cad>'+point.cad+'</gpxtpx:cad>' : '')
+        +('pwr' in point ? '<luma:pwr>'+point.pwr+'</luma:pwr>' : '')+'</luma:sample>');
     }else{
       if(inSegment){lines.push('</luma:segment>');inSegment=false;}
       lines.push('<luma:gap time="'+iso(point.t)+'" reason="signal_gap"/>');
@@ -579,6 +694,7 @@ function finishRide(reason=''){
   if(!active)return;
   const memory=buildMemory(); active=false;demoPlaying=false;$('demo-start').disabled=false; clearInterval(timer);clearInterval(simulator);clearInterval(fallTimer);crashState='idle';$('fall-card').hidden=true;releaseScreenLock();resetOutside();
   if(device && device.gatt.connected)device.gatt.disconnect();
+  if(auxDevice && auxDevice.gatt.connected)auxDevice.gatt.disconnect();
   if(memoryNumber(memory.summary.avg_hr))previousRideAvgHr=memory.summary.avg_hr;
   $('end-ride').disabled=true;$('reconnect').disabled=true;$('start-ride').disabled=false;$('lower').disabled=$('upper').disabled=false;
   const text=summarize(memory);$('summary').textContent=text;if(memory.coach_notes.length<200)memory.coach_notes.push(text);speak(text,'summary',speechKind==='fuel');
@@ -603,6 +719,7 @@ $('demo-start').addEventListener('click',startDemo);
 $('memory-listen').addEventListener('click',speakMark);
 $('brain-listen').addEventListener('click',speakMark);
 $('start-ride').addEventListener('click',startRide);
+$('connect-aux').addEventListener('click',connectAux);
 $('end-ride').addEventListener('click',()=>finishRide());
 $('reconnect').addEventListener('click',async()=>{if(!active || session.source==='simulated' || connecting)return;connecting=true;$('reconnect').disabled=true;try{await connectBLE();}catch(error){markGap();state(error.message || '重新连接失败，缺口仍保留。');}finally{connecting=false;$('reconnect').disabled=!active;}});
 $('retry-upload').addEventListener('click',async()=>{

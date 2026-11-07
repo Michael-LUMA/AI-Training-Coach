@@ -31,7 +31,7 @@ for(const match of input.html.matchAll(/<[^>]*\bid="([^"]+)"[^>]*>/g)){
     click(){return this.listeners.click ? this.listeners.click() : undefined;}};
 }
 const options=input.options || {};
-const sandbox={URLSearchParams,Date,DataView,Uint32Array,Math,Number,JSON,Promise,Error,
+const sandbox={URLSearchParams,Date,DataView,Uint32Array,Uint8Array,Uint16Array,Int16Array,ArrayBuffer,Math,Number,JSON,Promise,Error,
   location:{search:options.demo ? '?demo=1'+(options.simulate ? '&simulate=1' : '') : options.simulate ? '?simulate=1' : ''},performance:{now:()=>clock.now},
   crypto:require('node:crypto').webcrypto,navigator:{bluetooth:{requestDevice:async()=>{bleCalls++;throw new Error('No real hardware in offline tests');}}},
   document:{getElementById:id=>elements[id],addEventListener(){},hidden:false},console:{debug:(...args)=>debug.push(args.join(' '))},
@@ -93,7 +93,7 @@ class RideMemoryUI(unittest.TestCase):
         return json.loads(result.stdout)
 
     def test_page_strings_and_existing_csp_with_mock_store(self):
-        for text in ('Mark 的记忆', '这不算趋势', '听 Mark 说', 'ride-persona/9', "name:'Mark'",
+        for text in ('Mark 的记忆', '这不算趋势', '听 Mark 说', 'ride-persona/10', "name:'Mark'",
                      'recall:', 'recall_no_history:', 'compare_better:', 'compare_worse:',
                      'compare_flat:', 'no_compare:', '两次记录还说明不了趋势', 'Record only. Not medical advice.'):
             with self.subTest(text=text):
@@ -140,7 +140,7 @@ class RideMemoryUI(unittest.TestCase):
         result = self.run_js("await $('start-ride').click(); return {spoken:_spoken,version:session.persona_version};", history=[metadata()], simulate=True)
         self.assertEqual(len(result['spoken']), 1)
         self.assertIn('我记得', result['spoken'][0])
-        self.assertEqual(result['version'], 'ride-persona/9')
+        self.assertEqual(result['version'], 'ride-persona/10')
         result = self.run_js("$('memory-listen').click(); await $('start-ride').click(); return _spoken;", history=[metadata()], simulate=True)
         self.assertEqual(len(result), 2)
         self.assertIn('我记得', result[0])
@@ -255,7 +255,7 @@ class RideMemoryUI(unittest.TestCase):
 
 
     def test_demo_strings_source_notice_and_version(self):
-        for text in ('demo_notice:', 'demo_start:', '看 Mark 演示', 'ride-persona/9',
+        for text in ('demo_notice:', 'demo_start:', '看 Mark 演示', 'ride-persona/10',
                      '这是一段合成的 45 分钟骑行，90 秒放完', 'Mark 说的每句话都是真实逻辑，数据是假的。'):
             self.assertIn(text,self.html)
         result=self.run_js("return {notice:$('demo-notice').textContent,hidden:$('demo-notice').hidden,button:$('demo-start').hidden,bar:$('simulated-banner').hidden,startDisabled:$('start-ride').disabled,spoken:_spoken};",demo=True)
@@ -275,7 +275,7 @@ class RideMemoryUI(unittest.TestCase):
         """,demo=True)
         from ride_memory import validate_session
         item=validate_session(result['uploaded'])
-        self.assertEqual(item['source'],'simulated');self.assertEqual(item['persona_version'],'ride-persona/9')
+        self.assertEqual(item['source'],'simulated');self.assertEqual(item['persona_version'],'ride-persona/10')
         self.assertEqual(item['summary']['duration_s'],2700)
         self.assertEqual(item['series'][-1]['t'],2700)
         self.assertEqual(item['samples_hz'],1/30)
@@ -379,7 +379,7 @@ class RideMemoryUI(unittest.TestCase):
             self.assertEqual(result['inputs'],[lower,upper])
 
     def test_s5_strings_and_manifest_link(self):
-        for text in ("wakelock_unavailable:", "fuel:", "fuel_again:", "ride-persona/9",
+        for text in ("wakelock_unavailable:", "fuel:", "fuel_again:", "ride-persona/10",
                      "骑了45分钟了，喝口水、补点吃的。", "又到补给的点了，别忘了喝。",
                      'rel="manifest"', "ride.webmanifest"):
             with self.subTest(text=text):
@@ -420,7 +420,7 @@ class RideMemoryUI(unittest.TestCase):
         self.assertTrue(result['active'])
 
     def test_s7_strings_milestone_gpx_and_ducking(self):
-        for text in ("milestone:", "milestone_compare_flat:", "ride-persona/9",
+        for text in ("milestone:", "milestone_compare_flat:", "ride-persona/10",
                      "buildRideGpx", "下载 GPX 备份", "audioSession", "signal_gap",
                      "不能直接导入需要 GPS 轨迹的平台"):
             with self.subTest(text=text):
@@ -513,7 +513,7 @@ class RideMemoryUI(unittest.TestCase):
         self.assertTrue(result['survived'])
 
     def test_fall_detection_strings_and_ui(self):
-        for text in ('fall_alert:', 'fall_cancel:', 'fall_alarm:', 'ride-persona/9',
+        for text in ('fall_alert:', 'fall_cancel:', 'fall_alarm:', 'ride-persona/10',
                      'crash-detect', 'fall-card', 'fall-ok', '跌倒检测（实验）',
                      '不是可靠的安全设备', 'devicemotion'):
             with self.subTest(text=text):
@@ -588,6 +588,122 @@ class RideMemoryUI(unittest.TestCase):
         self.assertEqual(result['rideState'], 'idle')
         self.assertFalse(result['enabled'])
         self.assertTrue(result['cardHidden'])
+
+    def test_s9_strings_aux_ui_and_version(self):
+        for text in ('ride-persona/10', 'connect-aux', 'parseCadence', 'parsePower',
+                     '0x1816', '0x2A5B', '0x1818', '0x2A63', 'milestone_power:', 'luma-ride-memory/2'):
+            with self.subTest(text=text):
+                self.assertIn(text, self.html)
+
+    def test_parse_cadence_deltas_wraps_and_priming(self):
+        result = self.run_js("""
+          const dv=bytes=>new DataView(new Uint8Array(bytes).buffer);
+          const u16=n=>[n&255,(n>>8)&255];
+          const crank=(flags,revs,time)=>[flags,...u16(revs),...u16(time)];
+          const first=parseCadence(dv(crank(0x02,10,1024)));
+          const second=parseCadence(dv(crank(0x02,13,3072)));
+          crankPrev={revs:65534,time:65024};
+          const wrapped=parseCadence(dv(crank(0x02,1,1024)));
+          crankPrev={revs:5,time:2048};
+          const coasting=parseCadence(dv(crank(0x02,5,4096)));
+          crankPrev=null;
+          const wheelAndCrank=[0x03,1,0,0,0,0,4,...u16(20),...u16(2048)];
+          const primed=parseCadence(dv(wheelAndCrank));
+          const after=parseCadence(dv([0x03,1,0,0,0,0,4,...u16(22),...u16(4096)]));
+          const noCrank=parseCadence(dv([0x01,1,0,0,0,0,4]));
+          return {first,second,wrapped,coasting,primed,after,noCrank};
+        """)
+        self.assertIsNone(result['first'])   # first notification primes, invents nothing
+        self.assertEqual(result['second'], 90)  # 3 revs / 2 s
+        self.assertEqual(result['wrapped'], 120)  # uint16 wraparound on both counters
+        self.assertIsNone(result['coasting'])  # zero revs: keep last known, not zero rpm
+        self.assertIsNone(result['primed'])
+        self.assertEqual(result['after'], 60)  # 2 revs / 2 s after 6-byte wheel data skipped
+        self.assertIsNone(result['noCrank'])
+
+    def test_parse_power_instantaneous_and_negative_artifacts(self):
+        result = self.run_js("""
+          const dv=bytes=>new DataView(new Uint8Array(bytes).buffer);
+          return {normal:parsePower(dv([0,0,0xD2,0])),
+                  zero:parsePower(dv([0,0,0,0])),
+                  negative:parsePower(dv([0,0,0xFF,0xFF]))};
+        """)
+        self.assertEqual(result['normal'], 210)
+        self.assertEqual(result['zero'], 0)
+        self.assertIsNone(result['negative'])
+
+    def test_aux_attach_only_when_fresh_and_summary_v2(self):
+        result = self.run_js("""
+          await $('start-ride').click();
+          latestCad={value:90,mono:performance.now()};
+          latestPwr={value:210,mono:performance.now()};
+          receiveHR(120);
+          const attached=session.series[session.series.length-1];
+          await _advance(6000);
+          receiveHR(122);  // aux readings now stale: must NOT attach
+          const stale=session.series[session.series.length-1];
+          $('end-ride').click();await _flush();
+          return {attached,stale,summary:lastSession.summary,
+                  version:lastSession.schema_version};
+        """, simulate=True)
+        self.assertEqual(result['attached'].get('cad'), 90)
+        self.assertEqual(result['attached'].get('pwr'), 210)
+        self.assertNotIn('cad', result['stale'])
+        self.assertNotIn('pwr', result['stale'])
+        self.assertEqual(result['version'], 'luma-ride-memory/2')
+        self.assertEqual(result['summary']['avg_cadence'], 90)
+        self.assertEqual(result['summary']['avg_power'], 210)
+        self.assertEqual(result['summary']['max_power'], 210)
+        from ride_memory import validate_session
+        check = {'schema_version': 'luma-ride-memory/2', 'id': 'ride-check',
+                 'started_at': '2026-11-07T08:00:00Z', 'ended_at': '2026-11-07T08:00:06Z',
+                 'samples_hz': 1,
+                 'series': [{'t': 0, 'hr': 120, 'cad': 90, 'pwr': 210}, {'t': 6, 'hr': 122}],
+                 'summary': {'duration_s': 6, 'avg_hr': 121, 'max_hr': 122, 'time_in_zone_s': None,
+                             'zone_target': None, 'gaps': 0, 'alerts': 0,
+                             'avg_cadence': 90, 'avg_power': 210, 'max_power': 210},
+                 'coach_notes': ['x'], 'persona_version': 'ride-persona/10', 'source': 'simulated'}
+        self.assertEqual(validate_session(check)['summary']['avg_power'], 210)
+
+    def test_milestone_mentions_power_and_cadence_when_present(self):
+        result = self.run_js("""
+          await $('start-ride').click();
+          session.series.push({t:0,hr:120,pwr:200,cad:88},{t:10,hr:130,pwr:220});
+          return buildMilestoneText(30);
+        """, simulate=True)
+        self.assertIn('骑了30分钟了。', result)
+        self.assertIn('平均功率210瓦。', result)
+        self.assertIn('平均踏频88转。', result)
+
+    def test_gpx_export_includes_cadence_and_power(self):
+        result = self.run_js("""
+          const memory={schema_version:'luma-ride-memory/2',id:'ride-y',started_at:'2026-11-07T08:00:00.000Z',source:'ble_gatt_0x180d',
+            series:[{t:0,hr:120,cad:88,pwr:190},{t:1,hr:121,pwr:240}]};
+          return buildRideGpx(memory);
+        """)
+        self.assertIn('<gpxtpx:cad>88</gpxtpx:cad>', result)
+        self.assertIn('<luma:pwr>240</luma:pwr>', result)
+        import xml.etree.ElementTree as ET
+        ET.fromstring(result)
+
+    def test_connect_aux_flow_with_fake_power_meter(self):
+        result = self.run_js("""
+          const cadChar={addEventListener(){},removeEventListener(){},async startNotifications(){}};
+          const pwrChar={addEventListener(){},removeEventListener(){},async startNotifications(){}};
+          auxDevice={addEventListener(){},gatt:{connected:true,
+            async connect(){return {async getPrimaryService(uuid){
+              if(uuid===0x1816)return {async getCharacteristic(){return cadChar;}};
+              if(uuid===0x1818)return {async getCharacteristic(){return pwrChar;}};
+              throw new Error('no such service');}};},
+            disconnect(){this.connected=false;}}};
+          await connectAux();
+          return {cad:!!auxCadChar,pwr:!!auxPwrChar,status:$('status').textContent,
+                  disabled:$('connect-aux').disabled};
+        """)
+        self.assertTrue(result['cad'])
+        self.assertTrue(result['pwr'])
+        self.assertIn('已连接功率/踏频', result['status'])
+        self.assertTrue(result['disabled'])  # stays disabled while connected
 
 
 if __name__ == '__main__':

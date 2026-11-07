@@ -28,6 +28,8 @@ SYSTEM_PROMPT = """你是 Mark，像同行的朋友，用第一人称“我”�
 可以建议下次记录缺失的数据。不要编号、日期或使用隐含数量的修辞。
 每个数字（包括中文数字）都必须对应事实及其单位；允许秒/分钟/小时等价
 换算与按相同小数位四舍五入。不得用秒数冒充心率或样本数。
+facts 可能含 avg_power/max_power（单位 W，口语说"瓦"）与 avg_cadence
+（单位 rpm，口语说"转"）；为 null 或字段缺失就完全不提，禁止估算。
 口吻要求：像朋友骑完车随口聊，一两句短句为主，最多三句；时长一律用
 display 里的分钟数（duration_min/previous_duration_min/duration_diff_min），
 心率差异用 differences 里的整数；不堆数字，挑最有话说的一两个。
@@ -40,8 +42,8 @@ _HAN = '零〇一二两三四五六七八九十百千万亿'
 _DIGITS = {'零':0,'〇':0,'一':1,'二':2,'两':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9}
 _HAN_RE = re.compile(r'['+_HAN+r']+(?:点['+_HAN+r']+)?')
 _NUM = r'[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?'
-_UNIT_RE = re.compile(r'\s*(bpm|分钟|小时|秒钟|秒|%|次|个|条|点|[A-Za-z]+)', re.I)
-_UNITS = {'分钟':'min','小时':'h','秒钟':'s','秒':'s','次':'','个':'','条':'','点':''}
+_UNIT_RE = re.compile(r'\s*(bpm|分钟|小时|秒钟|秒|%|次|个|条|点|瓦|转|[A-Za-z]+)', re.I)
+_UNITS = {'分钟':'min','小时':'h','秒钟':'s','秒':'s','次':'','个':'','条':'','点':'','瓦':'w','转':'rpm'}
 _FORBIDDEN = re.compile(r'变强|状态提升|能力提升|训练效果|更健康|心肺功能.{0,4}(提高|改善)|'
                         r'(建议|应该|务必|请).{0,12}(减速|加速|降低心率|加大强度|服药|吃药)|'
                         r'继续保持.{0,6}(强度|心率)|燃脂效果|减脂效果|诊断|治疗')
@@ -95,14 +97,15 @@ def _normalized_numbers(text):
     def units(match):
         number,suffix=match.group(1),match.group(2)
         return number+' '+_UNITS.get(suffix,suffix)
-    return re.sub('('+_NUM+r')\s*(bpm|分钟|小时|秒钟|秒|%|次|个|条|点)',units,text,flags=re.I)
+    return re.sub('('+_NUM+r')\s*(bpm|分钟|小时|秒钟|秒|%|次|个|条|点|瓦|转)',units,text,flags=re.I)
 
 
 def _summary(value):
     """Project only known numeric fields; reject injected text or unknown shapes."""
     if type(value) is not dict:
         raise ValueError('summary object required')
-    units={'duration_s':'s','avg_hr':'bpm','max_hr':'bpm','gaps':None,'alerts':None}
+    units={'duration_s':'s','avg_hr':'bpm','max_hr':'bpm','gaps':None,'alerts':None,
+           'avg_cadence':'rpm','avg_power':'w','max_power':'w'}
     nested={'time_in_zone_s':({'below','within','above'},'s'),
             'zone_target':({'lower','upper'},'bpm')}
     result={};numbers=[]
