@@ -34,7 +34,7 @@ const options=input.options || {};
 const sandbox={URLSearchParams,Date,DataView,Uint32Array,Math,Number,JSON,Promise,Error,
   location:{search:options.demo ? '?demo=1'+(options.simulate ? '&simulate=1' : '') : options.simulate ? '?simulate=1' : ''},performance:{now:()=>clock.now},
   crypto:require('node:crypto').webcrypto,navigator:{bluetooth:{requestDevice:async()=>{bleCalls++;throw new Error('No real hardware in offline tests');}}},
-  document:{getElementById:id=>elements[id]},console:{debug:(...args)=>debug.push(args.join(' '))},
+  document:{getElementById:id=>elements[id],addEventListener(){},hidden:false},console:{debug:(...args)=>debug.push(args.join(' '))},
   localStorage:{setItem:(k,v)=>storage.set(k,v),getItem:k=>storage.get(k),removeItem:k=>storage.delete(k),key:i=>[...storage.keys()][i],get length(){return storage.size;}},
   setInterval:(fn,ms)=>{const id=++nextTimer;intervals.set(id,{fn,ms,next:clock.now+ms});return id;},clearInterval:id=>intervals.delete(id),setTimeout:()=>1,
   SpeechSynthesisUtterance:function(text){this.text=text;},
@@ -93,7 +93,7 @@ class RideMemoryUI(unittest.TestCase):
         return json.loads(result.stdout)
 
     def test_page_strings_and_existing_csp_with_mock_store(self):
-        for text in ('Mark 的记忆', '这不算趋势', '听 Mark 说', 'ride-persona/5', "name:'Mark'",
+        for text in ('Mark 的记忆', '这不算趋势', '听 Mark 说', 'ride-persona/6', "name:'Mark'",
                      'recall:', 'recall_no_history:', 'compare_better:', 'compare_worse:',
                      'compare_flat:', 'no_compare:', '两次记录还说明不了趋势', 'Record only. Not medical advice.'):
             with self.subTest(text=text):
@@ -140,7 +140,7 @@ class RideMemoryUI(unittest.TestCase):
         result = self.run_js("await $('start-ride').click(); return {spoken:_spoken,version:session.persona_version};", history=[metadata()], simulate=True)
         self.assertEqual(len(result['spoken']), 1)
         self.assertIn('我记得', result['spoken'][0])
-        self.assertEqual(result['version'], 'ride-persona/5')
+        self.assertEqual(result['version'], 'ride-persona/6')
         result = self.run_js("$('memory-listen').click(); await $('start-ride').click(); return _spoken;", history=[metadata()], simulate=True)
         self.assertEqual(len(result), 2)
         self.assertIn('我记得', result[0])
@@ -255,7 +255,7 @@ class RideMemoryUI(unittest.TestCase):
 
 
     def test_demo_strings_source_notice_and_version(self):
-        for text in ('demo_notice:', 'demo_start:', '看 Mark 演示', 'ride-persona/5',
+        for text in ('demo_notice:', 'demo_start:', '看 Mark 演示', 'ride-persona/6',
                      '这是一段合成的 45 分钟骑行，90 秒放完', 'Mark 说的每句话都是真实逻辑，数据是假的。'):
             self.assertIn(text,self.html)
         result=self.run_js("return {notice:$('demo-notice').textContent,hidden:$('demo-notice').hidden,button:$('demo-start').hidden,bar:$('simulated-banner').hidden,startDisabled:$('start-ride').disabled,spoken:_spoken};",demo=True)
@@ -275,7 +275,7 @@ class RideMemoryUI(unittest.TestCase):
         """,demo=True)
         from ride_memory import validate_session
         item=validate_session(result['uploaded'])
-        self.assertEqual(item['source'],'simulated');self.assertEqual(item['persona_version'],'ride-persona/5')
+        self.assertEqual(item['source'],'simulated');self.assertEqual(item['persona_version'],'ride-persona/6')
         self.assertEqual(item['summary']['duration_s'],2700)
         self.assertEqual(item['series'][-1]['t'],2700)
         self.assertEqual(item['samples_hz'],1/30)
@@ -377,6 +377,47 @@ class RideMemoryUI(unittest.TestCase):
             result=self.run_js("$('lower').value=_options.lower;$('upper').value=_options.upper;$('demo-start').click();return {active,ble:_bleCalls(),disabled:$('demo-start').disabled,inputs:[$('lower').value,$('upper').value]};",demo=True,lower=lower,upper=upper)
             self.assertFalse(result['active']);self.assertEqual(result['ble'],0);self.assertFalse(result['disabled'])
             self.assertEqual(result['inputs'],[lower,upper])
+
+    def test_s5_strings_and_manifest_link(self):
+        for text in ("wakelock_unavailable:", "fuel:", "fuel_again:", "ride-persona/6",
+                     "骑了45分钟了，喝口水、补点吃的。", "又到补给的点了，别忘了喝。",
+                     'rel="manifest"', "ride.webmanifest"):
+            with self.subTest(text=text):
+                self.assertIn(text, self.html)
+
+    def test_manifest_and_icon_endpoints(self):
+        from unittest.mock import Mock
+        app = coach_server.App(store=Mock())
+        body, csp, mime = app.dispatch('GET', '/ride.webmanifest', {'Host': '127.0.0.1:8794'})
+        self.assertIn('manifest+json', mime)
+        manifest = json.loads(body.decode('utf-8'))
+        for key in ('name', 'short_name', 'start_url', 'display', 'icons'):
+            self.assertIn(key, manifest)
+        self.assertEqual(manifest['display'], 'standalone')
+        self.assertEqual(manifest['start_url'], '/ride')
+        body2, _, mime2 = app.dispatch('GET', '/icon.svg', {'Host': '127.0.0.1:8794'})
+        self.assertEqual(mime2, 'image/svg+xml')
+        self.assertIn(b'<svg', body2)
+
+    def test_fuel_speaks_once_at_45min_in_demo_and_lands_in_notes(self):
+        result = self.run_js("""
+          $('demo-start').click();
+          await _advance(90000);
+          const uploaded=JSON.parse(_calls.find(c=>c.url==='/api/coach/ride/session').body);
+          return {spoken:_spoken, notes:uploaded.coach_notes};
+        """, demo=True)
+        fuel = [t for t in result['spoken'] if '喝口水' in t]
+        self.assertEqual(fuel, ['骑了45分钟了，喝口水、补点吃的。'])
+        self.assertTrue(any('喝口水' in n for n in result['notes']))
+
+    def test_wakelock_absent_degrades_without_throwing(self):
+        result = self.run_js("""
+          $('start-ride').click();
+          await _advance(3000);
+          return {status:$('status').textContent, active};
+        """, simulate=True)
+        self.assertIn('请保持屏幕常亮', result['status'])
+        self.assertTrue(result['active'])
 
 
 if __name__ == '__main__':

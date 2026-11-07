@@ -100,7 +100,7 @@ def _page(filename="coach.html"):
         return " ".join("'sha256-" + base64.b64encode(hashlib.sha256(part.encode()).digest()).decode() + "'"
                         for part in re.findall(r"<" + tag + r">(.*?)</" + tag + r">", text, re.S))
     csp = ("default-src 'none'; script-src " + hashes("script") + "; style-src " + hashes("style") +
-           "; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
+           "; manifest-src 'self'; img-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
     return text.encode("utf-8"), csp
 
 
@@ -204,11 +204,11 @@ class App:
         parsed = urlsplit(path)
         require(not parsed.scheme and not parsed.netloc and not parsed.fragment, "Invalid request target")
         require(method in ("GET", "POST"), "Method not allowed", "method_not_allowed", 405)
-        public = method == "GET" and parsed.path in ("/", "/ride", "/privacy", "/terms", "/api/coach/config")
+        public = method == "GET" and parsed.path in ("/", "/ride", "/privacy", "/terms", "/ride.webmanifest", "/icon.svg", "/api/coach/config")
         if not public:
             token = headers.get("X-Coach-Token", "")
             require(type(token) is str and token.isascii() and secrets.compare_digest(token, self.token), "Session token required", "token_denied", 403)
-        allowed = ((method == "GET" and parsed.path in ("/", "/privacy", "/terms", "/api/coach/config", "/api/coach/activities", "/ride", RIDE_LIST)) or
+        allowed = ((method == "GET" and parsed.path in ("/", "/privacy", "/terms", "/api/coach/config", "/api/coach/activities", "/ride", "/ride.webmanifest", "/icon.svg", RIDE_LIST)) or
                    (method == "POST" and path in ("/api/coach/connect", "/api/coach/review", "/api/coach/review-l2", "/api/coach/demo-review", "/api/coach/waitlist", "/api/coach/weekly", RIDE_POST, RIDE_REVIEW)))
         require(allowed, "Endpoint not found", "not_found", 404)
         if method == "POST":
@@ -239,6 +239,11 @@ class App:
             parsed = urlsplit(path)
             if parsed.path in ("/", "/ride", "/privacy", "/terms"):
                 return _page({"/": "coach.html", "/ride": "ride.html", "/privacy": "privacy.html", "/terms": "terms.html"}[parsed.path])
+            if parsed.path in ("/ride.webmanifest", "/icon.svg"):
+                filename, mime = {"/ride.webmanifest": ("ride.webmanifest", "application/manifest+json; charset=utf-8"),
+                                  "/icon.svg": ("icon.svg", "image/svg+xml")}[parsed.path]
+                return ((ROOT / "static" / filename).read_bytes(),
+                        "default-src 'none'; frame-ancestors 'none'; base-uri 'none'", mime)
             if path == "/api/coach/config":
                 key = self.store.get_key()
                 return {"billing_enabled": bool(os.environ.get("CREEM_WEBHOOK_SECRET", "").strip()), "subscription_status": self.billing.current_status(), "brand_name": BRAND_NAME, "support_email": SUPPORT_EMAIL, "token": self.token, "connected": key is not None,
@@ -518,9 +523,10 @@ def create_server(port=None, app=None, *, host=None):
 
         def reply(self, status, value):
             page = status == 200 and type(value) is tuple
-            raw, csp = value if page else (dumps(value).encode("utf-8"), "default-src 'none'; frame-ancestors 'none'; base-uri 'none'")
+            mime = (value[2] if len(value) == 3 else "text/html; charset=utf-8") if page else "application/json; charset=utf-8"
+            raw, csp = value[:2] if page else (dumps(value).encode("utf-8"), "default-src 'none'; frame-ancestors 'none'; base-uri 'none'")
             self.send_response(status)
-            for key, text in {"Content-Type": "text/html; charset=utf-8" if page else "application/json; charset=utf-8",
+            for key, text in {"Content-Type": mime,
                               "Content-Length": str(len(raw)), "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
                               "X-Frame-Options": "DENY", "Referrer-Policy": "no-referrer", "Content-Security-Policy": csp}.items():
                 self.send_header(key, text)
