@@ -1,4 +1,4 @@
-﻿"""Offline Chinese brain, endpoint/security and browser-queue tests (synthetic data)."""
+"""Offline Chinese brain, endpoint/security and browser-queue tests (synthetic data)."""
 import copy
 import json
 import os
@@ -185,7 +185,7 @@ class RideBrainEndpointTests(unittest.TestCase):
 class RideBrainUITests(unittest.TestCase):
     def run_js(self,scenario,**options):
         if not NODE:self.skipTest('Local Node required')
-        harness=HARNESS.replace("  throw new Error('Unexpected request: '+url);", """
+        harness=HARNESS.replace("  // TEST_REVIEW_TRANSPORT", """
   if(url==='/api/coach/ride/review'){
     if(options.brainFail)throw new Error('brain offline');
     if(options.brainPending)return new Promise(()=>{});
@@ -199,7 +199,7 @@ class RideBrainUITests(unittest.TestCase):
 
     def test_ui_thinking_and_persona_contract(self):
         text=(ROOT/'static/ride.html').read_text(encoding='utf-8')
-        self.assertIn("thinking:'Mark 想了想'",text);self.assertIn('ride-persona/4',text)
+        self.assertIn("thinking:'Mark 想了想'",text);self.assertIn('ride-persona/5',text)
 
     def test_success_appends_without_autoplay_and_listen_uses_speech(self):
         result=self.run_js("""
