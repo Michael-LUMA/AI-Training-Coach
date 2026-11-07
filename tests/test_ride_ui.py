@@ -440,6 +440,21 @@ class RideMemoryUI(unittest.TestCase):
         self.assertEqual(mime2, 'image/svg+xml')
         self.assertIn(b'<svg', body2)
 
+    def test_font_endpoints_public_and_traversal_rejected(self):
+        from unittest.mock import Mock
+        app = coach_server.App(store=Mock())
+        for name in ('archivo-latin-700-normal.woff2', 'archivo-latin-800-normal.woff2',
+                     'ibm-plex-mono-latin-400-normal.woff2', 'ibm-plex-mono-latin-600-normal.woff2'):
+            with self.subTest(font=name):
+                body, csp, mime = app.dispatch('GET', '/fonts/' + name, {'Host': '127.0.0.1:8794'})
+                self.assertEqual(mime, 'font/woff2')
+                self.assertTrue(body.startswith(b'wOF2'))
+                self.assertIn("default-src 'none'", csp)
+        for bad in ('/fonts/../coach_server.py', '/fonts/missing.woff2', '/fonts/ARCHIVO.woff2', '/fonts/a.eot'):
+            with self.subTest(bad=bad):
+                with self.assertRaises(Exception):
+                    app.dispatch('GET', bad, {'Host': '127.0.0.1:8794'})
+
     def test_fuel_speaks_once_at_45min_in_demo_and_lands_in_notes(self):
         result = self.run_js("""
           $('demo-start').click();

@@ -209,11 +209,12 @@ class App:
         parsed = urlsplit(path)
         require(not parsed.scheme and not parsed.netloc and not parsed.fragment, "Invalid request target")
         require(method in ("GET", "POST"), "Method not allowed", "method_not_allowed", 405)
-        public = method == "GET" and parsed.path in ("/", "/ride", "/privacy", "/terms", "/ride.webmanifest", "/icon.svg", "/api/coach/config")
+        font_path = re.fullmatch(r"/fonts/[a-z0-9-]+\.woff2", parsed.path) if method == "GET" else None
+        public = method == "GET" and (parsed.path in ("/", "/ride", "/privacy", "/terms", "/ride.webmanifest", "/icon.svg", "/api/coach/config") or font_path is not None)
         if not public:
             token = headers.get("X-Coach-Token", "")
             require(type(token) is str and token.isascii() and secrets.compare_digest(token, self.token), "Session token required", "token_denied", 403)
-        allowed = ((method == "GET" and parsed.path in ("/", "/privacy", "/terms", "/api/coach/config", "/api/coach/activities", "/ride", "/ride.webmanifest", "/icon.svg", RIDE_LIST)) or
+        allowed = ((method == "GET" and (parsed.path in ("/", "/privacy", "/terms", "/api/coach/config", "/api/coach/activities", "/ride", "/ride.webmanifest", "/icon.svg", RIDE_LIST) or font_path is not None)) or
                    (method == "POST" and path in ("/api/coach/connect", "/api/coach/review", "/api/coach/review-l2", "/api/coach/demo-review", "/api/coach/waitlist", "/api/coach/weekly", RIDE_POST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE)))
         require(allowed, "Endpoint not found", "not_found", 404)
         if method == "POST":
@@ -249,6 +250,12 @@ class App:
                                   "/icon.svg": ("icon.svg", "image/svg+xml")}[parsed.path]
                 return ((ROOT / "static" / filename).read_bytes(),
                         "default-src 'none'; frame-ancestors 'none'; base-uri 'none'", mime)
+            font_match = re.fullmatch(r"/fonts/([a-z0-9-]+\.woff2)", parsed.path)
+            if font_match is not None:
+                font_file = ROOT / "static" / "fonts" / font_match.group(1)
+                require(font_file.is_file(), "Endpoint not found", "not_found", 404)
+                return (font_file.read_bytes(),
+                        "default-src 'none'; frame-ancestors 'none'; base-uri 'none'", "font/woff2")
             if path == "/api/coach/config":
                 key = self.store.get_key()
                 return {"billing_enabled": bool(os.environ.get("CREEM_WEBHOOK_SECRET", "").strip()), "subscription_status": self.billing.current_status(), "brand_name": BRAND_NAME, "support_email": SUPPORT_EMAIL, "token": self.token, "connected": key is not None,
