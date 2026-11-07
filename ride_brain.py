@@ -30,6 +30,9 @@ SYSTEM_PROMPT = """你是 Mark，像同行的朋友，用第一人称“我”�
 换算与按相同小数位四舍五入。不得用秒数冒充心率或样本数。
 facts 可能含 avg_power/max_power（单位 W，口语说"瓦"）与 avg_cadence
 （单位 rpm，口语说"转"）；为 null 或字段缺失就完全不提，禁止估算。
+facts 还可能含 distance_m（单位米）与 avg_speed_mps/max_speed_mps（单位
+米/秒）；口语一律用 display 里的 distance_km（公里）与 avg_speed_kmh/
+max_speed_kmh（公里/小时）；为 null 或字段缺失就完全不提，禁止估算。
 口吻要求：像朋友骑完车随口聊，一两句短句为主，最多三句；时长一律用
 display 里的分钟数（duration_min/previous_duration_min/duration_diff_min），
 心率差异用 differences 里的整数；不堆数字，挑最有话说的一两个。
@@ -42,8 +45,8 @@ _HAN = '零〇一二两三四五六七八九十百千万亿'
 _DIGITS = {'零':0,'〇':0,'一':1,'二':2,'两':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9}
 _HAN_RE = re.compile(r'['+_HAN+r']+(?:点['+_HAN+r']+)?')
 _NUM = r'[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?'
-_UNIT_RE = re.compile(r'\s*(bpm|分钟|小时|秒钟|秒|%|次|个|条|点|瓦|转|[A-Za-z]+)', re.I)
-_UNITS = {'分钟':'min','小时':'h','秒钟':'s','秒':'s','次':'','个':'','条':'','点':'','瓦':'w','转':'rpm'}
+_UNIT_RE = re.compile(r'\s*(bpm|公里|千米|分钟|小时|秒钟|秒|%|次|个|条|点|瓦|转|米|[A-Za-z]+(?:/[A-Za-z]+)?)', re.I)
+_UNITS = {'分钟':'min','小时':'h','秒钟':'s','秒':'s','次':'','个':'','条':'','点':'','瓦':'w','转':'rpm','公里':'km','千米':'km','米':'m'}
 _FORBIDDEN = re.compile(r'变强|状态提升|能力提升|训练效果|更健康|心肺功能.{0,4}(提高|改善)|'
                         r'(建议|应该|务必|请).{0,12}(减速|加速|降低心率|加大强度|服药|吃药)|'
                         r'继续保持.{0,6}(强度|心率)|燃脂效果|减脂效果|诊断|治疗')
@@ -97,7 +100,7 @@ def _normalized_numbers(text):
     def units(match):
         number,suffix=match.group(1),match.group(2)
         return number+' '+_UNITS.get(suffix,suffix)
-    return re.sub('('+_NUM+r')\s*(bpm|分钟|小时|秒钟|秒|%|次|个|条|点|瓦|转)',units,text,flags=re.I)
+    return re.sub('('+_NUM+r')\s*(bpm|公里|千米|分钟|小时|秒钟|秒|%|次|个|条|点|瓦|转|米)',units,text,flags=re.I)
 
 
 def _summary(value):
@@ -105,7 +108,8 @@ def _summary(value):
     if type(value) is not dict:
         raise ValueError('summary object required')
     units={'duration_s':'s','avg_hr':'bpm','max_hr':'bpm','gaps':None,'alerts':None,
-           'avg_cadence':'rpm','avg_power':'w','max_power':'w'}
+           'avg_cadence':'rpm','avg_power':'w','max_power':'w',
+           'distance_m':'m','avg_speed_mps':'m/s','max_speed_mps':'m/s'}
     nested={'time_in_zone_s':({'below','within','above'},'s'),
             'zone_target':({'lower','upper'},'bpm')}
     result={};numbers=[]
@@ -135,6 +139,18 @@ def _friendly_minutes(seconds):
     return int(minutes) if minutes==minutes.to_integral() else float(minutes)
 
 
+def _friendly_km(meters):
+    """Two-decimal kilometers as int/float; 12.34 not 12.340."""
+    km=(Decimal(str(meters))/1000).quantize(Decimal('0.01'))
+    return int(km) if km==km.to_integral() else float(km)
+
+
+def _friendly_kmh(mps):
+    """One-decimal km/h as int/float; 24.5 not 24.50."""
+    kmh=(Decimal(str(mps))*Decimal('3.6')).quantize(Decimal('0.1'))
+    return int(kmh) if kmh==kmh.to_integral() else float(kmh)
+
+
 def _facts(session, previous_summary):
     memory=validate_session(session)  # Detached before projecting; never send raw samples/notes/IDs.
     summary,numbers=_summary(memory['summary'])
@@ -145,6 +161,15 @@ def _facts(session, previous_summary):
     if summary.get('duration_s') is not None:
         display['duration_min']=_friendly_minutes(summary['duration_s'])
         numbers.append((Decimal(str(display['duration_min'])),'min'))
+    if summary.get('distance_m') is not None:
+        display['distance_km']=_friendly_km(summary['distance_m'])
+        numbers.append((Decimal(str(display['distance_km'])),'km'))
+        if summary.get('avg_speed_mps') is not None:
+            display['avg_speed_kmh']=_friendly_kmh(summary['avg_speed_mps'])
+            numbers.append((Decimal(str(display['avg_speed_kmh'])),'km/h'))
+        if summary.get('max_speed_mps') is not None:
+            display['max_speed_kmh']=_friendly_kmh(summary['max_speed_mps'])
+            numbers.append((Decimal(str(display['max_speed_kmh'])),'km/h'))
     if previous_summary is not None:
         previous,extra=_summary(previous_summary);numbers.extend(extra)
         facts['previous_summary']=previous;facts['comparison_count']=2

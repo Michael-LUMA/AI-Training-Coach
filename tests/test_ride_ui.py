@@ -786,7 +786,7 @@ class RideMemoryUI(unittest.TestCase):
         self.assertEqual(result['attached'].get('pwr'), 210)
         self.assertNotIn('cad', result['stale'])
         self.assertNotIn('pwr', result['stale'])
-        self.assertEqual(result['version'], 'luma-ride-memory/2')
+        self.assertEqual(result['version'], 'luma-ride-memory/3')
         self.assertEqual(result['summary']['avg_cadence'], 90)
         self.assertEqual(result['summary']['avg_power'], 210)
         self.assertEqual(result['summary']['max_power'], 210)
@@ -821,6 +821,73 @@ class RideMemoryUI(unittest.TestCase):
         self.assertIn('<luma:pwr>240</luma:pwr>', result)
         import xml.etree.ElementTree as ET
         ET.fromstring(result)
+
+    def test_demo_track_attaches_coords_locally_and_upload_strips(self):
+        result = self.run_js("""
+          $('demo-start').click();
+          await _advance(90000);
+          const uploadCall=_calls.find(c=>c.url==='/api/coach/ride/session');
+          const uploaded=JSON.parse(uploadCall.body);
+          return {uploaded,local:lastSession,trackStats:$('track-stats').textContent,
+                  trackLive:$('track-live').textContent,gpx:buildRideGpx(lastSession)};
+        """,demo=True)
+        from ride_memory import validate_session
+        item = validate_session(result['uploaded'])  # stripped upload stays contract-valid
+        self.assertEqual(item['schema_version'], 'luma-ride-memory/3')
+        for point in item['series']:
+            self.assertNotIn('lat', point); self.assertNotIn('lng', point)  # privacy: no coordinates uploaded
+        self.assertGreater(item['summary']['distance_m'], 1000)  # aggregates survive stripping
+        self.assertGreater(item['summary']['max_speed_mps'], 0)
+        local_points = [p for p in result['local']['series'] if 'lat' in p]
+        self.assertGreater(len(local_points), 80)  # local memory keeps the full track
+        self.assertIn('公里', result['trackStats'])
+        self.assertIn('<trkpt lat="', result['gpx'])  # real-track GPX from the demo loop
+        self.assertIn('<gpxtpx:hr>', result['gpx'])
+        import xml.etree.ElementTree as ET
+        ET.fromstring(result['gpx'])
+
+    def test_upload_opt_out_removes_gps_aggregates(self):
+        result = self.run_js("""
+          $('track-upload-none').checked=true;
+          $('demo-start').click();
+          await _advance(90000);
+          const uploadCall=_calls.find(c=>c.url==='/api/coach/ride/session');
+          return JSON.parse(uploadCall.body);
+        """,demo=True)
+        from ride_memory import validate_session
+        item = validate_session(result)
+        self.assertIsNone(item['summary']['distance_m'])
+        self.assertIsNone(item['summary']['avg_speed_mps'])
+        self.assertIsNone(item['summary']['max_speed_mps'])
+
+    def test_gpx_export_real_track_privacy_clip_and_gap_segments(self):
+        result = self.run_js("""
+          const memory={schema_version:'luma-ride-memory/3',id:'ride-gps',started_at:'2026-11-07T08:00:00.000Z',source:'ble_gatt_0x180d',
+            series:[...Array(30).keys()].map(i=>({t:i*10,hr:120,lat:40+i*0.001,lng:116}))};
+          $('track-clip').checked=true;
+          const clipped=buildRideGpx(memory);
+          $('track-clip').checked=false;
+          const whole=buildRideGpx(memory);
+          const gappy={...memory,series:[...memory.series.slice(0,5),{t:999,gap:true},...memory.series.slice(5).map(p=>({...p,t:p.t+1000}))]};
+          const segmented=buildRideGpx(gappy);
+          return {clipped,whole,segmented};
+        """)
+        self.assertNotIn('lat="40.0000000"', result['clipped'])  # home end clipped away
+        self.assertIn('lat="40.0000000"', result['whole'])  # toggle off keeps the full track
+        self.assertIn('已裁掉起终点各 500 米', result['clipped'])
+        self.assertIn('未裁剪起终点', result['whole'])
+        self.assertGreater(result['whole'].count('<trkpt '), result['clipped'].count('<trkpt '))
+        self.assertEqual(result['segmented'].count('<trkseg>'), 2)  # gap splits, never interpolated
+        import xml.etree.ElementTree as ET
+        for key in ('clipped', 'whole', 'segmented'):
+            ET.fromstring(result[key])
+
+    def test_track_panel_copy_strings(self):
+        for text in ('记录骑行轨迹（GPS，仅本机）', 'track-upload-none', 'track-clip',
+                     '连距离/速度聚合数字也不上传', '裁掉起终点各 500 米', 'track-plot',
+                     '轨迹：未开始', '每小时耗电约 10%'):
+            with self.subTest(text=text):
+                self.assertIn(text, self.html)
 
     def test_connect_aux_flow_with_fake_power_meter(self):
         result = self.run_js("""
@@ -984,7 +1051,7 @@ class RideNavUI(RideMemoryUI):
         self.assertEqual(result['afterRepeat'], len(result['afterFirst']['spoken']))  # announced once
         self.assertIn('向南骑行5031米到达终点', result['spoken'])
         self.assertIn('已接近终点', result['spoken'][-1])
-        self.assertEqual(result['watches'], 0)  # watch stopped at arrival
+        self.assertEqual(result['watches'], 1)  # nav watch stopped at arrival; GPS track watch keeps recording
         self.assertIn('✓ 1.', result['steps'])
         self.assertTrue(any('向东骑行200米右转' in note for note in result['notes']))
 

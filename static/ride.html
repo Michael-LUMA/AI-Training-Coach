@@ -54,6 +54,12 @@ h1{font:800 clamp(38px,5.6vw,60px)/1.12 var(--sans);letter-spacing:-.01em;margin
 #profile-zone-within{fill:rgba(94,125,76,.10)}
 #profile-zone-below{fill:rgba(61,116,166,.08)}
 #profile-cursor{stroke:var(--route);stroke-width:2;vector-effect:non-scaling-stroke}
+#track-plot{display:block;width:100%;height:auto;background:var(--sheet)}
+#track-frame{fill:none;stroke:var(--line);stroke-width:1}
+#track-line{stroke:var(--route);stroke-width:3;fill:none;vector-effect:non-scaling-stroke;stroke-linejoin:round;stroke-linecap:round}
+#track-start{fill:var(--ink)}
+#track-end{fill:var(--sheet);stroke:var(--ink);stroke-width:3}
+#track-stats{font-size:13px;margin:8px 0 0}
 .panel.alert{border:3px solid var(--route)}
 .countdown{font:800 64px/1 var(--sans);color:var(--route);margin:0 0 8px;font-variant-numeric:tabular-nums}
 .row{display:flex;gap:14px;flex-wrap:wrap;margin:12px 0}
@@ -100,7 +106,14 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px/1.75 var(--mono);max
 <div class="inst-head"><span id="connection" class="chip" data-i18n="conn-init">未连接</span><span id="elapsed" class="mono dim">00:00</span></div>
 <p class="bignumber"><span id="heart-rate" class="hr idle">—</span><span class="unit">bpm</span></p>
 <p id="zone-state" class="zone" data-i18n="zone-init">未设置目标区间</p>
+<p id="track-live" class="note" data-i18n="track-live-init">轨迹：未开始</p>
 <p id="aux-live" class="note" data-i18n="aux-init">未连接功率/踏频计</p>
+</section>
+<section id="track-panel" class="panel">
+<h2 data-i18n="track-h">骑行轨迹</h2>
+<svg id="track-plot" viewBox="0 0 1000 620" preserveAspectRatio="xMidYMid meet" role="img" aria-label="骑行轨迹图"><rect id="track-frame" x="1" y="1" width="998" height="618"/><path id="track-line" d=""/><rect id="track-start" x="-6" y="-6" width="12" height="12"/><circle id="track-end" r="7"/></svg>
+<p id="track-map-empty" class="note" data-i18n="track-empty">骑行中记录到的坐标会画在这里；只画实际定位点，断点留空，不连线补全。</p>
+<p id="track-stats" class="mono dim"></p>
 </section>
 <section id="profile-panel" class="panel">
 <h2 data-i18n="profile-h">心率剖面</h2>
@@ -128,6 +141,10 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px/1.75 var(--mono);max
 <div class="row actions"><button id="start-ride" type="button" data-i18n="start">连接心率带并开始</button><button id="end-ride" type="button" class="secondary" disabled data-i18n="end">结束骑行</button><button id="reconnect" type="button" class="secondary" disabled data-i18n="reconnect">重新连接</button></div>
 <div class="row"><button id="connect-aux" type="button" class="secondary" data-i18n="aux">加连功率计/踏频计（可选）</button></div>
 <p class="note" data-i18n="aux-note">可选第二步：连接功率计或踏频计（CSC/Cycling Power 标准协议）。只连接心率带也能正常记录，功率和踏频会如实留空。</p>
+<div class="row"><label class="check"><input id="track-enabled" type="checkbox" checked><span data-i18n="track-enabled-label">记录骑行轨迹（GPS，仅本机）</span></label></div>
+<p class="note" data-i18n="track-note">轨迹只写入本页内存和你手动下载的备份文件；上传到本服务的记录自动剥离坐标，只带距离/速度聚合数字。精度差于 30 米的定位点直接丢弃并如实留空。GPS 常开预计每小时耗电约 10%，长途建议低电量模式并带充电宝；屏幕熄灭不影响记录。</p>
+<div class="row"><label class="check"><input id="track-upload-none" type="checkbox"><span data-i18n="track-upload-label">连距离/速度聚合数字也不上传</span></label></div>
+<div class="row"><label class="check"><input id="track-clip" type="checkbox" checked><span data-i18n="track-clip-label">GPX 导出时裁掉起终点各 500 米（防家庭住址泄露）</span></label></div>
 <p id="status" class="statusline" role="status" aria-live="polite" data-i18n="status-init">准备记录。语音需点击开始激活；请先在静止状态连接设备。</p>
 </section>
 <section id="nav-card" class="panel" aria-labelledby="nav-heading">
@@ -148,8 +165,8 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px/1.75 var(--mono);max
 <p id="memory-compare" aria-live="polite" hidden></p>
 <p id="compare-source" class="warn" hidden></p>
 <p id="save-status" class="note" role="status" aria-live="polite" data-i18n="save-init">本片存储为 ephemeral：重启或重新部署可能丢失，请保留下载备份。</p>
-<div class="row"><button id="retry-upload" type="button" class="secondary" data-i18n="retry">重试上传本机待传记录</button><button id="download-session" type="button" class="secondary" disabled data-i18n="dl-json">下载本次 JSON 备份</button><button id="download-gpx" type="button" class="secondary" disabled data-i18n="dl-gpx">下载 GPX 备份（无 GPS）</button></div>
-<p class="note" data-i18n="gpx-note">GPX 备份只含心率时间轴与断线标记，没有 GPS 坐标；用于存档与复盘，不能直接导入需要轨迹的平台。</p>
+<div class="row"><button id="retry-upload" type="button" class="secondary" data-i18n="retry">重试上传本机待传记录</button><button id="download-session" type="button" class="secondary" disabled data-i18n="dl-json">下载本次 JSON 备份</button><button id="download-gpx" type="button" class="secondary" disabled data-i18n="dl-gpx">下载 GPX 备份</button></div>
+<p class="note" data-i18n="gpx-note">记录了坐标时，GPX 是真实轨迹（含心率/踏频/功率扩展点），可导入 Strava/行者/Garmin；没有坐标时，GPX 只含心率时间轴与断线标记，不能导入需要轨迹的平台。两种情况都如实标注，不混装。</p>
 </section>
 </div>
 </div>
@@ -449,6 +466,98 @@ function distToPathM(lng,lat,path){
   }
   return min;
 }
+// Ride track (GPS): coordinates stay in page memory and the rider's own
+// downloads. Uploads strip coordinates and carry only distance/speed
+// aggregates. Fixes worse than 30 m accuracy are dropped, never guessed.
+const TRACK_STALE_MS=10000, TRACK_MAX_ACCURACY_M=30, TRACK_CLIP_M=500;
+let trackWatch=null, lastFix=null;
+function trackPrefsSave(){try{localStorage.setItem('luma.track',JSON.stringify({enabled:$('track-enabled').checked!==false,uploadNone:$('track-upload-none').checked===true,clip:$('track-clip').checked!==false}));}catch(_){/* tracking never blocks a ride */}}
+function trackPrefsLoad(){try{const p=JSON.parse(localStorage.getItem('luma.track')||'null');if(p&&typeof p==='object'){$('track-enabled').checked=p.enabled!==false;$('track-upload-none').checked=p.uploadNone===true;$('track-clip').checked=p.clip!==false;}}catch(_){/* defaults stay */}}
+function stopTrackWatch(){
+  if(trackWatch!==null && typeof navigator!=='undefined' && navigator.geolocation && typeof navigator.geolocation.clearWatch==='function')navigator.geolocation.clearWatch(trackWatch);
+  trackWatch=null;
+}
+function startTrackWatch(){
+  if($('track-enabled').checked===false || typeof navigator==='undefined' || !navigator.geolocation || typeof navigator.geolocation.watchPosition!=='function')return;
+  stopTrackWatch();
+  try{trackWatch=navigator.geolocation.watchPosition(onTrackFix,()=>{},{enableHighAccuracy:true,maximumAge:1000});}catch(_){trackWatch=null;}
+}
+function onTrackFix(position){
+  const coords=position && position.coords;
+  if(!coords || typeof coords.latitude!=='number' || typeof coords.longitude!=='number')return;
+  if(!Number.isFinite(coords.latitude) || !Number.isFinite(coords.longitude))return;
+  const acc=typeof coords.accuracy==='number' && Number.isFinite(coords.accuracy) ? coords.accuracy : Infinity;
+  lastFix={lat:coords.latitude,lng:coords.longitude,acc,mono:performance.now()};
+  drawTrackLive();
+}
+function trackAttach(point){
+  if($('track-enabled').checked===false || !lastFix)return;
+  if(performance.now()-lastFix.mono>TRACK_STALE_MS || lastFix.acc>TRACK_MAX_ACCURACY_M)return;
+  point.lat=lastFix.lat;point.lng=lastFix.lng;
+}
+function trackStats(series){
+  const pts=series.filter(p=>'lat' in p && 'lng' in p);
+  if(!pts.length)return null;
+  let distance=0,maxSpeed=0;
+  for(let i=1;i<pts.length;i++){
+    const d=haversineM(pts[i-1].lng,pts[i-1].lat,pts[i].lng,pts[i].lat);
+    distance+=d;
+    const dt=pts[i].t-pts[i-1].t;
+    if(dt>0)maxSpeed=Math.max(maxSpeed,d/dt);
+  }
+  return {distance,maxSpeed};
+}
+function drawTrackLive(){
+  const el=$('track-live');
+  if(!el)return;
+  if(!active){el.textContent=I18N_TEXT.trackIdle();return;}
+  if($('track-enabled').checked===false){el.textContent=I18N_TEXT.trackOff();return;}
+  const stats=trackStats(session ? session.series : []);
+  if(!lastFix){el.textContent=I18N_TEXT.trackWaiting();return;}
+  const stale=performance.now()-lastFix.mono>TRACK_STALE_MS;
+  el.textContent=I18N_TEXT.trackLive(stale,lastFix.acc,stats ? stats.distance : 0);
+}
+function drawTrackMap(memory){
+  const stats=$('track-stats');
+  const pts=memory && Array.isArray(memory.series) ? memory.series.filter(p=>'lat' in p && 'lng' in p) : [];
+  const s=memory && memory.summary;
+  if(stats)stats.textContent=(pts.length>=2 && s && s.distance_m!=null)?I18N_TEXT.trackStatsLine(s.distance_m,s.avg_speed_mps,s.max_speed_mps,pts.length):'';
+  const line=$('track-line');
+  if(!line || typeof line.setAttribute!=='function')return;
+  const start=$('track-start'), end=$('track-end'), empty=$('track-map-empty');
+  if(pts.length<2){
+    line.setAttribute('d','');
+    if(start)start.setAttribute('x','-100');
+    if(end)end.setAttribute('cx','-100');
+    if(empty)empty.hidden=false;
+    return;
+  }
+  if(empty)empty.hidden=true;
+  let minLat=Infinity,maxLat=-Infinity,minLng=Infinity,maxLng=-Infinity;
+  for(const p of pts){if(p.lat<minLat)minLat=p.lat;if(p.lat>maxLat)maxLat=p.lat;if(p.lng<minLng)minLng=p.lng;if(p.lng>maxLng)maxLng=p.lng;}
+  const W=1000,H=620,PAD=30;
+  const spanLng=Math.max(maxLng-minLng,1e-6), spanLat=Math.max(maxLat-minLat,1e-6);
+  const scale=Math.min((W-2*PAD)/spanLng,(H-2*PAD)/spanLat);
+  const ox=(W-scale*spanLng)/2, oy=(H-scale*spanLat)/2;
+  const X=lng=>ox+(lng-minLng)*scale;
+  const Y=lat=>H-oy-(lat-minLat)*scale;
+  let d='';
+  for(const p of pts)d+=(d?'L':'M')+X(p.lng).toFixed(1)+' '+Y(p.lat).toFixed(1);
+  line.setAttribute('d',d);
+  if(start){start.setAttribute('x',(X(pts[0].lng)-6).toFixed(1));start.setAttribute('y',(Y(pts[0].lat)-6).toFixed(1));}
+  if(end){end.setAttribute('cx',X(pts[pts.length-1].lng).toFixed(1));end.setAttribute('cy',Y(pts[pts.length-1].lat).toFixed(1));}
+}
+const I18N_TEXT={
+  trackIdle:()=>currentLang()==='en'?'Track: not started':'轨迹：未开始',
+  trackOff:()=>currentLang()==='en'?'Track: off (GPS recording disabled)':'轨迹：已关闭（你停用了 GPS 记录）',
+  trackWaiting:()=>currentLang()==='en'?'Track: waiting for GPS fix…':'轨迹：等待 GPS 定位…',
+  trackLive:(stale,acc,dist)=>currentLang()==='en'
+    ? 'Track: '+(stale?'fix lost, holding last position':'recording')+' · accuracy '+(Number.isFinite(acc)?Math.round(acc)+' m':'—')+' · '+(dist/1000).toFixed(2)+' km'
+    : '轨迹：'+(stale?'定位中断，保留最后位置':'记录中')+' · 精度 '+(Number.isFinite(acc)?Math.round(acc)+' 米':'—')+' · '+(dist/1000).toFixed(2)+' 公里',
+  trackStatsLine:(d,avg,max,n)=>currentLang()==='en'
+    ? 'GPS track '+(d/1000).toFixed(2)+' km · avg '+(avg*3.6).toFixed(1)+' km/h · max '+(max*3.6).toFixed(1)+' km/h · '+n+' recorded fixes'
+    : 'GPS 轨迹 '+(d/1000).toFixed(2)+' 公里 · 平均 '+(avg*3.6).toFixed(1)+' km/h · 最高 '+(max*3.6).toFixed(1)+' km/h · '+n+' 个记录点'
+};
 let navRoute=null, navWatch=null, navVoice=true, navPlanning=false;
 let navOffRoute=false, navOffRouteSnooze=0;
 function navStatus(text){$('nav-status').textContent=text;}
@@ -703,7 +812,7 @@ function loadSpeechPrefs(){
 function elapsedSeconds(){return demoPlaying ? demoElapsed : Math.max(0, Math.round(performance.now() - startedMono) / 1000);}
 function zone(hr){return !target ? null : hr < target.lower ? 'below' : hr > target.upper ? 'above' : 'within';}
 function resetOutside(){outsideSince = null; outsideKind = null; if(speechKind==='zone')cancelSpeech();}
-function drawTimeline(){ $('timeline').textContent = session.series.slice(-60).map(p => p.t.toFixed(3) + 's  ' + ('gap' in p ? 'gap — 信号缺失' : p.hr + ' bpm')).join('\n'); drawProfile(); }
+function drawTimeline(){ $('timeline').textContent = session.series.slice(-60).map(p => p.t.toFixed(3) + 's  ' + ('gap' in p ? 'gap — 信号缺失' : p.hr + ' bpm')).join('\n'); drawProfile(); drawTrackLive(); }
 // Profile band (signature move): the recorded HR series drawn as a topographic
 // profile — contour line over zone tints, red cursor at the latest sample.
 // Decorative projection of the record, never a data source: long series are
@@ -751,6 +860,7 @@ function addPoint(point){
   if (session.series.length >= MAX_SERIES) {finishRide('已到 20000 点上限，停止记录，未静默丢弃后续数据。'); return false;}
   const last = session.series[session.series.length-1];
   if (last && point.t <= last.t) point.t = Math.round((last.t + .001) * 1000) / 1000;
+  if('hr' in point)trackAttach(point);
   session.series.push(point); drawTimeline(); return true;
 }
 function markGap(){
@@ -882,8 +992,9 @@ function begin(options={}){
   comparisonRequest+=1;$('memory-compare').hidden=true;$('compare-source').hidden=true;
   target = options.target === undefined ? readTarget() : options.target; startedMs = Date.now(); startedMono = performance.now();
   const random = new Uint32Array(4); crypto.getRandomValues(random);
-  session = {schema_version:'luma-ride-memory/2', id:'ride-' + [...random].map(n=>n.toString(16).padStart(8,'0')).join(''), started_at:new Date(startedMs).toISOString(), ended_at:null, samples_hz:1, series:[], summary:null, coach_notes:[], persona_version:PERSONA.version, source:SIMULATED ? 'simulated' : 'ble_gatt_0x180d'};
+  session = {schema_version:'luma-ride-memory/3', id:'ride-' + [...random].map(n=>n.toString(16).padStart(8,'0')).join(''), started_at:new Date(startedMs).toISOString(), ended_at:null, samples_hz:1, series:[], summary:null, coach_notes:[], persona_version:PERSONA.version, source:SIMULATED ? 'simulated' : 'ble_gatt_0x180d'};
   latestCad = null; latestPwr = null; crankPrev = null; drawAuxLive();
+  lastFix=null; startTrackWatch(); drawTrackLive(); drawTrackMap(null);
   if(options.source)session.source=options.source;
   if(options.samplesHz)session.samples_hz=options.samplesHz;
   $('demo-start').disabled=true;
@@ -951,6 +1062,9 @@ function tickDemo(){
   if(lastSignal!==null && performance.now()-lastSignal>STALE_MS)markGap();
   demoStep+=1;demoElapsed=Math.min(DEMO_DURATION_S,demoStep*DEMO_STEP_S);
   demoFeedAux(demoElapsed);
+  // Simulated loop track: fictional ellipse, source stays 'simulated' end to end.
+  const angle=2*Math.PI*(demoElapsed/DEMO_DURATION_S);
+  lastFix={lat:39.9921+0.008*Math.cos(angle),lng:116.3974+0.012*Math.sin(angle),acc:5,mono:performance.now()};
   receiveHR(demoHeartRate(demoElapsed));
   const minutes=Math.floor(demoElapsed/60), seconds=demoElapsed%60;
   $('elapsed').textContent=String(minutes).padStart(2,'0')+':'+String(seconds).padStart(2,'0')+' · SIMULATED / 30×';
@@ -984,11 +1098,15 @@ function buildMemory(){
   const hrs=session.series.filter(p=>'hr' in p).map(p=>p.hr);
   const cads=session.series.filter(p=>'cad' in p).map(p=>p.cad);
   const pwrs=session.series.filter(p=>'pwr' in p).map(p=>p.pwr);
+  const track=trackStats(session.series);
   session.ended_at=new Date(startedMs+Math.round(duration*1000)).toISOString();
   session.summary={duration_s:duration,avg_hr:hrs.length ? hrs.reduce((a,b)=>a+b,0)/hrs.length : null,max_hr:hrs.length ? Math.max(...hrs) : null,time_in_zone_s:target ? {...totals} : null,zone_target:target ? {...target} : null,gaps:session.series.filter(p=>'gap' in p).length,alerts,
     avg_cadence:cads.length ? cads.reduce((a,b)=>a+b,0)/cads.length : null,
     avg_power:pwrs.length ? pwrs.reduce((a,b)=>a+b,0)/pwrs.length : null,
-    max_power:pwrs.length ? Math.max(...pwrs) : null};
+    max_power:pwrs.length ? Math.max(...pwrs) : null,
+    distance_m:track ? track.distance : null,
+    avg_speed_mps:track && duration>0 ? track.distance/duration : null,
+    max_speed_mps:track ? track.maxSpeed : null};
   return session;
 }
 function summarize(memory){
@@ -1000,6 +1118,7 @@ function summarize(memory){
   } else text+='未设置区间，不计算区间占比。';
   if(s.avg_power!=null)text+='样本平均功率'+s.avg_power.toFixed(1)+' W，最大'+s.max_power+' W。';
   if(s.avg_cadence!=null)text+='样本平均踏频'+s.avg_cadence.toFixed(1)+' rpm。';
+  if(s.distance_m!=null)text+='GPS 轨迹距离'+(s.distance_m/1000).toFixed(2)+' 公里，平均速度'+(s.avg_speed_mps*3.6).toFixed(1)+' km/h，最高'+(s.max_speed_mps*3.6).toFixed(1)+' km/h；只统计记录到的坐标点，丢点与断线不计入。';
   return text;
 }
 function retain(memory){
@@ -1009,11 +1128,13 @@ function retain(memory){
 // Sensor-only GPX export: heart-rate timeline + honest gap markers, no GPS track.
 // Shares the urn:luma:ride-capture:1 extension shape with the capture page builder.
 function buildRideGpx(memory){
-  if(!memory || (memory.schema_version!=='luma-ride-memory/1' && memory.schema_version!=='luma-ride-memory/2') || !Array.isArray(memory.series))throw new Error('记录结构无效，不能生成 GPX');
+  if(!memory || (memory.schema_version!=='luma-ride-memory/1' && memory.schema_version!=='luma-ride-memory/2' && memory.schema_version!=='luma-ride-memory/3') || !Array.isArray(memory.series))throw new Error('记录结构无效，不能生成 GPX');
   const startedMs=Date.parse(memory.started_at);
   if(!Number.isFinite(startedMs))throw new Error('开始时间无效，不能生成 GPX');
   const escapeXml=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));
   const iso=t=>new Date(startedMs+Math.round(t*1000)).toISOString();
+  const coordPoints=memory.series.filter(p=>p && 'hr' in p && 'lat' in p && 'lng' in p);
+  if(coordPoints.length>=2)return buildTrackGpx(memory,escapeXml,iso);
   const lines=['<?xml version="1.0" encoding="UTF-8"?>',
     '<gpx version="1.1" creator="Mark Ride" xmlns="http://www.topografix.com/GPX/1/1" xmlns:luma="urn:luma:ride-capture:1" xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1">',
     '<metadata><name>无 GPS 轨迹的心率记录</name><desc>仅心率时间轴；无经纬度、距离、爬升。断线标 gap，不插值。不能直接导入需要 GPS 轨迹的平台。</desc><time>'+new Date(startedMs).toISOString()+'</time></metadata>',
@@ -1042,14 +1163,70 @@ function buildRideGpx(memory){
   lines.push('</luma:sensorSeries></extensions></gpx>');
   return lines.join('\n');
 }
+// Real-track GPX: standard trkpt coordinates with hr/cad/pwr extension values.
+// Coordinates come only from recorded fixes; gap markers and coord-less
+// stretches split segments instead of being interpolated. Optional privacy
+// clip drops the first/last TRACK_CLIP_M of cumulative distance; a track
+// shorter than 2x the clip is exported whole, with the reason in the desc.
+function buildTrackGpx(memory,escapeXml,iso){
+  const clip=$('track-clip').checked!==false;
+  const coordPts=memory.series.filter(p=>p && 'hr' in p && 'lat' in p && 'lng' in p);
+  const cum=[0];
+  for(let i=1;i<coordPts.length;i++){
+    const a=coordPts[i-1],b=coordPts[i];
+    cum.push(cum[i-1]+haversineM(a.lng,a.lat,b.lng,b.lat));
+  }
+  const total=cum[cum.length-1];
+  const clipping=clip && total>=2*TRACK_CLIP_M;
+  const keep=new Set(coordPts.filter((_,i)=>!clipping || (cum[i]>=TRACK_CLIP_M && total-cum[i]>=TRACK_CLIP_M)));
+  if(clipping && keep.size<2)throw new Error('裁剪后轨迹不足两点，未生成 GPX；可关闭裁剪后重试。');
+  const fmt=n=>Number(n).toFixed(7);
+  const lines=['<?xml version="1.0" encoding="UTF-8"?>',
+    '<gpx version="1.1" creator="Mark Ride" xmlns="http://www.topografix.com/GPX/1/1" xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1" xmlns:gpxp="http://www.garmin.com/xmlschemas/PowerExtension/v1">',
+    '<metadata><name>Mark 骑行轨迹记录</name><desc>'+(clipping?'真实 GPS 轨迹；按你的设置已裁掉起终点各 '+TRACK_CLIP_M+' 米防敏感地点泄露。':'真实 GPS 轨迹；未裁剪起终点。')+'断线与无坐标段如实切段，不插值。心率/踏频/功率为采样扩展值。来源：'+escapeXml(memory.source || '')+'。</desc><time>'+new Date(Date.parse(memory.started_at)).toISOString()+'</time></metadata>',
+    '<trk><name>Mark 骑行记录</name>'];
+  let inSegment=false, count=0;
+  for(const p of memory.series){
+    if(p && 'gap' in p){
+      if(inSegment){lines.push('</trkseg>');inSegment=false;}
+      continue;
+    }
+    if(!p || !('hr' in p) || !('lat' in p) || !('lng' in p) || !keep.has(p))continue;
+    if(!inSegment){lines.push('<trkseg>');inSegment=true;}
+    if(++count>MAX_SERIES)throw new Error('采样数超过上限，不能生成 GPX');
+    let ext='<gpxtpx:hr>'+p.hr+'</gpxtpx:hr>';
+    if('cad' in p)ext+='<gpxtpx:cad>'+p.cad+'</gpxtpx:cad>';
+    ext='<gpxtpx:TrackPointExtension>'+ext+'</gpxtpx:TrackPointExtension>';
+    if('pwr' in p)ext+='<gpxp:power>'+p.pwr+'</gpxp:power>';
+    lines.push('<trkpt lat="'+fmt(p.lat)+'" lon="'+fmt(p.lng)+'"><time>'+iso(p.t)+'</time><extensions>'+ext+'</extensions></trkpt>');
+  }
+  if(inSegment)lines.push('</trkseg>');
+  if(!count)throw new Error('没有带坐标的采样，不生成空轨迹 GPX');
+  lines.push('</trk></gpx>');
+  return lines.join('\n');
+}
 async function getToken(){
   const response=await fetch('/api/coach/config',{cache:'no-store'}); if(!response.ok) throw new Error('无法获取会话令牌');
   const config=await response.json(); if(typeof config.token !== 'string' || !config.token) throw new Error('会话令牌缺失'); token=config.token;
 }
+// Privacy strip: coordinates never leave the phone. Uploads carry only the
+// aggregate numbers (or nothing GPS-derived, when the rider opts out). The
+// local memory and downloads always keep the full track.
+function stripForUpload(memory){
+  const copy=JSON.parse(JSON.stringify(memory));
+  if(Array.isArray(copy.series))copy.series=copy.series.map(p=>{
+    if(!('lat' in p) && !('lng' in p))return p;
+    const {lat,lng,...rest}=p; return rest;
+  });
+  if($('track-upload-none').checked===true && copy.summary && typeof copy.summary==='object'){
+    copy.summary={...copy.summary,distance_m:null,avg_speed_mps:null,max_speed_mps:null};
+  }
+  return copy;
+}
 async function upload(memory, retained){
   try {
     if(!token) await getToken();
-    const response=await fetch('/api/coach/ride/session',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify(memory)});
+    const response=await fetch('/api/coach/ride/session',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify(stripForUpload(memory))});
     const result=await response.json();
     if(!response.ok || result.status!=='saved' || result.id!==memory.id) {if(response.status===403)token=''; throw new Error(result.error_code || 'upload_failed');}
     try {localStorage.removeItem(PENDING_PREFIX+memory.id);} catch (_) { /* A saved duplicate can be retried idempotently. */ }
@@ -1060,10 +1237,11 @@ async function upload(memory, retained){
 }
 function finishRide(reason=''){
   if(!active)return;
-  const memory=buildMemory(); active=false;demoPlaying=false;$('demo-start').disabled=false; clearInterval(timer);clearInterval(simulator);clearInterval(fallTimer);crashState='idle';$('fall-card').hidden=true;releaseScreenLock();resetOutside();stopNavWatch();
+  const memory=buildMemory(); active=false;demoPlaying=false;$('demo-start').disabled=false; clearInterval(timer);clearInterval(simulator);clearInterval(fallTimer);crashState='idle';$('fall-card').hidden=true;releaseScreenLock();resetOutside();stopNavWatch();stopTrackWatch();
   if(device && device.gatt.connected)device.gatt.disconnect();
   if(auxDevice && auxDevice.gatt.connected)auxDevice.gatt.disconnect();
   if(memoryNumber(memory.summary.avg_hr))previousRideAvgHr=memory.summary.avg_hr;
+  drawTrackMap(memory);drawTrackLive();
   $('end-ride').disabled=true;$('reconnect').disabled=true;$('start-ride').disabled=false;$('lower').disabled=$('upper').disabled=false;$('milestone-interval').disabled=$('fuel-interval').disabled=false;
   const text=summarize(memory);$('summary').textContent=text;if(memory.coach_notes.length<200)memory.coach_notes.push(text);speak(text,'summary',speechKind==='fuel');
   lastSession=memory;$('download-session').disabled=false;$('download-gpx').disabled=false;$('connection').textContent='记录已结束';state(reason || '记录结束。平均值为实际样本算术平均，不推断训练效果。');
@@ -1073,6 +1251,10 @@ $('ride-weekly-listen').addEventListener('click',listenWeekly);
 $('nav-plan').addEventListener('click',planNav);
 $('nav-clear').addEventListener('click',clearNav);
 $('nav-voice').addEventListener('click',()=>{navVoice=$('nav-voice').checked!==false;});
+$('track-enabled').addEventListener('change',()=>{trackPrefsSave();if(active){if($('track-enabled').checked===false){stopTrackWatch();lastFix=null;}else startTrackWatch();}drawTrackLive();});
+$('track-upload-none').addEventListener('change',trackPrefsSave);
+$('track-clip').addEventListener('change',trackPrefsSave);
+trackPrefsLoad();drawTrackLive();
 window.addEventListener('devicemotion', onDeviceMotion);
 document.addEventListener('pointerdown',()=>{if(crashState==='alert' || crashState==='alarm')cancelFallAlert('触碰屏幕，确认有意识，警报取消。');});
 $('fall-ok').addEventListener('click',()=>cancelFallAlert());
@@ -1160,8 +1342,14 @@ const I18N_EN=Object.freeze({
   'summary-h':'One line after the ride', 'summary-init':'Generated from the record after you finish. Whatever has no data stays missing.',
   'brain-h':'Mark thought it over',
   'save-init':'Server storage is ephemeral: restarts or redeploys may lose it. Keep a downloaded backup.',
-  retry:'Retry uploading pending records', 'dl-json':'Download JSON backup', 'dl-gpx':'Download GPX backup (no GPS)',
-  'gpx-note':'The GPX backup holds only the heart-rate timeline and gap markers — no GPS coordinates. It is for archive and review and cannot be imported into platforms that need a track.',
+  retry:'Retry uploading pending records', 'dl-json':'Download JSON backup', 'dl-gpx':'Download GPX backup',
+  'gpx-note':'With recorded coordinates, the GPX is a real track (heart rate / cadence / power as extension values), importable into Strava, Xingzhe, or Garmin. Without coordinates it holds only the heart-rate timeline and gap markers and cannot be imported where a track is required. The two are never blended.',
+  'track-live-init':'Track: not started', 'track-h':'Ride track',
+  'track-empty':'Coordinates recorded during the ride are drawn here. Real fixes only; breaks stay open, never connected.',
+  'track-enabled-label':'Record ride track (GPS, on-device only)',
+  'track-note':'The track lives only in this page\u2019s memory and the backups you download; uploads to this service strip coordinates and carry only distance/speed aggregates. Fixes worse than 30 m accuracy are dropped and honestly left blank. Continuous GPS costs roughly 10% battery per hour — use low-battery mode and a power bank on long rides; a sleeping screen does not stop recording.',
+  'track-upload-label':'Do not upload even the distance/speed aggregates',
+  'track-clip-label':'Clip the first/last 500 m in GPX export (protects home address)',
   f1:'Record only. Not medical advice.',
   f2:'Voice reports only the record and your thresholds — no training prescriptions or promised outcomes. Backgrounding, screen lock, battery savers, or browser suspension may stop BLE, timing, or speech; this page is not a reliable safety alarm. Never operate the screen while riding.',
   f3:'Heart-rate data lives on this device and in this service\u2019s temporary directory; do not treat a shared computer as private multi-user space. Simulated sources stay with their records and never become real sources.',

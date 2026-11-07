@@ -242,5 +242,89 @@ class RideMemoryTests(unittest.TestCase):
             with self.subTest(key=key): self.reject(bad)
 
 
+class RideMemoryV3Tests(unittest.TestCase):
+    """v3 contract: optional coordinates on HR points and track aggregates."""
+
+    def reject(self, value):
+        with self.assertRaises(RideMemoryError) as caught:
+            validate_session(value)
+        self.assertTrue(caught.exception.code)
+        return caught.exception
+
+    def v3(self):
+        """Synthetic v3 record with a small recorded track and one gap."""
+        value = {"schema_version": "luma-ride-memory/3", "id": "synthetic-ride_gps01",
+                 "started_at": "2026-11-07T08:00:00Z", "ended_at": "2026-11-07T08:01:40Z",
+                 "samples_hz": 1,
+                 "series": [{"t": 10, "hr": 120, "lat": 40.0, "lng": 116.0},
+                            {"t": 20, "hr": 122, "lat": 40.0005, "lng": 116.0005},
+                            {"t": 30, "gap": True},
+                            {"t": 40, "hr": 124, "lat": 40.001, "lng": 116.001}],
+                 "summary": None,
+                 "coach_notes": [], "persona_version": "ride-persona/14",
+                 "source": "ble_gatt_0x180d"}
+        track = [(10.0, 40.0, 116.0), (20.0, 40.0005, 116.0005), (40.0, 40.001, 116.001)]
+        from ride_memory import _track_stats
+        distance, max_speed = _track_stats(track)
+        value["summary"] = {"duration_s": 100, "avg_hr": 122, "max_hr": 124,
+                            "time_in_zone_s": None, "zone_target": None, "gaps": 1, "alerts": 0,
+                            "avg_cadence": None, "avg_power": None, "max_power": None,
+                            "distance_m": distance, "avg_speed_mps": distance / 100,
+                            "max_speed_mps": max_speed}
+        return value
+
+    def test_v3_valid_roundtrip_and_older_versions_untouched(self):
+        value = self.v3(); before = copy.deepcopy(value)
+        self.assertEqual(validate_session(value), before)
+        self.assertEqual(value, before)
+
+    def test_v3_summary_requires_exact_thirteen_fields(self):
+        for key in ('distance_m', 'avg_speed_mps', 'max_speed_mps'):
+            value = self.v3(); del value['summary'][key]
+            with self.subTest(missing=key): self.reject(value)
+        value = self.v3(); value['summary']['pace'] = 1; self.reject(value)
+
+    def test_v3_aggregates_recomputed_from_recorded_track(self):
+        for updates in ({'distance_m': 1}, {'avg_speed_mps': 1}, {'max_speed_mps': 1},
+                        {'distance_m': None}, {'max_speed_mps': float('nan')}):
+            value = self.v3(); value['summary'].update(updates)
+            with self.subTest(updates=updates): self.reject(value)
+
+    def test_v3_coordinate_pair_ranges_and_gap_purity(self):
+        for field, bad in (('lat', -91), ('lat', 90.1), ('lat', '40'), ('lat', float('inf')),
+                           ('lng', -181), ('lng', 180.1), ('lng', None)):
+            value = self.v3(); value['series'][0][field] = bad
+            with self.subTest(field=field, bad=bad): self.reject(value)
+        value = self.v3(); del value['series'][0]['lng']  # pair required
+        self.reject(value)
+        value = self.v3(); value['series'][2]['lat'] = 1.0  # gaps never carry coords
+        self.reject(value)
+
+    def test_v3_stripped_upload_needs_internal_consistency(self):
+        value = self.v3()
+        for point in value['series']:
+            point.pop('lat', None); point.pop('lng', None)
+        self.assertEqual(validate_session(value), value)  # aggregates survive stripping
+        for updates in ({'avg_speed_mps': 0.01}, {'max_speed_mps': 0.001},
+                        {'max_speed_mps': 71}, {'distance_m': -1}):
+            bad = self.v3()
+            for point in bad['series']:
+                point.pop('lat', None); point.pop('lng', None)
+            bad['summary'].update(updates)
+            with self.subTest(updates=updates): self.reject(bad)
+
+    def test_v3_track_and_aggregates_all_or_none(self):
+        value = self.v3()
+        value['summary'].update(distance_m=None, avg_speed_mps=None, max_speed_mps=None)
+        self.reject(value)  # recorded coordinates require aggregates
+        bare = self.v3()
+        for point in bare['series']:
+            point.pop('lat', None); point.pop('lng', None)
+        bare['summary'].update(distance_m=None, avg_speed_mps=None, max_speed_mps=None)
+        self.assertEqual(validate_session(bare), bare)  # tracking disabled ride is honest
+        bare['summary']['distance_m'] = 5  # one present, two null
+        self.reject(bare)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -32,6 +32,23 @@ v2 additions (luma-ride-memory/2, everything above unchanged except):
   each null when no such sample was recorded; present values must equal the
   recorded sample mean/maximum. A v1 summary inside a v2 file is rejected.
 
+v3 additions (luma-ride-memory/3, everything above unchanged except):
+* HR series points may carry an optional lat/lng coordinate pair (always
+  together; finite, lat in -90..90, lng in -180..180). Gap points never carry
+  them. Coordinates are recorded positions, never interpolated across gaps.
+* summary is exactly the v2 keys plus distance_m, avg_speed_mps and
+  max_speed_mps. The three are all-or-none: one null requires all null.
+  When the series carries coordinates, all three must equal the values
+  recomputed from the recorded track: distance_m is the haversine sum over
+  consecutive coordinate points (spherical Earth, radius 6371000 m, matching
+  the recording client), avg_speed_mps is distance_m/duration_s and
+  max_speed_mps is the largest per-segment distance/time ratio.
+  When the series carries NO coordinates (a privacy-stripped upload), the
+  aggregates cannot be recomputed; they are still required to be internally
+  consistent: avg_speed_mps == distance_m/duration_s within tolerance and
+  0 <= avg_speed_mps <= max_speed_mps <= 70 (a generous physical ceiling,
+  not a performance claim). A v2 summary inside a v3 file is rejected.
+
 No HTTP, BLE, TTS, filesystem writes, model calls, diagnosis or prescriptions.
 """
 from __future__ import annotations
@@ -44,16 +61,20 @@ from typing import Any
 
 SCHEMA_VERSION = "luma-ride-memory/1"
 SCHEMA_VERSION_V2 = "luma-ride-memory/2"
-SCHEMA_VERSIONS = frozenset({SCHEMA_VERSION, SCHEMA_VERSION_V2})
+SCHEMA_VERSION_V3 = "luma-ride-memory/3"
+SCHEMA_VERSIONS = frozenset({SCHEMA_VERSION, SCHEMA_VERSION_V2, SCHEMA_VERSION_V3})
 MAX_SERIES = 20000
 MAX_COACH_NOTES = 200
 MAX_NOTE_CHARS = 2000
+EARTH_RADIUS_M = 6371000.0  # Matches the recording client's haversine constant.
+MAX_PLAUSIBLE_SPEED_MPS = 70.0  # Generous physical ceiling, never a claim.
 SOURCES = frozenset({"ble_gatt_0x180d", "simulated"})
 _FIELDS = frozenset({"schema_version", "id", "started_at", "ended_at", "samples_hz",
                      "series", "summary", "coach_notes", "persona_version", "source"})
 _SUMMARY = frozenset({"duration_s", "avg_hr", "max_hr", "time_in_zone_s", "zone_target",
                       "gaps", "alerts"})
 _SUMMARY_V2 = _SUMMARY | {"avg_cadence", "avg_power", "max_power"}
+_SUMMARY_V3 = _SUMMARY_V2 | {"distance_m", "avg_speed_mps", "max_speed_mps"}
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
 _TIME = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}"
                    r"(?:\.[0-9]{1,6})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])\Z")
@@ -127,6 +148,28 @@ def _series_stats(summary: dict, avg_key: str, values: list, max_key: str | None
         _require(maximum == max(values), max_key + " must match recorded samples")
 
 
+def _haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Spherical haversine identical to the recording client's formula."""
+    rad = math.pi / 180.0
+    dlat = (lat2 - lat1) * rad
+    dlng = (lng2 - lng1) * rad
+    a = math.sin(dlat / 2) ** 2 + math.cos(lat1 * rad) * math.cos(lat2 * rad) * math.sin(dlng / 2) ** 2
+    return 2 * EARTH_RADIUS_M * math.asin(min(1.0, math.sqrt(a)))
+
+
+def _track_stats(track: list[tuple[float, float, float]]) -> tuple[float, float]:
+    """Distance and max per-segment speed recomputed from recorded coordinates."""
+    distance = 0.0
+    max_speed = 0.0
+    for (t1, lat1, lng1), (t2, lat2, lng2) in zip(track, track[1:]):
+        segment = _haversine_m(lat1, lng1, lat2, lng2)
+        distance += segment
+        dt = t2 - t1
+        if dt > 0:
+            max_speed = max(max_speed, segment / dt)
+    return distance, max_speed
+
+
 def validate_session(session: dict[str, Any]) -> dict[str, Any]:
     """Validate one complete v1 or v2 memory and return a detached, unchanged copy.
 
@@ -149,7 +192,8 @@ def validate_session(session: dict[str, Any]) -> dict[str, Any]:
     _fields(session, _FIELDS, "session")
     _require(type(session["schema_version"]) is str and session["schema_version"] in SCHEMA_VERSIONS,
              "Unsupported schema_version")
-    v2 = session["schema_version"] == SCHEMA_VERSION_V2
+    v2 = session["schema_version"] in (SCHEMA_VERSION_V2, SCHEMA_VERSION_V3)
+    v3 = session["schema_version"] == SCHEMA_VERSION_V3
     _require(type(session["id"]) is str and _ID.fullmatch(session["id"]) is not None,
              "id must be a safe v1 identifier")
     _text(session["persona_version"], "persona_version", 64)
@@ -164,7 +208,7 @@ def validate_session(session: dict[str, Any]) -> dict[str, Any]:
     _require(type(series) is list and len(series) <= MAX_SERIES,
              "series must be a bounded list", "series_too_large" if type(series) is list else "invalid_schema")
     summary = session["summary"]
-    _fields(summary, _SUMMARY_V2 if v2 else _SUMMARY, "summary")
+    _fields(summary, _SUMMARY_V3 if v3 else (_SUMMARY_V2 if v2 else _SUMMARY), "summary")
     duration = _number(summary["duration_s"], "duration_s")
     _require(math.isclose(duration, elapsed, rel_tol=0, abs_tol=1e-6),
              "duration_s must match the recorded timestamps")
@@ -172,10 +216,12 @@ def validate_session(session: dict[str, Any]) -> dict[str, Any]:
     hrs = []
     cads = []
     pwrs = []
+    track = []
     gaps = 0
     for point in series:
         if type(point) is dict:
-            allowed = {"t", "hr", "gap", "cad", "pwr"} if v2 else {"t", "hr", "gap"}
+            allowed = {"t", "hr", "gap", "cad", "pwr", "lat", "lng"} if v3 else (
+                {"t", "hr", "gap", "cad", "pwr"} if v2 else {"t", "hr", "gap"})
             shape_ok = not (set(point) - allowed) and "t" in point and (("hr" in point) != ("gap" in point))
         else:
             shape_ok = False
@@ -201,6 +247,17 @@ def validate_session(session: dict[str, Any]) -> dict[str, Any]:
                     _require(type(point["pwr"]) is int and 0 <= point["pwr"] <= 65535,
                              "pwr must be an unsigned watt integer")
                     pwrs.append(point["pwr"])
+            if v3 and ("lat" in point or "lng" in point):
+                _require("lat" in point and "lng" in point,
+                         "lat/lng must always appear together")
+                lat, lng = point["lat"], point["lng"]
+                _require(type(lat) in (int, float) and math.isfinite(lat),
+                         "series.lat must be a finite number")
+                _require(type(lng) in (int, float) and math.isfinite(lng),
+                         "series.lng must be a finite number")
+                _require(-90.0 <= lat <= 90.0, "series.lat must be within -90..90")
+                _require(-180.0 <= lng <= 180.0, "series.lng must be within -180..180")
+                track.append((t, float(lat), float(lng)))
     _count(summary["gaps"], "gaps")
     _count(summary["alerts"], "alerts")
     _require(summary["gaps"] == gaps, "gaps must count explicit series markers")
@@ -208,6 +265,28 @@ def validate_session(session: dict[str, Any]) -> dict[str, Any]:
     if v2:
         _series_stats(summary, "avg_cadence", cads)
         _series_stats(summary, "avg_power", pwrs, "max_power")
+    if v3:
+        keys = ("distance_m", "avg_speed_mps", "max_speed_mps")
+        nulls = [summary[k] is None for k in keys]
+        _require(all(nulls) or not any(nulls),
+                 "distance_m/avg_speed_mps/max_speed_mps are all-or-none")
+        if not any(nulls):
+            distance = _number(summary["distance_m"], "distance_m")
+            avg_speed = _number(summary["avg_speed_mps"], "avg_speed_mps")
+            max_speed = _number(summary["max_speed_mps"], "max_speed_mps")
+            _require(max_speed <= MAX_PLAUSIBLE_SPEED_MPS,
+                     "max_speed_mps exceeds a generous physical ceiling")
+            if track:
+                expected_distance, expected_max = _track_stats(track)
+                _require(math.isclose(distance, expected_distance, rel_tol=1e-9, abs_tol=1e-6),
+                         "distance_m must equal the recorded track length")
+                _require(math.isclose(max_speed, expected_max, rel_tol=1e-9, abs_tol=1e-9),
+                         "max_speed_mps must match the recorded track")
+            _require(math.isclose(avg_speed, distance / duration, rel_tol=1e-9, abs_tol=1e-9),
+                     "avg_speed_mps must equal distance_m/duration_s")
+            _require(avg_speed <= max_speed, "avg_speed_mps cannot exceed max_speed_mps")
+        else:
+            _require(not track, "Recorded coordinates require distance/speed aggregates")
     target, times = summary["zone_target"], summary["time_in_zone_s"]
     if target is None:
         _require(times is None, "No zone_target requires null time_in_zone_s")
