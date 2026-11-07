@@ -224,7 +224,7 @@ class RideBrainUITests(unittest.TestCase):
 
     def test_ui_thinking_and_persona_contract(self):
         text=(ROOT/'static/ride.html').read_text(encoding='utf-8')
-        self.assertIn("thinking:'Mark 想了想'",text);self.assertIn('ride-persona/11',text)
+        self.assertIn("thinking:'Mark 想了想'",text);self.assertIn('ride-persona/12',text)
 
     def test_success_appends_without_autoplay_and_listen_uses_speech(self):
         result=self.run_js("""

@@ -109,7 +109,7 @@ class RideMemoryUI(unittest.TestCase):
         return json.loads(result.stdout)
 
     def test_page_strings_and_existing_csp_with_mock_store(self):
-        for text in ('Mark 的记忆', '这不算趋势', '听 Mark 说', 'ride-persona/11', "name:'Mark'",
+        for text in ('Mark 的记忆', '这不算趋势', '听 Mark 说', 'ride-persona/12', "name:'Mark'",
                      'recall:', 'recall_no_history:', 'compare_better:', 'compare_worse:',
                      'compare_flat:', 'no_compare:', '两次记录还说明不了趋势', 'Record only. Not medical advice.'):
             with self.subTest(text=text):
@@ -156,7 +156,7 @@ class RideMemoryUI(unittest.TestCase):
         result = self.run_js("await $('start-ride').click(); return {spoken:_spoken,version:session.persona_version};", history=[metadata()], simulate=True)
         self.assertEqual(len(result['spoken']), 1)
         self.assertIn('我记得', result['spoken'][0])
-        self.assertEqual(result['version'], 'ride-persona/11')
+        self.assertEqual(result['version'], 'ride-persona/12')
         result = self.run_js("$('memory-listen').click(); await $('start-ride').click(); return _spoken;", history=[metadata()], simulate=True)
         self.assertEqual(len(result), 2)
         self.assertIn('我记得', result[0])
@@ -271,7 +271,7 @@ class RideMemoryUI(unittest.TestCase):
 
 
     def test_demo_strings_source_notice_and_version(self):
-        for text in ('demo_notice:', 'demo_start:', '看 Mark 演示', 'ride-persona/11',
+        for text in ('demo_notice:', 'demo_start:', '看 Mark 演示', 'ride-persona/12',
                      '这是一段合成的 45 分钟骑行，90 秒放完', 'Mark 说的每句话都是真实逻辑，数据是假的。'):
             self.assertIn(text,self.html)
         result=self.run_js("return {notice:$('demo-notice').textContent,hidden:$('demo-notice').hidden,button:$('demo-start').hidden,bar:$('simulated-banner').hidden,startDisabled:$('start-ride').disabled,spoken:_spoken};",demo=True)
@@ -291,7 +291,7 @@ class RideMemoryUI(unittest.TestCase):
         """,demo=True)
         from ride_memory import validate_session
         item=validate_session(result['uploaded'])
-        self.assertEqual(item['source'],'simulated');self.assertEqual(item['persona_version'],'ride-persona/11')
+        self.assertEqual(item['source'],'simulated');self.assertEqual(item['persona_version'],'ride-persona/12')
         self.assertEqual(item['summary']['duration_s'],2700)
         self.assertEqual(item['series'][-1]['t'],2700)
         self.assertEqual(item['samples_hz'],1/30)
@@ -393,7 +393,7 @@ class RideMemoryUI(unittest.TestCase):
     def test_demo_failed_upload_retains_simulated_memory(self):
         result=self.run_js("""
           $('demo-start').click();await _advance(90000);
-          return {pending:[..._storage.values()].map(v=>JSON.parse(v)),status:$('save-status').textContent};
+          return {pending:[..._storage.entries()].filter(([k])=>k.startsWith('luma.ride.pending.')).map(([,v])=>JSON.parse(v)),status:$('save-status').textContent};
         """,demo=True,uploadFail=True)
         self.assertEqual(len(result['pending']),1);self.assertEqual(result['pending'][0]['source'],'simulated')
         self.assertEqual(result['pending'][0]['summary']['duration_s'],2700);self.assertIn('上报失败',result['status'])
@@ -420,8 +420,8 @@ class RideMemoryUI(unittest.TestCase):
             self.assertEqual(result['inputs'],[lower,upper])
 
     def test_s5_strings_and_manifest_link(self):
-        for text in ("wakelock_unavailable:", "fuel:", "fuel_again:", "ride-persona/11",
-                     "骑了45分钟了，喝口水、补点吃的。", "又到补给的点了，别忘了喝。",
+        for text in ("wakelock_unavailable:", "fuel:(minutes)=>", "fuel_again:", "ride-persona/12",
+                     "分钟了，喝口水、补点吃的。", "又到补给的点了，别忘了喝。",
                      'rel="manifest"', "ride.webmanifest"):
             with self.subTest(text=text):
                 self.assertIn(text, self.html)
@@ -461,7 +461,7 @@ class RideMemoryUI(unittest.TestCase):
         self.assertTrue(result['active'])
 
     def test_s7_strings_milestone_gpx_and_ducking(self):
-        for text in ("milestone:", "milestone_compare_flat:", "ride-persona/11",
+        for text in ("milestone:", "milestone_compare_flat:", "ride-persona/12",
                      "buildRideGpx", "下载 GPX 备份", "audioSession", "signal_gap",
                      "不能直接导入需要 GPS 轨迹的平台"):
             with self.subTest(text=text):
@@ -496,6 +496,86 @@ class RideMemoryUI(unittest.TestCase):
         self.assertEqual(result['during'], [])
         self.assertEqual(len(result['after']), 1)
         self.assertTrue(result['after'][0].startswith('骑了30分钟了。'))
+
+    def test_speech_cadence_strings_and_defaults(self):
+        for text in ('milestone-interval', 'fuel-interval', '每 15 分钟', '每 30 分钟（默认）',
+                     '每 45 分钟（默认）', '关闭', 'MILESTONE_CHOICES', 'FUEL_CHOICES',
+                     'luma.ride.prefs', 'saveSpeechPrefs', 'loadSpeechPrefs',
+                     '越区和安全提醒不受影响'):
+            with self.subTest(text=text):
+                self.assertIn(text, self.html)
+        result = self.run_js("return {m:$('milestone-interval').value,f:$('fuel-interval').value,prefs:_storage.get('luma.ride.prefs')||null};")
+        self.assertEqual((result['m'], result['f']), ('1800', '2700'))
+        self.assertIsNone(result['prefs'])  # nothing persisted before the rider chooses
+
+    def test_custom_milestone_interval_15min(self):
+        result = self.run_js("""
+          $('milestone-interval').value='900';
+          await $('start-ride').click();
+          await _advance(910000);
+          const first=_spoken.filter(t=>t.includes('分钟了'));
+          await _advance(910000);
+          const second=_spoken.filter(t=>t.includes('分钟了'));
+          return {first, second, prefs:JSON.parse(_storage.get('luma.ride.prefs'))};
+        """, simulate=True)
+        self.assertTrue(any(t.startswith('骑了15分钟了。') for t in result['first']))
+        self.assertTrue(any(t.startswith('骑了30分钟了。') for t in result['second']))
+        self.assertEqual(result['prefs'], {'milestone_s': 900, 'fuel_s': 2700})
+
+    def test_custom_fuel_interval_30min_then_repeats(self):
+        result = self.run_js("""
+          $('fuel-interval').value='1800';
+          await $('start-ride').click();
+          await _advance(1810000);
+          const first=_spoken.filter(t=>t.includes('喝口水')||t.includes('别忘了喝'));
+          await _advance(1810000);
+          const second=_spoken.filter(t=>t.includes('喝口水')||t.includes('别忘了喝'));
+          return {first, second};
+        """, simulate=True)
+        self.assertEqual(result['first'], ['骑了30分钟了，喝口水、补点吃的。'])
+        self.assertEqual(result['second'], ['骑了30分钟了，喝口水、补点吃的。', '又到补给的点了，别忘了喝。'])
+
+    def test_cadence_off_silences_only_milestone_and_fuel(self):
+        result = self.run_js("""
+          $('milestone-interval').value='0';$('fuel-interval').value='0';
+          $('lower').value='100';$('upper').value='140';
+          await $('start-ride').click();
+          await _advance(3700000);
+          return {spoken:_spoken, prefs:JSON.parse(_storage.get('luma.ride.prefs'))};
+        """, simulate=True)
+        self.assertFalse(any('分钟了' in t or '喝口水' in t or '别忘了喝' in t for t in result['spoken']))
+        self.assertTrue(any('超过你设的上限' in t for t in result['spoken']))  # zone alerts unaffected
+        self.assertEqual(result['prefs'], {'milestone_s': 0, 'fuel_s': 0})
+
+    def test_prefs_load_whitelist_and_corrupt_fallback(self):
+        result = self.run_js("""
+          _storage.set('luma.ride.prefs',JSON.stringify({milestone_s:3600,fuel_s:1800}));
+          loadSpeechPrefs();
+          const loaded={m:$('milestone-interval').value,f:$('fuel-interval').value,ms:milestoneStepS,fs:fuelStepS};
+          _storage.set('luma.ride.prefs',JSON.stringify({milestone_s:42,fuel_s:-7}));
+          loadSpeechPrefs();
+          const invalid={m:$('milestone-interval').value,f:$('fuel-interval').value,ms:milestoneStepS,fs:fuelStepS};
+          _storage.set('luma.ride.prefs','{broken');
+          loadSpeechPrefs();
+          const corrupt={m:$('milestone-interval').value,ms:milestoneStepS};
+          return {loaded, invalid, corrupt};
+        """)
+        self.assertEqual((result['loaded']['m'], result['loaded']['f']), ('3600', '1800'))
+        self.assertEqual((result['loaded']['ms'], result['loaded']['fs']), (3600, 1800))
+        self.assertEqual((result['invalid']['ms'], result['invalid']['fs']), (1800, 2700))  # whitelist fallback
+        self.assertEqual((result['invalid']['m'], result['invalid']['f']), ('1800', '2700'))
+        self.assertEqual((result['corrupt']['m'], result['corrupt']['ms']), ('1800', 1800))
+
+    def test_cadence_selects_lock_during_ride(self):
+        result = self.run_js("""
+          await $('start-ride').click();
+          const during=$('milestone-interval').disabled && $('fuel-interval').disabled;
+          finishRide();
+          const after=$('milestone-interval').disabled || $('fuel-interval').disabled;
+          return {during, after};
+        """, simulate=True)
+        self.assertTrue(result['during'])
+        self.assertFalse(result['after'])
 
     def test_build_ride_gpx_contract_and_wellformed_xml(self):
         result = self.run_js("""
@@ -554,7 +634,7 @@ class RideMemoryUI(unittest.TestCase):
         self.assertTrue(result['survived'])
 
     def test_fall_detection_strings_and_ui(self):
-        for text in ('fall_alert:', 'fall_cancel:', 'fall_alarm:', 'ride-persona/11',
+        for text in ('fall_alert:', 'fall_cancel:', 'fall_alarm:', 'ride-persona/12',
                      'crash-detect', 'fall-card', 'fall-ok', '跌倒检测（实验）',
                      '不是可靠的安全设备', 'devicemotion'):
             with self.subTest(text=text):
@@ -631,7 +711,7 @@ class RideMemoryUI(unittest.TestCase):
         self.assertTrue(result['cardHidden'])
 
     def test_s9_strings_aux_ui_and_version(self):
-        for text in ('ride-persona/11', 'connect-aux', 'parseCadence', 'parsePower',
+        for text in ('ride-persona/12', 'connect-aux', 'parseCadence', 'parsePower',
                      '0x1816', '0x2A5B', '0x1818', '0x2A63', 'milestone_power:', 'luma-ride-memory/2'):
             with self.subTest(text=text):
                 self.assertIn(text, self.html)
@@ -703,7 +783,7 @@ class RideMemoryUI(unittest.TestCase):
                  'summary': {'duration_s': 6, 'avg_hr': 121, 'max_hr': 122, 'time_in_zone_s': None,
                              'zone_target': None, 'gaps': 0, 'alerts': 0,
                              'avg_cadence': 90, 'avg_power': 210, 'max_power': 210},
-                 'coach_notes': ['x'], 'persona_version': 'ride-persona/11', 'source': 'simulated'}
+                 'coach_notes': ['x'], 'persona_version': 'ride-persona/12', 'source': 'simulated'}
         self.assertEqual(validate_session(check)['summary']['avg_power'], 210)
 
     def test_milestone_mentions_power_and_cadence_when_present(self):
@@ -757,7 +837,7 @@ class RideNavUI(RideMemoryUI):
     def test_nav_page_strings(self):
         for text in ('nav-card', 'nav-destination', 'nav-plan', 'nav-clear', 'nav-status', 'nav-steps',
                      'nav-voice', 'wgs84ToGcj02', 'outOfChina', 'haversineM', 'NAV_TURN_M',
-                     '/api/coach/ride/route', 'ride-persona/11', '偏航不会自动重算',
+                     '/api/coach/ride/route', 'ride-persona/12', '偏航不会自动重算',
                      '不写入骑行记录', '高德'):
             with self.subTest(text=text):
                 self.assertIn(text, self.html)

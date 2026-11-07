@@ -7,7 +7,7 @@
 <link rel="manifest" href="/ride.webmanifest">
 <meta name="theme-color" content="#D4F23B">
 <style>
-:root{color-scheme:dark;--bg:#08090C;--volt:#D4F23B;--muted:#969aa6;--line:rgba(255,255,255,.07);--red:#ff777c}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#f4f5f7;font:16px/1.6 system-ui,sans-serif}nav{position:sticky;top:0;background:rgba(8,9,12,.9);backdrop-filter:blur(12px);border-bottom:1px solid var(--line);padding:16px 5vw;z-index:2;display:flex;gap:20px}a{color:inherit}nav a:first-child{margin-right:auto}main{max-width:960px;margin:auto;padding:48px 24px 80px}h1{font-size:clamp(36px,6vw,56px);letter-spacing:-.04em;line-height:1.1}h2{font-size:20px}.eyebrow{color:var(--volt);letter-spacing:.16em;font-size:12px;text-transform:uppercase}.muted,small{color:var(--muted)}.card{padding:28px;margin:20px 0;border:1px solid var(--line);border-radius:20px;background:rgba(255,255,255,.03);box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}.grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}.grid .card{margin:0}.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}label{display:grid;gap:6px;flex:1}input,button{font:inherit;border-radius:10px;padding:12px 16px}input{min-width:0;width:100%;background:#0b0c10;color:inherit;border:1px solid var(--line);box-shadow:inset 0 2px 8px #0006}input:focus{outline:1px solid var(--volt);box-shadow:0 0 16px #d4f23b20}button{border:1px solid transparent;color:#08090c;background:var(--volt);font-weight:650;cursor:pointer}button.secondary{color:#eee;background:transparent;border-color:var(--line)}button:disabled{opacity:.4;cursor:not-allowed}button:focus-visible,a:focus-visible{outline:2px solid var(--volt);outline-offset:4px}.hr{font-size:clamp(96px,18vw,150px);line-height:1.1;font-weight:750;letter-spacing:-.07em;font-variant-numeric:tabular-nums;color:var(--volt)}.pill{display:inline-block;border:1px solid var(--line);border-radius:30px;padding:5px 12px;font-size:13px}#simulated-banner{position:sticky;top:0;z-index:3;background:#ad132a;color:#fff;padding:12px 24px;text-align:center;font-weight:800;letter-spacing:.05em}.offline{color:var(--red)}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.7 ui-monospace,monospace;max-height:260px;overflow:auto}#summary{font-size:20px}footer{border-top:1px solid var(--line);padding-top:24px;margin-top:48px;color:var(--muted);font-size:13px}[hidden]{display:none!important}@media(max-width:640px){.grid{grid-template-columns:1fr}main{padding:32px 16px}.card{padding:20px}nav{font-size:13px}}
+:root{color-scheme:dark;--bg:#08090C;--volt:#D4F23B;--muted:#969aa6;--line:rgba(255,255,255,.07);--red:#ff777c}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#f4f5f7;font:16px/1.6 system-ui,sans-serif}nav{position:sticky;top:0;background:rgba(8,9,12,.9);backdrop-filter:blur(12px);border-bottom:1px solid var(--line);padding:16px 5vw;z-index:2;display:flex;gap:20px}a{color:inherit}nav a:first-child{margin-right:auto}main{max-width:960px;margin:auto;padding:48px 24px 80px}h1{font-size:clamp(36px,6vw,56px);letter-spacing:-.04em;line-height:1.1}h2{font-size:20px}.eyebrow{color:var(--volt);letter-spacing:.16em;font-size:12px;text-transform:uppercase}.muted,small{color:var(--muted)}.card{padding:28px;margin:20px 0;border:1px solid var(--line);border-radius:20px;background:rgba(255,255,255,.03);box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}.grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}.grid .card{margin:0}.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}label{display:grid;gap:6px;flex:1}input,select,button{font:inherit;border-radius:10px;padding:12px 16px}input,select{min-width:0;width:100%;background:#0b0c10;color:inherit;border:1px solid var(--line);box-shadow:inset 0 2px 8px #0006}input:focus{outline:1px solid var(--volt);box-shadow:0 0 16px #d4f23b20}button{border:1px solid transparent;color:#08090c;background:var(--volt);font-weight:650;cursor:pointer}button.secondary{color:#eee;background:transparent;border-color:var(--line)}button:disabled{opacity:.4;cursor:not-allowed}button:focus-visible,a:focus-visible{outline:2px solid var(--volt);outline-offset:4px}.hr{font-size:clamp(96px,18vw,150px);line-height:1.1;font-weight:750;letter-spacing:-.07em;font-variant-numeric:tabular-nums;color:var(--volt)}.pill{display:inline-block;border:1px solid var(--line);border-radius:30px;padding:5px 12px;font-size:13px}#simulated-banner{position:sticky;top:0;z-index:3;background:#ad132a;color:#fff;padding:12px 24px;text-align:center;font-weight:800;letter-spacing:.05em}.offline{color:var(--red)}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.7 ui-monospace,monospace;max-height:260px;overflow:auto}#summary{font-size:20px}footer{border-top:1px solid var(--line);padding-top:24px;margin-top:48px;color:var(--muted);font-size:13px}[hidden]{display:none!important}@media(max-width:640px){.grid{grid-template-columns:1fr}main{padding:32px 16px}.card{padding:20px}nav{font-size:13px}}
 </style>
 </head>
 <body>
@@ -29,6 +29,8 @@
 <p class="muted">上下限须同时填写或同时留空；仅为你设定的提醒阈值，不是医学安全范围。不根据年龄、LTHR 或演示值猜测训练区间。</p>
 <div class="row"><label style="display:flex;flex-direction:row;align-items:center;gap:10px;flex:none"><input id="crash-detect" type="checkbox" style="width:auto"> 跌倒检测（实验）</label></div>
 <p class="muted">开启后，骑行中侦测到疑似摔倒会先问你，30 秒无响应就在本机发出警报音。手机需放在身上（骑行服口袋）才有效，放车把包或背包里会不准；屏幕熄灭时手机可能停发传感器数据，检测会失效。网页版不能自动发短信或打电话——它可能漏报或误报，不是可靠的安全设备。</p>
+<div class="row"><label>里程碑播报<select id="milestone-interval"><option value="900">每 15 分钟</option><option value="1800" selected>每 30 分钟（默认）</option><option value="2700">每 45 分钟</option><option value="3600">每 60 分钟</option><option value="0">关闭</option></select></label><label>补给提醒<select id="fuel-interval"><option value="1800">每 30 分钟</option><option value="2700" selected>每 45 分钟（默认）</option><option value="3600">每 60 分钟</option><option value="0">关闭</option></select></label></div>
+<p class="muted">里程碑：Mark 定时播报当前心率/功率/踏频并与上次对比；补给：定时提醒喝水吃东西。设置保存在本浏览器，下次打开自动带上；关闭只影响这两类播报，越区和安全提醒不受影响。</p>
 <div class="row"><button id="start-ride" type="button">连接心率带并开始</button><button id="end-ride" type="button" class="secondary" disabled>结束骑行</button><button id="reconnect" type="button" class="secondary" disabled>重新连接</button></div>
 <div class="row"><button id="connect-aux" type="button" class="secondary">加连功率计/踏频计（可选）</button></div>
 <p class="muted">可选第二步：连接功率计或踏频计（CSC/Cycling Power 标准协议）。只连接心率带也能正常记录，功率和踏频会如实留空。</p>
@@ -44,7 +46,7 @@
 'use strict';
 // Device adapter only: ride_memory.py owns the reusable versioned memory contract.
 const PERSONA = Object.freeze({
-  version:'ride-persona/11', name:'Mark', above:'心率超过你设的上限了。', below:'心率低于你设的下限了。', disconnected:'心率信号断了，我看不到读数。', short:'记录太短，我还总结不了。',
+  version:'ride-persona/12', name:'Mark', above:'心率超过你设的上限了。', below:'心率低于你设的下限了。', disconnected:'心率信号断了，我看不到读数。', short:'记录太短，我还总结不了。',
   recall:parts=>'我记得上次'+parts.join('，')+'。记录还很少，这不算趋势。',
   recall_no_history:'我还没有可回放的历史记录。',
   compare_better:(label,amount,unit)=>'我看到'+label+'比上次'+(unit==='分钟' ? '少' : '低')+amount+unit+'。',
@@ -57,7 +59,7 @@ const PERSONA = Object.freeze({
   demo_notice:'演示模式：这是一段合成的 45 分钟骑行，90 秒放完。Mark 说的每句话都是真实逻辑，数据是假的。',
   demo_start:'看 Mark 演示',
   wakelock_unavailable:'此浏览器可能熄屏断连，请保持屏幕常亮',
-  fuel:'骑了45分钟了，喝口水、补点吃的。',
+  fuel:(minutes)=>'骑了'+minutes+'分钟了，喝口水、补点吃的。',
   fuel_again:'又到补给的点了，别忘了喝。',
   milestone:(minutes)=>'骑了'+minutes+'分钟了。',
   milestone_avg:(avg)=>'平均心率'+avg+'，',
@@ -115,7 +117,11 @@ let demoPlaying = false, demoElapsed = 0, demoStep = 0, demoProfile = [];
 let screenLock = null, wakePending = false, wakeEpoch = 0, wakeWarningShown = false;
 let lastCoachSpeech = -Infinity, speechKind = null, nextFuelSeconds = 2700;
 let nextMilestoneSeconds = 1800, previousRideAvgHr = null;
-const COACH_SPEECH_GAP_MS = 20000, MILESTONE_STEP_S = 1800;
+const COACH_SPEECH_GAP_MS = 20000;
+// Speech cadence is rider-configurable within whitelisted choices (0 = off).
+const MILESTONE_CHOICES = Object.freeze([0,900,1800,2700,3600]), FUEL_CHOICES = Object.freeze([0,1800,2700,3600]);
+const DEFAULT_MILESTONE_S = 1800, DEFAULT_FUEL_S = 2700, PREFS_KEY = 'luma.ride.prefs';
+let milestoneStepS = DEFAULT_MILESTONE_S, fuelStepS = DEFAULT_FUEL_S;
 const PENDING_PREFIX = 'luma.ride.pending.';
 function state(text){$('status').textContent = text;}
 // Best-effort media ducking: ask the platform to duck music while Mark speaks.
@@ -176,9 +182,9 @@ function coachCanSpeak(now=performance.now()){
   return now-lastCoachSpeech>=COACH_SPEECH_GAP_MS && !('speechSynthesis' in window && window.speechSynthesis.speaking);
 }
 function remindFuel(){
-  if(!active || elapsedSeconds()<nextFuelSeconds || !coachCanSpeak())return;
-  noteAndSpeak(nextFuelSeconds===2700 ? PERSONA.fuel : PERSONA.fuel_again,'fuel');
-  nextFuelSeconds+=2700;
+  if(!active || !fuelStepS || elapsedSeconds()<nextFuelSeconds || !coachCanSpeak())return;
+  noteAndSpeak(nextFuelSeconds===fuelStepS ? PERSONA.fuel(Math.round(fuelStepS/60)) : PERSONA.fuel_again,'fuel');
+  nextFuelSeconds+=fuelStepS;
 }
 // Time-based milestones (Oakley-style): every 30 minutes Mark reports the ride
 // so far and, when memory exists, how it compares to the previous ride's average.
@@ -204,9 +210,9 @@ function buildMilestoneText(minutes){
   return text;
 }
 function remindMilestone(){
-  if(!active || elapsedSeconds()<nextMilestoneSeconds || !coachCanSpeak())return;
+  if(!active || !milestoneStepS || elapsedSeconds()<nextMilestoneSeconds || !coachCanSpeak())return;
   const minutes=Math.round(nextMilestoneSeconds/60);
-  nextMilestoneSeconds+=MILESTONE_STEP_S;
+  nextMilestoneSeconds+=milestoneStepS;
   noteAndSpeak(buildMilestoneText(minutes),'milestone');
 }
 // Fall detection (experimental, phone IMU): a >2.5g spike followed by ~10s of
@@ -505,6 +511,22 @@ function readTarget(){
   if (!a || !b || !Number.isFinite(lower) || !Number.isFinite(upper) || lower < 0 || upper > 65535 || lower > upper) throw new Error('请填写有序的非负上下限，或同时留空。');
   return {lower, upper};
 }
+// Speech cadence prefs: whitelisted choices only, persisted in this browser.
+function saveSpeechPrefs(){
+  const milestone=parseInt($('milestone-interval').value,10), fuel=parseInt($('fuel-interval').value,10);
+  milestoneStepS=MILESTONE_CHOICES.includes(milestone) ? milestone : DEFAULT_MILESTONE_S;
+  fuelStepS=FUEL_CHOICES.includes(fuel) ? fuel : DEFAULT_FUEL_S;
+  try{localStorage.setItem(PREFS_KEY,JSON.stringify({milestone_s:milestoneStepS,fuel_s:fuelStepS}));}catch(_){/* prefs never block a ride */}
+}
+function loadSpeechPrefs(){
+  let prefs={};
+  try{prefs=JSON.parse(localStorage.getItem(PREFS_KEY) || 'null') || {};}catch(_){prefs={};}
+  // Stored prefs fully decide; anything outside the whitelist resets to defaults.
+  milestoneStepS=MILESTONE_CHOICES.includes(prefs.milestone_s) ? prefs.milestone_s : DEFAULT_MILESTONE_S;
+  fuelStepS=FUEL_CHOICES.includes(prefs.fuel_s) ? prefs.fuel_s : DEFAULT_FUEL_S;
+  $('milestone-interval').value=String(milestoneStepS);
+  $('fuel-interval').value=String(fuelStepS);
+}
 function elapsedSeconds(){return demoPlaying ? demoElapsed : Math.max(0, Math.round(performance.now() - startedMono) / 1000);}
 function zone(hr){return !target ? null : hr < target.lower ? 'below' : hr > target.upper ? 'above' : 'within';}
 function resetOutside(){outsideSince = null; outsideKind = null; if(speechKind==='zone')cancelSpeech();}
@@ -650,10 +672,11 @@ function begin(options={}){
   if(options.source)session.source=options.source;
   if(options.samplesHz)session.samples_hz=options.samplesHz;
   $('demo-start').disabled=true;
-  nextFuelSeconds=2700;nextMilestoneSeconds=MILESTONE_STEP_S;lastCoachSpeech=-Infinity;
+  saveSpeechPrefs();
+  nextFuelSeconds=fuelStepS||Infinity;nextMilestoneSeconds=milestoneStepS||Infinity;lastCoachSpeech=-Infinity;
   crashState='idle';clearInterval(fallTimer);$('fall-card').hidden=true;
   active = true; void requestScreenLock(); startNavWatch(); previous = null; lastSignal = null; gapOpen = false; outsideSince = null; outsideKind = null; lastAlert = -Infinity; alerts = 0; totals = {below:0, within:0, above:0};
-  $('lower').disabled = $('upper').disabled = true; $('start-ride').disabled = true; $('end-ride').disabled = false; $('timeline').textContent = ''; $('summary').textContent = '记录中，结束后总结。';
+  $('lower').disabled = $('upper').disabled = true; $('milestone-interval').disabled = $('fuel-interval').disabled = true; $('start-ride').disabled = true; $('end-ride').disabled = false; $('timeline').textContent = ''; $('summary').textContent = '记录中，结束后总结。';
   timer = setInterval(()=>{if (!active) return; remindFuel(); remindMilestone(); const s=Math.floor(elapsedSeconds()); $('elapsed').textContent = String(Math.floor(s/60)).padStart(2,'0') + ':' + String(s%60).padStart(2,'0'); if (lastSignal !== null && performance.now()-lastSignal > STALE_MS) markGap();}, 500);
 }
 async function connectBLE(){
@@ -826,7 +849,7 @@ function finishRide(reason=''){
   if(device && device.gatt.connected)device.gatt.disconnect();
   if(auxDevice && auxDevice.gatt.connected)auxDevice.gatt.disconnect();
   if(memoryNumber(memory.summary.avg_hr))previousRideAvgHr=memory.summary.avg_hr;
-  $('end-ride').disabled=true;$('reconnect').disabled=true;$('start-ride').disabled=false;$('lower').disabled=$('upper').disabled=false;
+  $('end-ride').disabled=true;$('reconnect').disabled=true;$('start-ride').disabled=false;$('lower').disabled=$('upper').disabled=false;$('milestone-interval').disabled=$('fuel-interval').disabled=false;
   const text=summarize(memory);$('summary').textContent=text;if(memory.coach_notes.length<200)memory.coach_notes.push(text);speak(text,'summary',speechKind==='fuel');
   lastSession=memory;$('download-session').disabled=false;$('download-gpx').disabled=false;$('connection').textContent='记录已结束';state(reason || '记录结束。平均值为实际样本算术平均，不推断训练效果。');
   const retained=retain(memory); void upload(memory,retained);
@@ -848,6 +871,8 @@ $('crash-detect').addEventListener('click',async()=>{
     }catch(_){crashEnabled=false;$('crash-detect').checked=false;state('动作传感器权限请求失败，跌倒检测未开启。');}
   }
 });
+$('milestone-interval').addEventListener('change',saveSpeechPrefs);
+$('fuel-interval').addEventListener('change',saveSpeechPrefs);
 $('demo-start').addEventListener('click',startDemo);
 $('memory-listen').addEventListener('click',speakMark);
 $('brain-listen').addEventListener('click',speakMark);
@@ -886,6 +911,7 @@ else if(!window.isSecureContext || !navigator.bluetooth){$('start-ride').disable
 if(DEMO && (!window.isSecureContext || !navigator.bluetooth)){$('start-ride').disabled=true;state('此浏览器无法连接真实 BLE，但可点击“看 Mark 演示”；演示不使用硬件。');}
 if(!('speechSynthesis' in window))$('compatibility').textContent+=' 系统 TTS 不可用，只有文字提示。';
 renderWeekly([]);
+loadSpeechPrefs();
 // Initial memory fetch is same-origin/token protected and never autoplays speech.
 void getToken().then(loadRecall).catch(()=>console.debug('Mark memory unavailable; no history invented.'));
 </script>
