@@ -27,10 +27,13 @@
 <button id="demo-start" type="button" hidden>看 Mark 演示</button>
 <div class="row"><label>自定义下限（bpm，可留空）<input id="lower" type="number" min="0" max="65535" step="1" inputmode="numeric" placeholder="由你填写"></label><label>自定义上限（bpm，可留空）<input id="upper" type="number" min="0" max="65535" step="1" inputmode="numeric" placeholder="由你填写"></label></div>
 <p class="muted">上下限须同时填写或同时留空；仅为你设定的提醒阈值，不是医学安全范围。不根据年龄、LTHR 或演示值猜测训练区间。</p>
+<div class="row"><label style="display:flex;flex-direction:row;align-items:center;gap:10px;flex:none"><input id="crash-detect" type="checkbox" style="width:auto"> 跌倒检测（实验）</label></div>
+<p class="muted">开启后，骑行中侦测到疑似摔倒会先问你，30 秒无响应就在本机发出警报音。手机需放在身上（骑行服口袋）才有效，放车把包或背包里会不准；屏幕熄灭时手机可能停发传感器数据，检测会失效。网页版不能自动发短信或打电话——它可能漏报或误报，不是可靠的安全设备。</p>
 <div class="row"><button id="start-ride" type="button">连接心率带并开始</button><button id="end-ride" type="button" class="secondary" disabled>结束骑行</button><button id="reconnect" type="button" class="secondary" disabled>重新连接</button></div>
 <p id="status" role="status" aria-live="polite">准备记录。语音需点击开始激活；请先在静止状态连接设备。</p>
 </div>
 <div class="grid"><section class="card"><span id="connection" class="pill">未连接</span><p><span id="heart-rate" class="hr">—</span> <span class="muted">bpm</span></p><p id="zone-state">未设置目标区间</p><p id="elapsed" class="muted">00:00</p></section><section class="card"><h2>02 / 原始时间轴</h2><p class="muted">仅展示最近 60 个实际点。断线标记 gap，不插值、不用旧读数补齐。超过 5 秒没有新读数也标记信号缺口。</p><pre id="timeline" aria-label="原始心率与断线记录"></pre></section></div>
+<section id="fall-card" class="card" hidden style="border-color:var(--red)"><h2>疑似摔倒</h2><p id="fall-countdown" class="hr" style="font-size:64px">30</p><p id="fall-message"></p><button id="fall-ok" type="button">我没事，别报警</button></section>
 <section class="card"><h2>03 / 骑后一句话</h2><p id="summary">结束后根据记录生成。没有数据的部分保持缺失。</p><section id="brain-card" hidden aria-labelledby="brain-heading"><h3 id="brain-heading">Mark 想了想</h3><p id="brain-speech"></p><button id="brain-listen" type="button" class="secondary">听 Mark 说</button></section><p id="memory-compare" aria-live="polite" hidden></p><p id="compare-source" class="offline" hidden></p><p id="save-status" role="status" aria-live="polite">本片存储为 ephemeral：重启或重新部署可能丢失，请保留下载备份。</p><div class="row"><button id="retry-upload" type="button" class="secondary">重试上传本机待传记录</button><button id="download-session" type="button" class="secondary" disabled>下载本次 JSON 备份</button><button id="download-gpx" type="button" class="secondary" disabled>下载 GPX 备份（无 GPS）</button></div><p class="muted">GPX 备份只含心率时间轴与断线标记，没有 GPS 坐标；用于存档与复盘，不能直接导入需要轨迹的平台。</p></section>
 <footer><p>Record only. Not medical advice.</p><p>语音只报告记录和你设定的阈值，不提供训练处方或效果承诺。后台、锁屏、系统省电或浏览器挂起可能停止 BLE、计时或语音；本页不是可靠的安全报警器。请勿在骑行中操作屏幕。</p><p>心率数据保存在当前设备及本服务的临时目录；共用电脑请勿视为多用户私密空间。模拟来源会随记录保留，绝不转为真实来源。</p><p>AI Ride Coach · Early access · <a href="?simulate=1">打开模拟模式</a></p></footer>
 </main>
@@ -38,7 +41,7 @@
 'use strict';
 // Device adapter only: ride_memory.py owns the reusable versioned memory contract.
 const PERSONA = Object.freeze({
-  version:'ride-persona/8', name:'Mark', above:'心率超过你设的上限了。', below:'心率低于你设的下限了。', disconnected:'心率信号断了，我看不到读数。', short:'记录太短，我还总结不了。',
+  version:'ride-persona/9', name:'Mark', above:'心率超过你设的上限了。', below:'心率低于你设的下限了。', disconnected:'心率信号断了，我看不到读数。', short:'记录太短，我还总结不了。',
   recall:parts=>'我记得上次'+parts.join('，')+'。记录还很少，这不算趋势。',
   recall_no_history:'我还没有可回放的历史记录。',
   compare_better:(label,amount,unit)=>'我看到'+label+'比上次'+(unit==='分钟' ? '少' : '低')+amount+unit+'。',
@@ -58,6 +61,9 @@ const PERSONA = Object.freeze({
   milestone_within:'在区间内。', milestone_above:'高于上限。', milestone_below:'低于下限。',
   milestone_compare_flat:'和上次差不多。',
   milestone_compare:(direction,amount)=>'比上次'+direction+amount+'。',
+  fall_alert:'我好像检测到一次摔倒。如果你没事，点一下我没事，或者继续骑，我就不报警。',
+  fall_cancel:'收到，你没事就好。',
+  fall_alarm:'警报，检测到摔倒，骑手没有回应。请旁边的人立刻查看骑手。',
   weekly_title:'本周', weekly_listen:'听 Mark 说这星期', weekly_empty:'还没有记录',
   weekly_no_rides:'这周还没骑车，随时开骑我都在。',
   weekly_current:(count,minutes)=>'这周骑了'+count+'次，一共'+minutes+'分钟。',
@@ -175,6 +181,61 @@ function remindMilestone(){
   const minutes=Math.round(nextMilestoneSeconds/60);
   nextMilestoneSeconds+=MILESTONE_STEP_S;
   noteAndSpeak(buildMilestoneText(minutes),'milestone');
+}
+// Fall detection (experimental, phone IMU): a >2.5g spike followed by ~10s of
+// stillness triggers a 30s "are you OK" countdown; no response -> local alarm.
+// Web pages cannot text or call anyone; all limits are stated in the UI copy.
+const CRASH=Object.freeze({SPIKE:25,MOVE:14,STILL:12,WATCH_MS:10000,MIN_SAMPLES:5,COUNTDOWN_S:30});
+let crashEnabled=false,crashState='idle',spikeAt=0,watchSamples=0,fallTimer=null,fallLeft=0;
+function crashLog(text){if(session && session.coach_notes.length<199)session.coach_notes.push(text);}
+function crashMonitorSample(mag,now){
+  if(!active || !crashEnabled || !Number.isFinite(mag))return;
+  if(crashState==='idle'){
+    if(mag>=CRASH.SPIKE){crashState='watch';spikeAt=now;watchSamples=0;crashLog('检测到剧烈冲击（约'+mag.toFixed(1)+' m/s²），观察中。');}
+    return;
+  }
+  if(crashState==='watch'){
+    watchSamples+=1;
+    if(mag>=CRASH.MOVE){crashState='idle';crashLog('冲击后运动恢复，判断为颠簸，不报警。');return;}
+    if(now-spikeAt>=CRASH.WATCH_MS){
+      if(watchSamples>=CRASH.MIN_SAMPLES)startFallAlert();
+      else {crashState='idle';crashLog('冲击后传感器样本不足（屏幕可能熄灭），放弃本次判断，未报警。');}
+    }
+    return;
+  }
+  if(mag>=CRASH.MOVE)cancelFallAlert('警报期间检测到运动恢复，判断有意识，警报取消。');
+}
+function startFallAlert(){
+  crashState='alert';fallLeft=CRASH.COUNTDOWN_S;
+  $('fall-card').hidden=false;$('fall-countdown').textContent=String(fallLeft);
+  $('fall-message').textContent='如果你没事，点「我没事」或继续骑。';
+  crashLog('冲击后'+CRASH.WATCH_MS/1000+'秒无运动，开始'+CRASH.COUNTDOWN_S+'秒确认倒计时。');
+  speak(PERSONA.fall_alert,'fall');
+  clearInterval(fallTimer);
+  fallTimer=setInterval(()=>{
+    if(crashState!=='alert'){clearInterval(fallTimer);return;}
+    fallLeft-=1;$('fall-countdown').textContent=String(Math.max(0,fallLeft));
+    if(fallLeft<=0){clearInterval(fallTimer);triggerFallAlarm();}
+  },1000);
+}
+function triggerFallAlarm(){
+  crashState='alarm';
+  $('fall-message').textContent='已发出警报。若这是误报，请点「我没事」。';
+  crashLog('倒计时无响应，进入警报状态。');
+  speak(PERSONA.fall_alarm,'fall');
+  fallTimer=setInterval(()=>{if(crashState!=='alarm'){clearInterval(fallTimer);return;}speak(PERSONA.fall_alarm,'fall');},15000);
+}
+function cancelFallAlert(note){
+  if(crashState!=='alert' && crashState!=='alarm')return;
+  crashState='idle';clearInterval(fallTimer);
+  $('fall-card').hidden=true;
+  crashLog(note || '用户点按确认没事，警报取消。');
+  speak(PERSONA.fall_cancel,'fall');
+}
+function onDeviceMotion(event){
+  const a=event && event.accelerationIncludingGravity;
+  if(!a || typeof a.x!=='number' || typeof a.y!=='number' || typeof a.z!=='number')return;
+  crashMonitorSample(Math.sqrt(a.x*a.x+a.y*a.y+a.z*a.z), performance.now());
 }
 // Metadata only; no raw series request and no inference from missing fields.
 function memoryNumber(value){return typeof value === 'number' && Number.isFinite(value) && value >= 0;}
@@ -371,6 +432,7 @@ function begin(options={}){
   if(options.samplesHz)session.samples_hz=options.samplesHz;
   $('demo-start').disabled=true;
   nextFuelSeconds=2700;nextMilestoneSeconds=MILESTONE_STEP_S;lastCoachSpeech=-Infinity;
+  crashState='idle';clearInterval(fallTimer);$('fall-card').hidden=true;
   active = true; void requestScreenLock(); previous = null; lastSignal = null; gapOpen = false; outsideSince = null; outsideKind = null; lastAlert = -Infinity; alerts = 0; totals = {below:0, within:0, above:0};
   $('lower').disabled = $('upper').disabled = true; $('start-ride').disabled = true; $('end-ride').disabled = false; $('timeline').textContent = ''; $('summary').textContent = '记录中，结束后总结。';
   timer = setInterval(()=>{if (!active) return; remindFuel(); remindMilestone(); const s=Math.floor(elapsedSeconds()); $('elapsed').textContent = String(Math.floor(s/60)).padStart(2,'0') + ':' + String(s%60).padStart(2,'0'); if (lastSignal !== null && performance.now()-lastSignal > STALE_MS) markGap();}, 500);
@@ -515,7 +577,7 @@ async function upload(memory, retained){
 }
 function finishRide(reason=''){
   if(!active)return;
-  const memory=buildMemory(); active=false;demoPlaying=false;$('demo-start').disabled=false; clearInterval(timer);clearInterval(simulator);releaseScreenLock();resetOutside();
+  const memory=buildMemory(); active=false;demoPlaying=false;$('demo-start').disabled=false; clearInterval(timer);clearInterval(simulator);clearInterval(fallTimer);crashState='idle';$('fall-card').hidden=true;releaseScreenLock();resetOutside();
   if(device && device.gatt.connected)device.gatt.disconnect();
   if(memoryNumber(memory.summary.avg_hr))previousRideAvgHr=memory.summary.avg_hr;
   $('end-ride').disabled=true;$('reconnect').disabled=true;$('start-ride').disabled=false;$('lower').disabled=$('upper').disabled=false;
@@ -524,6 +586,19 @@ function finishRide(reason=''){
   const retained=retain(memory); void upload(memory,retained);
 }
 $('ride-weekly-listen').addEventListener('click',listenWeekly);
+window.addEventListener('devicemotion', onDeviceMotion);
+document.addEventListener('pointerdown',()=>{if(crashState==='alert' || crashState==='alarm')cancelFallAlert('触碰屏幕，确认有意识，警报取消。');});
+$('fall-ok').addEventListener('click',()=>cancelFallAlert());
+$('crash-detect').addEventListener('click',async()=>{
+  crashEnabled=$('crash-detect').checked===true;
+  if(!crashEnabled){crashState='idle';clearInterval(fallTimer);$('fall-card').hidden=true;return;}
+  if(typeof DeviceMotionEvent!=='undefined' && typeof DeviceMotionEvent.requestPermission==='function'){
+    try {
+      const permission=await DeviceMotionEvent.requestPermission();
+      if(permission!=='granted'){crashEnabled=false;$('crash-detect').checked=false;state('动作传感器权限被拒绝，跌倒检测未开启。');}
+    }catch(_){crashEnabled=false;$('crash-detect').checked=false;state('动作传感器权限请求失败，跌倒检测未开启。');}
+  }
+});
 $('demo-start').addEventListener('click',startDemo);
 $('memory-listen').addEventListener('click',speakMark);
 $('brain-listen').addEventListener('click',speakMark);

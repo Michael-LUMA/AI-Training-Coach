@@ -93,7 +93,7 @@ class RideMemoryUI(unittest.TestCase):
         return json.loads(result.stdout)
 
     def test_page_strings_and_existing_csp_with_mock_store(self):
-        for text in ('Mark 的记忆', '这不算趋势', '听 Mark 说', 'ride-persona/8', "name:'Mark'",
+        for text in ('Mark 的记忆', '这不算趋势', '听 Mark 说', 'ride-persona/9', "name:'Mark'",
                      'recall:', 'recall_no_history:', 'compare_better:', 'compare_worse:',
                      'compare_flat:', 'no_compare:', '两次记录还说明不了趋势', 'Record only. Not medical advice.'):
             with self.subTest(text=text):
@@ -140,7 +140,7 @@ class RideMemoryUI(unittest.TestCase):
         result = self.run_js("await $('start-ride').click(); return {spoken:_spoken,version:session.persona_version};", history=[metadata()], simulate=True)
         self.assertEqual(len(result['spoken']), 1)
         self.assertIn('我记得', result['spoken'][0])
-        self.assertEqual(result['version'], 'ride-persona/8')
+        self.assertEqual(result['version'], 'ride-persona/9')
         result = self.run_js("$('memory-listen').click(); await $('start-ride').click(); return _spoken;", history=[metadata()], simulate=True)
         self.assertEqual(len(result), 2)
         self.assertIn('我记得', result[0])
@@ -255,7 +255,7 @@ class RideMemoryUI(unittest.TestCase):
 
 
     def test_demo_strings_source_notice_and_version(self):
-        for text in ('demo_notice:', 'demo_start:', '看 Mark 演示', 'ride-persona/8',
+        for text in ('demo_notice:', 'demo_start:', '看 Mark 演示', 'ride-persona/9',
                      '这是一段合成的 45 分钟骑行，90 秒放完', 'Mark 说的每句话都是真实逻辑，数据是假的。'):
             self.assertIn(text,self.html)
         result=self.run_js("return {notice:$('demo-notice').textContent,hidden:$('demo-notice').hidden,button:$('demo-start').hidden,bar:$('simulated-banner').hidden,startDisabled:$('start-ride').disabled,spoken:_spoken};",demo=True)
@@ -275,7 +275,7 @@ class RideMemoryUI(unittest.TestCase):
         """,demo=True)
         from ride_memory import validate_session
         item=validate_session(result['uploaded'])
-        self.assertEqual(item['source'],'simulated');self.assertEqual(item['persona_version'],'ride-persona/8')
+        self.assertEqual(item['source'],'simulated');self.assertEqual(item['persona_version'],'ride-persona/9')
         self.assertEqual(item['summary']['duration_s'],2700)
         self.assertEqual(item['series'][-1]['t'],2700)
         self.assertEqual(item['samples_hz'],1/30)
@@ -379,7 +379,7 @@ class RideMemoryUI(unittest.TestCase):
             self.assertEqual(result['inputs'],[lower,upper])
 
     def test_s5_strings_and_manifest_link(self):
-        for text in ("wakelock_unavailable:", "fuel:", "fuel_again:", "ride-persona/8",
+        for text in ("wakelock_unavailable:", "fuel:", "fuel_again:", "ride-persona/9",
                      "骑了45分钟了，喝口水、补点吃的。", "又到补给的点了，别忘了喝。",
                      'rel="manifest"', "ride.webmanifest"):
             with self.subTest(text=text):
@@ -420,7 +420,7 @@ class RideMemoryUI(unittest.TestCase):
         self.assertTrue(result['active'])
 
     def test_s7_strings_milestone_gpx_and_ducking(self):
-        for text in ("milestone:", "milestone_compare_flat:", "ride-persona/8",
+        for text in ("milestone:", "milestone_compare_flat:", "ride-persona/9",
                      "buildRideGpx", "下载 GPX 备份", "audioSession", "signal_gap",
                      "不能直接导入需要 GPS 轨迹的平台"):
             with self.subTest(text=text):
@@ -511,6 +511,83 @@ class RideMemoryUI(unittest.TestCase):
         """, history=[metadata()])
         self.assertEqual(result['duringType'], 'transient')
         self.assertTrue(result['survived'])
+
+    def test_fall_detection_strings_and_ui(self):
+        for text in ('fall_alert:', 'fall_cancel:', 'fall_alarm:', 'ride-persona/9',
+                     'crash-detect', 'fall-card', 'fall-ok', '跌倒检测（实验）',
+                     '不是可靠的安全设备', 'devicemotion'):
+            with self.subTest(text=text):
+                self.assertIn(text, self.html)
+
+    def test_fall_full_flow_alert_alarm_and_manual_cancel(self):
+        result = self.run_js("""
+          await $('start-ride').click();
+          crashEnabled=true;
+          crashMonitorSample(30, 1000);
+          const watching=crashState;
+          for(let i=1;i<=12;i++)crashMonitorSample(9.8, 1000+i*1000);
+          const alertState=crashState, cardShown=!$('fall-card').hidden, countdown=$('fall-countdown').textContent;
+          await _advance(31000);
+          const alarm=crashState, alarmSpeech=_spoken.filter(t=>t.includes('警报')).length;
+          $('fall-ok').click();
+          return {watching, alertState, cardShown, countdown, alarm, alarmSpeech,
+                  after:crashState, hidden:$('fall-card').hidden, notes:session.coach_notes};
+        """, simulate=True)
+        self.assertEqual(result['watching'], 'watch')
+        self.assertEqual(result['alertState'], 'alert')
+        self.assertTrue(result['cardShown'])
+        self.assertEqual(result['countdown'], '30')
+        self.assertEqual(result['alarm'], 'alarm')
+        self.assertGreaterEqual(result['alarmSpeech'], 1)
+        self.assertEqual(result['after'], 'idle')
+        self.assertTrue(result['hidden'])
+        notes = '\n'.join(result['notes'])
+        for text in ('剧烈冲击', '确认倒计时', '警报状态', '确认没事'):
+            self.assertIn(text, notes)
+
+    def test_fall_movement_during_alert_cancels_with_kind_words(self):
+        result = self.run_js("""
+          await $('start-ride').click();
+          crashEnabled=true;
+          crashMonitorSample(30, 1000);
+          for(let i=1;i<=11;i++)crashMonitorSample(9.8, 1000+i*1000);
+          const alertState=crashState;
+          crashMonitorSample(20, 12000);
+          return {alertState, after:crashState, spoken:_spoken, hidden:$('fall-card').hidden};
+        """, simulate=True)
+        self.assertEqual(result['alertState'], 'alert')
+        self.assertEqual(result['after'], 'idle')
+        self.assertTrue(result['hidden'])
+        self.assertIn('我好像检测到一次摔倒', result['spoken'][-2])
+        self.assertEqual(result['spoken'][-1], '收到，你没事就好。')
+
+    def test_fall_bump_with_continued_motion_never_alerts(self):
+        result = self.run_js("""
+          await $('start-ride').click();
+          crashEnabled=true;
+          crashMonitorSample(28, 1000);
+          crashMonitorSample(20, 2000);
+          await _advance(15000);
+          return {state:crashState, hidden:$('fall-card').hidden,
+                  alarmSpeech:_spoken.filter(t=>t.includes('警报')).length, notes:session.coach_notes};
+        """, simulate=True)
+        self.assertEqual(result['state'], 'idle')
+        self.assertTrue(result['hidden'])
+        self.assertEqual(result['alarmSpeech'], 0)
+        self.assertTrue(any('颠簸' in n for n in result['notes']))
+
+    def test_fall_disabled_by_default_and_requires_active_ride(self):
+        result = self.run_js("""
+          crashMonitorSample(30, 1000);
+          const offState=crashState;
+          await $('start-ride').click();
+          crashMonitorSample(30, 2000);
+          return {offState, rideState:crashState, cardHidden:$('fall-card').hidden, enabled:crashEnabled};
+        """, simulate=True)
+        self.assertEqual(result['offState'], 'idle')
+        self.assertEqual(result['rideState'], 'idle')
+        self.assertFalse(result['enabled'])
+        self.assertTrue(result['cardHidden'])
 
 
 if __name__ == '__main__':
