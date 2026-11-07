@@ -13,19 +13,22 @@ html{scroll-behavior:smooth}.hero-split{display:grid;grid-template-columns:minma
 @media(max-width:720px){header{padding:44px 0 32px}.nav-links{gap:18px}.display{font-size:clamp(38px,9vw,52px)}}
 @media(max-width:440px){nav{min-height:58px}.nav-logo{font-size:10px;gap:8px}.nav-links{gap:16px}header{padding:40px 0 30px}.hero-content>p:last-child{font-size:13px}.weekly-metrics dd{font-size:30px}.hero-ctas{flex-direction:column}.cta{width:100%}.preview-body{padding:16px}.pv{font-size:24px}.waitlist-card{margin-top:56px;padding:24px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important}html{scroll-behavior:auto}.preview-frame{transform:none}button:hover:not(:disabled),.step-card:hover,.waitlist-card:hover,.metric:hover,.week-comparison:hover{transform:none}}
+
+.l2-controls{margin-top:28px;padding-top:24px;border-top:1px solid var(--line)}.l2-controls>p{font-size:12px;color:var(--muted);max-width:76ch}.l2-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;margin:20px 0}.l2-draft{min-width:0;padding:20px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.025)}.l2-draft h3{margin-top:0;color:var(--volt)}.l2-draft p{font-size:13px}.l2-draft .evidence{white-space:pre-wrap;overflow-wrap:anywhere}.l2-message{color:var(--muted);font-size:13px}#l2-result:empty{display:none}@media(max-width:720px){.l2-grid{grid-template-columns:1fr}}
 </style></head>
 <body><nav aria-label="Policies"><div class="nav-logo"><span class="logo-mark" aria-hidden="true"></span><span>Early access</span></div><div class="nav-links"><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div></nav><header><div class="hero-split"><div class="hero-content"><p class="eyebrow">Ride smarter · Early access</p><h1 id="brand" class="display">Ride review</h1><p class="tagline">Know what your rides actually did.</p><p class="muted">Your AI cycling coach — rule-based drafts, not a training prescription.</p><div class="hero-ctas"><a class="cta cta-primary" id="hero-demo" href="#review">Try a demo review</a><a class="cta cta-ghost" href="#key">Connect Intervals.icu</a></div><div class="feature-chips"><span class="chip">Evidence-led</span><span class="chip">Encrypted key storage</span><span class="chip">No invented numbers</span></div></div><div class="hero-preview" aria-hidden="true"><div class="preview-frame"><div class="preview-chrome"><span></span><span></span><span></span><div class="preview-url">review · facts · power zones</div></div><div class="preview-body"><p class="preview-label">Ride review · Facts</p><div class="preview-metrics"><div><span class="pv">120</span><span class="pu">min</span><span class="pl">Duration</span></div><div><span class="pv">175</span><span class="pu">W</span><span class="pl">Avg power</span></div><div><span class="pv">98</span><span class="pl">Load</span></div></div><div class="preview-zone"><div class="preview-zone-track"><div class="preview-zone-fill"></div></div><span>Z2 · 100%</span></div><p class="preview-note">Evidence-led review — missing data is never invented.</p></div></div></div></div></header>
 <p id="status" role="status" aria-live="polite">Loading local configuration…</p>
 <p class="eyebrow app-eyebrow">The app</p>
 <main class="workflow"><section class="step-card"><h2><span class="step-number" aria-hidden="true">01</span>1. Connect Intervals.icu</h2><p class="step-copy">Your API key is stored <strong>encrypted on this hosted pilot</strong>; saving is refused when no encryption backend is available. It is not verified when saved. This is a <strong>single shared demo slot</strong>: a key saved by another visitor replaces yours, and storage is ephemeral on the free host — it is wiped on redeploy or restart, so you may need to reconnect. Listing or reviewing sends requests to Intervals.icu.</p><label>API key <input id="key" type="password" autocomplete="off" spellcheck="false" maxlength="4096"></label><div class="actions"><button id="connect" disabled>Save key locally</button><button id="demo" class="secondary" disabled>Try a demo review</button></div><p id="connection" class="muted"></p></section>
 <section class="step-card"><h2><span class="step-number" aria-hidden="true">02</span>2. Choose an activity</h2><p class="step-copy">Choose your recent riding window, then request one review at a time.</p><label>Recent days <input id="days" type="number" min="1" max="90" value="14"></label><button id="list" disabled>Load activities</button><ul id="activities"></ul></section>
-<section class="step-card review-card"><h2><span class="step-number" aria-hidden="true">03</span>3. Review</h2><p class="muted">Facts, rule inferences and suggestions stay separate. Missing data is not estimated.</p><div id="review">No review yet.</div></section>
+<section class="step-card review-card"><h2><span class="step-number" aria-hidden="true">03</span>3. Review</h2><p class="muted">Facts, rule inferences and suggestions stay separate. Missing data is not estimated.</p><div id="review">No review yet.</div><div class="l2-controls"><button id="l2-compare" class="secondary" disabled>Compare with AI draft (beta)</button><p>Optional cloud comparison: clicking sends aggregate ride facts and reported wellness context to Alibaba Cloud DashScope. Raw samples and API keys are not included in the prompt. Select a real activity review first; synthetic demos are not sent.</p><div id="l2-result" aria-live="polite"></div></div></section>
 <section class="step-card weekly-card"><h2><span class="step-number" aria-hidden="true">04</span>4. Weekly summary</h2><div class="weekly-controls"><label>Week starting (Monday)<input id="week-start" type="date" required></label><button id="weekly" disabled>Load weekly summary</button></div><div id="weekly-result" aria-live="polite">No weekly summary yet.</div></section>
 </main><section class="waitlist-card" aria-labelledby="waitlist-title"><h2 id="waitlist-title">Join the waitlist</h2><p>Make your cycling records clearer with evidence-led English coaching summaries.</p><p class="muted">Opt in to product updates. This early-access pilot stores your email on the host (ephemeral, wiped on redeploy); it does not send email or sync a hosted list. <a href="/privacy">Privacy and deletion</a>.</p><div class="pricing"><span class="price">$4.99/month or $39/year (save 35%)</span><span class="price-note">Launch pricing — not yet charging</span></div><form id="waitlist-form"><label>Email <input id="waitlist-email" type="email" autocomplete="email" maxlength="254" required></label><button id="waitlist-submit" type="submit" disabled>Join waitlist</button></form><p id="waitlist-feedback" role="status" aria-live="polite"></p></section>
 <footer class="site-footer"><p>Ride review · Early access</p></footer>
 <script>
 'use strict';
 let token = '';
+let l2ActivityId = null;
 const el = id => document.getElementById(id);
 function status(text) { el('status').textContent = text; }
 async function api(path, payload) {
@@ -41,7 +44,7 @@ async function run(action) {
   document.querySelectorAll('button').forEach(button => button.disabled = true);
   status('Working… No automatic retries.');
   try { await action(); } catch (error) { status(error.message); }
-  finally { document.querySelectorAll('button').forEach(button => button.disabled = !token); }
+  finally { document.querySelectorAll('button').forEach(button => button.disabled = !token); syncL2Button(); }
 }
 function connection(data) {
   const storage = data.encrypted_at_rest ? 'Encrypted storage: ' + data.key_storage_backend : 'Encrypted storage unavailable; saving is refused.';
@@ -132,6 +135,75 @@ function render(review, synthetic = false) {
   const details = addText(root, 'details', ''); addText(details, 'summary', 'Structured evidence and data-quality warnings');
   addText(details, 'pre', JSON.stringify({metrics: review.facts.metrics, context: review.facts.coach_context, warnings: review.facts.warnings}, null, 2));
 }
+// L2 is always an explicit action; URL demo/autoflow never calls the cloud.
+function syncL2Button() { el('l2-compare').disabled = !token || l2ActivityId === null; }
+function setL2Activity(activityId) {
+  l2ActivityId = activityId;
+  el('l2-result').replaceChildren();
+  syncL2Button();
+}
+function renderL2(result) {
+  const root = el('l2-result'); root.replaceChildren();
+  const llm = result.llm || {};
+  if (llm.llm_status !== 'ok' || !llm.draft) {
+    const reasons = {
+      not_configured: 'Cloud AI is not configured. The rule draft remains available.',
+      rejected_bad_schema: 'The AI draft had an invalid structure and was rejected. The rule draft remains available.',
+      rejected_unverifiable_number: 'The AI draft contained an unverifiable number and was rejected. The rule draft remains available.',
+      upstream_error: 'The cloud provider request failed or timed out. The rule draft remains available. No automatic retry.'
+    };
+    addText(root, 'p', (reasons[llm.llm_status] || 'AI comparison unavailable. The rule draft remains available.') + ' [llm_status: ' + String(llm.llm_status || 'unknown') + ']').className = 'l2-message';
+    return;
+  }
+  const review = result.review;
+  const rule = {kind: 'Rule draft', paragraphs: [
+    ...(review.facts.messages || []),
+    ...(review.rule_inferences || []).map(item => item.text),
+    ...(review.training_suggestion.items || []).map(item => item.text)
+  ], disclaimer: review.training_suggestion.disclaimer};
+  const ai = {kind: 'AI-assisted draft', paragraphs: [llm.draft.summary,
+    ...llm.draft.observations.map(item => item.text), llm.draft.next_ride_note],
+    disclaimer: llm.draft.disclaimer};
+  // Randomize sides to avoid a permanent source-to-letter mapping.
+  const coin = new Uint8Array(1); crypto.getRandomValues(coin);
+  const drafts = coin[0] % 2 ? [rule, ai] : [ai, rule];
+  addText(root, 'p', 'Compare the wording before revealing the sources. Both drafts use the same ride record.').className = 'l2-message';
+  const grid = addText(root, 'div', ''); grid.className = 'l2-grid';
+  const headings = [];
+  drafts.forEach((draft, index) => {
+    const card = addText(grid, 'section', ''); card.className = 'l2-draft';
+    headings.push(addText(card, 'h3', index === 0 ? 'Draft A' : 'Draft B'));
+    draft.paragraphs.forEach(text => addText(card, 'p', text));
+  });
+  // The shared disclaimer remains visible; source-specific tails wait for Reveal.
+  addText(root, 'p', review.training_suggestion.disclaimer).className = 'disclaimer';
+  const reveal = addText(root, 'button', 'Reveal'); reveal.className = 'secondary';
+  let revealed = false;
+  reveal.addEventListener('click', () => {
+    if (revealed) return;
+    revealed = true;
+    drafts.forEach((draft, index) => {
+      headings[index].textContent += ' — ' + draft.kind;
+      addText(headings[index].parentNode, 'p', draft.disclaimer).className = 'disclaimer';
+    });
+    reveal.remove();
+  });
+}
+el('l2-compare').addEventListener('click', () => {
+  if (!token || l2ActivityId === null || el('l2-compare').disabled) return;
+  const activityId = l2ActivityId;
+  run(async () => {
+    el('l2-result').textContent = 'Requesting an optional cloud draft... No automatic retries.';
+    try {
+      const result = await api('/api/coach/review-l2', {activity_id: activityId});
+      renderL2(result);
+      status(result.llm && result.llm.llm_status === 'ok' ? 'Comparison ready. Reveal the sources when you are ready.' : 'AI comparison unavailable; the rule draft remains available.');
+    } catch (error) {
+      el('l2-result').textContent = 'Comparison request failed. The rule draft remains available. ' + error.message;
+      throw error;
+    }
+  });
+});
 // Calendar dates use local components, not UTC conversion, to preserve Monday.
 function localISODate(date) {
   return String(date.getFullYear()).padStart(4, '0') + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
@@ -205,12 +277,14 @@ el('waitlist-form').addEventListener('submit', event => {
   });
 });
 el('connect').addEventListener('click', () => run(async () => {
+  setL2Activity(null);
   const key = el('key').value; el('key').value = '';
   const data = await api('/api/coach/connect', {api_key:key}); connection(data);
   el('activities').replaceChildren(); el('review').textContent = 'No review yet.';
   status('Key saved locally. No verification request was sent.');
 }));
 el('demo').addEventListener('click', () => run(async () => {
+  setL2Activity(null);
   el('review').textContent = 'Preparing synthetic demo…';
   const result = await api('/api/coach/demo-review', {});
   render(result.review, result.synthetic === true);
@@ -230,8 +304,10 @@ el('list').addEventListener('click', () => run(async () => {
     const item = addText(el('activities'), 'li', String(activity.name || activity.id) + ' · ' + String(activity.start_date_local || 'Date unavailable'));
     const button = addText(item, 'button', 'Review');
     button.addEventListener('click', () => run(async () => {
+      setL2Activity(null);
       el('review').textContent = 'Loading selected activity…';
       const result = await api('/api/coach/review', {activity_id:activity.id}); render(result.review);
+      setL2Activity(activity.id);
       result.warnings.forEach(warning => addText(el('review'), 'p', warning.code + ': ' + warning.field));
       status('Draft ready. Nothing was scheduled or submitted.');
     }));
@@ -239,7 +315,7 @@ el('list').addEventListener('click', () => run(async () => {
   status(data.activities.length ? 'Choose an activity to request a review.' : 'No activities found in this period.');
 }));
 (async () => {
-  try { const data = await api('/api/coach/config'); token = data.token; el('brand').textContent = data.brand_name; document.title = data.brand_name; connection(data); status('Ready. External requests occur only after your list/review action.'); document.querySelectorAll('button').forEach(button => button.disabled = false);
+  try { const data = await api('/api/coach/config'); token = data.token; el('brand').textContent = data.brand_name; document.title = data.brand_name; connection(data); status('Ready. External requests occur only after your list/review action.'); document.querySelectorAll('button').forEach(button => button.disabled = false); syncL2Button();
     const params = new URLSearchParams(location.search);
     if (params.get('autodemo') === '1') { el('demo').click(); }
     if (params.get('autoflow') === '1' && data.connected === true) {

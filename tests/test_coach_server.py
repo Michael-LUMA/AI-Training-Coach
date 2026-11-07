@@ -21,6 +21,15 @@ KEY = 'synthetic-credential-1234'
 
 class CoachServerTests(unittest.TestCase):
     def setUp(self):
+        # API tests exercise real encryption without depending on a Windows
+        # profile/DPAPI permission. Native DPAPI has its own keystore tests.
+        from coach_keystore import MasterKeyBackend
+        master = 'synthetic-server-test-master-key-32-bytes-minimum'
+        key_env = patch.dict('os.environ', {'LUMA_COACH_MASTER_KEY': master})
+        key_env.start(); self.addCleanup(key_env.stop)
+        backend = patch('coach_keystore.DPAPIBackend',
+                        side_effect=lambda: MasterKeyBackend(master))
+        backend.start(); self.addCleanup(backend.stop)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name) / 'coach/coach.sqlite3'
@@ -348,6 +357,189 @@ class CoachServerTests(unittest.TestCase):
                      '/api/coach/weekly'):
             with self.subTest(text=text):
                 self.assertIn(text, page)
+
+
+    def l2_reply(self, draft=None, *, status=200):
+        """Synthetic provider JSON; no real key, socket or paid API."""
+        if draft is None:
+            draft = {"summary": "Average power was 150W.",
+                     "observations": [{"text": "Inspect the recorded power.",
+                                       "fact_refs": ["facts.metrics.average_power_w"]}],
+                     "next_ride_note": "Record missing data if available."}
+        return status, {}, json.dumps({"choices": [{"finish_reason": "stop",
+            "message": {"content": json.dumps(draft)}}],
+            "usage": {"prompt_tokens": 123, "completion_tokens": 45}}).encode()
+
+    def test_l2_not_configured_returns_200_with_rule_draft_no_cloud(self):
+        self.app.llm_post = Mock(side_effect=AssertionError('Cloud must not be called'))
+        with patch.object(self.app.store, 'get_key', return_value=KEY), patch.dict(
+                'os.environ', {'DASHSCOPE_API_KEY': ''}):
+            handler = self.handler('POST', '/api/coach/review-l2', {'activity_id': 'i1'})
+        status, result = handler.reply.call_args.args
+        self.assertEqual(status, 200)
+        self.assertEqual(result['llm'], {'llm_status': 'not_configured', 'draft': None,
+                                        'usage': None, 'fallback': 'rule_draft'})
+        self.assertEqual(result['review']['facts']['metrics']['average_power_w']['value'], 150)
+        self.assertIn('warnings', result)
+        self.assertFalse(result['verified'])
+        self.assertEqual(len(self.calls), 4)
+        self.app.llm_post.assert_not_called()
+        self.assertFalse(self.path.exists())
+
+    def test_l2_env_key_injected_transport_usage_and_no_secret_persistence(self):
+        cloud_key = 'synthetic-dashscope-test-key'
+        self.app.llm_post = Mock(return_value=self.l2_reply())
+        with patch.object(self.app.store, 'get_key', return_value=KEY), patch.dict(
+                'os.environ', {'DASHSCOPE_API_KEY': cloud_key}):
+            handler = self.handler('POST', '/api/coach/review-l2', {'activity_id': 'i1'})
+        status, result = handler.reply.call_args.args
+        self.assertEqual(status, 200)
+        self.assertEqual(result['llm']['llm_status'], 'ok')
+        self.assertEqual(result['llm']['usage'], {'prompt_tokens': 123, 'completion_tokens': 45})
+        self.assertTrue(result['llm']['draft']['disclaimer'].startswith('AI-assisted draft. '))
+        self.app.llm_post.assert_called_once()
+        request = self.app.llm_post.call_args.args[0]
+        self.assertEqual(request.get_header('Authorization'), 'Bearer ' + cloud_key)
+        self.assertEqual(self.app.llm_post.call_args.kwargs, {'timeout': 20})
+        for secret in (KEY, cloud_key):
+            self.assertNotIn(secret, json.dumps(result))
+            self.assertNotIn(secret, request.data.decode())
+        self.assertFalse(self.path.exists())
+
+    def test_l2_reuses_identical_rule_pipeline_and_does_not_mutate_rule_result(self):
+        self.app.llm_post = Mock(return_value=self.l2_reply())
+        with patch.object(self.app.store, 'get_key', return_value=KEY), patch.dict(
+                'os.environ', {'DASHSCOPE_API_KEY': 'synthetic-dashscope-test-key'}):
+            rule = self.request('/api/coach/review', {'activity_id': 'i1'})
+            self.app.llm_post.assert_not_called()
+            enhanced = self.request('/api/coach/review-l2', {'activity_id': 'i1'})
+            self.request('/api/coach/demo-review', {})
+        self.assertEqual({key: enhanced[key] for key in rule}, rule)
+        # Byte-for-byte comparison retains IDs and timestamps; do not strip them.
+        self.assertEqual(server.dumps(enhanced['review']).encode('utf-8'),
+                         server.dumps(rule['review']).encode('utf-8'))
+        self.assertIsNone(rule['review']['created_at'])
+        self.assertIsNone(rule['review']['updated_at'])
+        self.app.llm_post.assert_called_once()
+
+    def test_l2_isolates_mutation_and_same_input_snapshot_across_app_instances(self):
+        with patch.object(self.app.store, 'get_key', return_value=KEY):
+            before = self.request('/api/coach/review', {'activity_id': 'i1'})
+            original_bytes = server.dumps(before['review']).encode('utf-8')
+            def mutating_engine(review, **kwargs):
+                review['facts']['metrics']['average_power_w']['value'] = 99999
+                review['facts']['messages'].append('synthetic injected mutation')
+                return {'llm_status': 'upstream_error', 'draft': None,
+                        'usage': None, 'fallback': 'rule_draft'}
+            with patch.object(server, 'build_llm_review', side_effect=mutating_engine):
+                enhanced = self.request('/api/coach/review-l2', {'activity_id': 'i1'})
+            after = self.request('/api/coach/review', {'activity_id': 'i1'})
+        self.assertEqual(server.dumps(enhanced['review']).encode('utf-8'), original_bytes)
+        self.assertEqual(server.dumps(after['review']).encode('utf-8'), original_bytes)
+        self.assertEqual(server.dumps(before['review']).encode('utf-8'), original_bytes)
+        # A new App builds the same snapshot without a cache or reused object.
+        self.app = server.App(server.CoachStore(self.path), fetch=self.fetch,
+                              today=lambda: date(2026, 11, 6))
+        with patch.object(self.app.store, 'get_key', return_value=KEY):
+            rebuilt = self.request('/api/coach/review', {'activity_id': 'i1'})
+        self.assertEqual(server.dumps(rebuilt['review']).encode('utf-8'), original_bytes)
+
+    def test_rule_snapshot_identity_changes_with_facts_and_never_reuses_stale_data(self):
+        with patch.object(self.app.store, 'get_key', return_value=KEY):
+            before = self.request('/api/coach/review', {'activity_id': 'i1'})['review']
+            self.replies['/api/v1/activity/i1/streams'] = [
+                {'type': 'time', 'data': [0, 10, 20]},
+                {'type': 'watts', 'data': [200, 200, 200]}]
+            changed = self.request('/api/coach/review', {'activity_id': 'i1'})['review']
+            self.replies.pop('/api/v1/activity/i1/streams')
+            restored = self.request('/api/coach/review', {'activity_id': 'i1'})['review']
+        self.assertNotEqual(before['id'], changed['id'])
+        self.assertEqual(changed['facts']['metrics']['average_power_w']['value'], 200)
+        self.assertEqual(server.dumps(before), server.dumps(restored))
+
+    def test_l2_cloud_rejection_timeout_and_failure_keep_rule_200(self):
+        draft = {'summary': 'Power was 99999W.', 'observations': [],
+                 'next_ride_note': 'Inspect recorded data.'}
+        cases = [(self.l2_reply(draft), None, 'rejected_unverifiable_number'),
+                 (self.l2_reply({'summary': 'Missing fields'}), None, 'rejected_bad_schema'),
+                 (self.l2_reply(status=429), None, 'upstream_error'),
+                 (None, TimeoutError('synthetic-sensitive-provider-error'), 'upstream_error')]
+        for response, error, expected in cases:
+            with self.subTest(expected=expected, timeout=error is not None):
+                self.app.llm_post = Mock(return_value=response, side_effect=error)
+                with patch.object(self.app.store, 'get_key', return_value=KEY), patch.dict(
+                        'os.environ', {'DASHSCOPE_API_KEY': 'synthetic-dashscope-test-key'}):
+                    handler = self.handler('POST', '/api/coach/review-l2', {'activity_id': 'i1'})
+                status, result = handler.reply.call_args.args
+                self.assertEqual(status, 200)
+                self.assertEqual(result['llm']['llm_status'], expected)
+                self.assertEqual(result['llm']['fallback'], 'rule_draft')
+                self.assertIsNone(result['llm']['draft'])
+                self.assertIn('training_suggestion', result['review'])
+                self.assertNotIn('synthetic-sensitive-provider-error', json.dumps(result))
+                self.app.llm_post.assert_called_once()
+
+    def test_l2_security_rejects_before_read_or_any_upstream(self):
+        self.app.llm_post = Mock(side_effect=AssertionError('Cloud forbidden'))
+        for overrides, code in (({'Host': 'evil.test'}, 'host_denied'),
+                                ({'Origin': 'https://evil.test'}, 'origin_denied'),
+                                ({'Origin': None}, 'origin_denied'),
+                                ({'Sec-Fetch-Site': 'cross-site'}, 'origin_denied'),
+                                ({'X-Coach-Token': ''}, 'token_denied'),
+                                ({'Content-Length': '9000'}, 'body_too_large'),
+                                ({'Transfer-Encoding': 'chunked'}, 'invalid_body')):
+            with self.subTest(code=code, overrides=overrides):
+                handler = self.handler('POST', '/api/coach/review-l2', {'activity_id': 'i1'}, overrides)
+                self.assertEqual(handler.reply.call_args.args[1]['error_code'], code)
+                handler.rfile.read.assert_not_called()
+        self.assertFalse(self.calls)
+        self.app.llm_post.assert_not_called()
+
+    def test_l2_requires_connection_and_exact_request_fields(self):
+        self.app.llm_post = Mock(side_effect=AssertionError('Cloud forbidden'))
+        handler = self.handler('POST', '/api/coach/review-l2', {'activity_id': 'i1'})
+        self.assertEqual(handler.reply.call_args.args[0], 401)
+        self.assertEqual(handler.reply.call_args.args[1]['error_code'], 'auth_required')
+        for payload in ({}, {'activity_id': 'i1', 'api_key': 'client-supplied'},
+                        {'activity_id': True}, {'activity_id': '../secret'}):
+            with self.subTest(payload=payload), patch.object(self.app.store, 'get_key', return_value=KEY):
+                handler = self.handler('POST', '/api/coach/review-l2', payload)
+                self.assertEqual(handler.reply.call_args.args[0], 400)
+        self.assertFalse(self.calls)
+        self.app.llm_post.assert_not_called()
+
+    def test_l2_preserves_intervals_rate_limit_and_never_calls_cloud(self):
+        self.app.llm_post = Mock(side_effect=AssertionError('Cloud forbidden'))
+        self.replies['/api/v1/activity/i1'] = (429, {'Retry-After': '60'}, KEY.encode())
+        with patch.object(self.app.store, 'get_key', return_value=KEY):
+            handler = self.handler('POST', '/api/coach/review-l2', {'activity_id': 'i1'})
+        status, result = handler.reply.call_args.args
+        self.assertEqual((status, result['error_code'], result['retry_after']), (429, 'rate_limited', '60'))
+        self.assertNotIn(KEY, json.dumps(result))
+        self.app.llm_post.assert_not_called()
+        self.assertEqual(len(self.calls), 1)
+
+    def test_l2_page_contract_blind_labels_reveal_and_safe_dom(self):
+        page, csp = self.request('/')
+        text = page.decode('utf-8')
+        for item in ('id="l2-compare"', 'id="l2-result"', 'Draft A', 'Draft B', 'Reveal',
+                     '/api/coach/review-l2', 'rejected_unverifiable_number',
+                     'rejected_bad_schema', 'not_configured', 'upstream_error',
+                     'Alibaba Cloud DashScope', 'crypto.getRandomValues',
+                     "setL2Activity(activity.id)", "setL2Activity(null)"):
+            with self.subTest(item=item):
+                self.assertIn(item, text)
+        for identifier in ('brand', 'key', 'connect', 'demo', 'days', 'list', 'activities',
+                           'review', 'status', 'connection', 'week-start', 'weekly',
+                           'weekly-result', 'waitlist-email', 'waitlist-submit',
+                           'waitlist-feedback', 'waitlist-form', 'l2-compare', 'l2-result'):
+            self.assertEqual(text.count('id="' + identifier + '"'), 1)
+        self.assertIn("params.get('autodemo') === '1'", text)
+        self.assertIn("params.get('autoflow') === '1'", text)
+        self.assertNotIn('innerHTML', text)
+        self.assertNotIn('<script src=', text)
+        self.assertIn("script-src 'sha256-", csp)
+        self.assertIn("connect-src 'self'", csp)
 
 
 if __name__ == '__main__':

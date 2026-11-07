@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import copy
 import hashlib
 import json
 import ipaddress
@@ -26,6 +27,7 @@ from coach_icu import normalize_activity
 from coach_demo import build_demo_review
 from coach_keystore import KeyStore
 from coach_review_en import build_review
+from llm_review import build_llm_review
 from coach_waitlist import WaitlistStore
 from coach_weekly import build_weekly_summary
 from coach_billing import BillingStore, verify as verify_billing
@@ -109,14 +111,32 @@ def _public_origin():
     return parsed.scheme + "://" + parsed.netloc
 
 
+def _build_rule_snapshot(record):
+    """Content-address a stateless rule snapshot, identically for L1 and L2.
+
+    The shared engine creates editable entities with random IDs/wall-clock times.
+    HTTP reviews here are not persisted entities: their creation/update timestamps
+    are unknown (null), not invented from the ride date. All factual content stays
+    untouched. Hashing the complete versioned snapshot also covers rule/context
+    changes; no activity cache, shared mutable review, or user credential is used.
+    """
+    review = build_review(record)
+    review.update({"id": None, "created_at": None, "updated_at": None})
+    canonical = json.dumps(review, sort_keys=True, separators=(",", ":"),
+                           ensure_ascii=True, allow_nan=False).encode("utf-8")
+    review["id"] = hashlib.sha256(b"coach-rule-snapshot/1\0" + canonical).hexdigest()[:32]
+    return review
+
+
 class App:
     """Transport-injectable API; dispatch is testable without binding sockets."""
 
-    def __init__(self, store=None, *, fetch=None, today=None):
+    def __init__(self, store=None, *, fetch=None, today=None, llm_post=None):
         self.store = store if store is not None else CoachStore()
         self._billing = None
         self._waitlist = None
         self.fetch = fetch
+        self.llm_post = llm_post
         self.today = today if today is not None else date.today
         self.token = secrets.token_urlsafe(32)
 
@@ -168,7 +188,7 @@ class App:
             token = headers.get("X-Coach-Token", "")
             require(type(token) is str and token.isascii() and secrets.compare_digest(token, self.token), "Session token required", "token_denied", 403)
         allowed = ((method == "GET" and parsed.path in ("/", "/privacy", "/terms", "/api/coach/config", "/api/coach/activities")) or
-                   (method == "POST" and path in ("/api/coach/connect", "/api/coach/review", "/api/coach/demo-review", "/api/coach/waitlist", "/api/coach/weekly")))
+                   (method == "POST" and path in ("/api/coach/connect", "/api/coach/review", "/api/coach/review-l2", "/api/coach/demo-review", "/api/coach/waitlist", "/api/coach/weekly")))
         require(allowed, "Endpoint not found", "not_found", 404)
         if method == "POST":
             require(headers.get("Transfer-Encoding") is None and headers.get("Content-Type") == "application/json", "Fixed-length JSON required", "invalid_body", 415)
@@ -262,10 +282,15 @@ class App:
             warnings.append({"code": "optional_data_missing", "field": "wellness_date"})
         try:
             record = normalize_activity(activity, streams, settings, wellness)
-            review = build_review(record)
+            review = _build_rule_snapshot(record)
         except (GPXError, ReviewError, TypeError, ValueError, OverflowError, RecursionError):
             raise ActionError("invalid_upstream_data", "Activity data could not be normalized", 502) from None
-        return {"review": review, "warnings": warnings, "verified": False}
+        result = {"review": review, "warnings": warnings, "verified": False}
+        if path == "/api/coach/review-l2":
+            # Explicit opt-in only; never store the provider key or retry a draft.
+            result["llm"] = build_llm_review(
+                copy.deepcopy(review), api_key=os.environ.get("DASHSCOPE_API_KEY"), http_post=self.llm_post)
+        return result
 
     def _client(self):
         key = self.store.get_key()
