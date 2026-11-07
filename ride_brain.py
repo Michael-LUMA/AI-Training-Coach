@@ -191,6 +191,8 @@ def build_ride_review(session: dict, previous_summary: dict | None = None, *,
         return _result('upstream_error')
     try:
         facts,numbers=_facts(session,previous_summary)
+        if facts['source']=='simulated':
+            facts['speech_rule']='本次是合成演示，speech 必须以「模拟记录：」开头'
         payload={'model':MODEL,'max_tokens':MAX_TOKENS,'response_format':{'type':'json_object'},
                  'messages':[{'role':'system','content':SYSTEM_PROMPT},
                              {'role':'user','content':json.dumps(facts,ensure_ascii=False,allow_nan=False)}]}
