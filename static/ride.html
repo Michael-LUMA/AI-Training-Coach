@@ -16,6 +16,7 @@
 <h1>记录此刻，<br>不替你做判断。</h1>
 <p class="muted">我是 Mark。心率带直连，本地语音，自定义阈值提醒。没有目标区间就不推算、不提醒越区。</p>
 <p id="compatibility" class="muted">Android Chrome 支持 Web Bluetooth；iOS Safari 不支持。需 HTTPS 或本机 localhost 安全上下文。手机不能用电脑的 127.0.0.1 地址连接。</p>
+<section id="memory-card" class="card" hidden aria-labelledby="memory-heading"><h2 id="memory-heading">Mark 的记忆</h2><p id="memory-recall"></p><p id="memory-source" class="offline" hidden></p><button id="memory-listen" type="button" class="secondary">听 Mark 说</button></section>
 <div class="card">
 <h2>01 / 设定记录</h2>
 <div class="row"><label>自定义下限（bpm，可留空）<input id="lower" type="number" min="0" max="65535" step="1" inputmode="numeric" placeholder="由你填写"></label><label>自定义上限（bpm，可留空）<input id="upper" type="number" min="0" max="65535" step="1" inputmode="numeric" placeholder="由你填写"></label></div>
@@ -24,13 +25,24 @@
 <p id="status" role="status" aria-live="polite">准备记录。语音需点击开始激活；请先在静止状态连接设备。</p>
 </div>
 <div class="grid"><section class="card"><span id="connection" class="pill">未连接</span><p><span id="heart-rate" class="hr">—</span> <span class="muted">bpm</span></p><p id="zone-state">未设置目标区间</p><p id="elapsed" class="muted">00:00</p></section><section class="card"><h2>02 / 原始时间轴</h2><p class="muted">仅展示最近 60 个实际点。断线标记 gap，不插值、不用旧读数补齐。超过 5 秒没有新读数也标记信号缺口。</p><pre id="timeline" aria-label="原始心率与断线记录"></pre></section></div>
-<section class="card"><h2>03 / 骑后一句话</h2><p id="summary">结束后根据记录生成。没有数据的部分保持缺失。</p><p id="save-status" role="status" aria-live="polite">本片存储为 ephemeral：重启或重新部署可能丢失，请保留下载备份。</p><div class="row"><button id="retry-upload" type="button" class="secondary">重试上传本机待传记录</button><button id="download-session" type="button" class="secondary" disabled>下载本次 JSON 备份</button></div></section>
+<section class="card"><h2>03 / 骑后一句话</h2><p id="summary">结束后根据记录生成。没有数据的部分保持缺失。</p><p id="memory-compare" aria-live="polite" hidden></p><p id="compare-source" class="offline" hidden></p><p id="save-status" role="status" aria-live="polite">本片存储为 ephemeral：重启或重新部署可能丢失，请保留下载备份。</p><div class="row"><button id="retry-upload" type="button" class="secondary">重试上传本机待传记录</button><button id="download-session" type="button" class="secondary" disabled>下载本次 JSON 备份</button></div></section>
 <footer><p>Record only. Not medical advice.</p><p>语音只报告记录和你设定的阈值，不提供训练处方或效果承诺。后台、锁屏、系统省电或浏览器挂起可能停止 BLE、计时或语音；本页不是可靠的安全报警器。请勿在骑行中操作屏幕。</p><p>心率数据保存在当前设备及本服务的临时目录；共用电脑请勿视为多用户私密空间。模拟来源会随记录保留，绝不转为真实来源。</p><p>AI Ride Coach · Early access · <a href="?simulate=1">打开模拟模式</a></p></footer>
 </main>
 <script>
 'use strict';
 // Device adapter only: ride_memory.py owns the reusable versioned memory contract.
-const PERSONA = Object.freeze({version:'ride-persona/2', name:'Mark', above:'心率超过你设的上限了。', below:'心率低于你设的下限了。', disconnected:'心率信号断了，我看不到读数。', short:'记录太短，我还总结不了。'});
+const PERSONA = Object.freeze({
+  version:'ride-persona/3', name:'Mark', above:'心率超过你设的上限了。', below:'心率低于你设的下限了。', disconnected:'心率信号断了，我看不到读数。', short:'记录太短，我还总结不了。',
+  recall:parts=>'我记得上次'+parts.join('，')+'。记录还很少，这不算趋势。',
+  recall_no_history:'我还没有可回放的历史记录。',
+  compare_better:(label,amount,unit)=>'我看到'+label+'比上次'+(unit==='分钟' ? '少' : '低')+amount+unit+'。',
+  compare_worse:(label,amount,unit)=>'我看到'+label+'比上次'+(unit==='分钟' ? '多' : '高')+amount+unit+'。',
+  compare_flat:(label,current,previous,unit)=>'我看到'+label+'变化不超过3%（本次'+current+unit+'，上次'+previous+unit+'）。',
+  no_compare:(reason='上次记录字段不全')=>'我这次无法对比：'+reason+'。',
+  compare_caution:'两次记录还说明不了趋势。',
+  simulated:'SIMULATED · 合成记录，不是真实骑行',
+  start:'开始记录。'
+});
 const SERVICE = 0x180D, CHARACTERISTIC = 0x2A37;
 const OUTSIDE_DWELL_MS = 10000, ALERT_COOLDOWN_MS = 60000, STALE_MS = 5000, MAX_SERIES = 20000;
 const SIMULATED = new URLSearchParams(location.search).get('simulate') === '1';
@@ -40,6 +52,7 @@ let startedMs = 0, startedMono = 0, previous = null, lastSignal = null, gapOpen 
 let outsideSince = null, outsideKind = null, lastAlert = -Infinity, alerts = 0;
 let timer = null, simulator = null, lastSession = null, target = null;
 let totals = {below:0, within:0, above:0};
+let recallText = '', recallSpoken = false, comparisonRequest = 0;
 const PENDING_PREFIX = 'luma.ride.pending.';
 function state(text){$('status').textContent = text;}
 function cancelSpeech(){if ('speechSynthesis' in window) window.speechSynthesis.cancel();}
@@ -49,6 +62,72 @@ function speak(text){
   catch (_) {state('系统语音不可用；文字记录仍可继续。'); return false;}
 }
 function noteAndSpeak(text){if(session && session.coach_notes.length < 199) session.coach_notes.push(text); speak(text);}
+// Metadata only; no raw series request and no inference from missing fields.
+function memoryNumber(value){return typeof value === 'number' && Number.isFinite(value) && value >= 0;}
+function memoryValue(value){return Number(value.toFixed(2)).toString();}
+function memoryTime(memory){return typeof memory.started_at === 'string' ? Date.parse(memory.started_at) : NaN;}
+function historyByTime(memories){return memories.filter(m=>m && typeof m.id==='string' && Number.isFinite(memoryTime(m))).slice().sort((a,b)=>memoryTime(b)-memoryTime(a));}
+function sourceNotice(memories){return memories.some(m=>m.source==='simulated') ? PERSONA.simulated : '';}
+async function fetchMemories(){
+  const response=await fetch('/api/coach/ride/sessions',{cache:'no-store',headers:{'X-Coach-Token':token}});
+  if(!response.ok)throw new Error('memory_unavailable');
+  const data=await response.json();
+  if(!Array.isArray(data.sessions))throw new Error('invalid_memory_list');
+  return historyByTime(data.sessions);
+}
+function recallMemory(memory){
+  const parts=[], date=new Date(memoryTime(memory)), summary=memory.summary || {};
+  if(Number.isFinite(date.getTime()))parts.push('是'+(date.getMonth()+1)+'月'+date.getDate()+'日');
+  if(memoryNumber(summary.duration_s))parts.push('记录了'+memoryValue(summary.duration_s/60)+'分钟');
+  if(memoryNumber(summary.avg_hr))parts.push('样本平均心率'+memoryValue(summary.avg_hr)+' bpm');
+  return PERSONA.recall(parts);
+}
+async function loadRecall(){
+  try {
+    const memories=await fetchMemories();
+    if(!memories.length){console.debug(PERSONA.recall_no_history);return;}
+    recallText=recallMemory(memories[0]);
+    const notice=sourceNotice([memories[0]]);
+    $('memory-recall').textContent=recallText;$('memory-source').textContent=notice;$('memory-source').hidden=!notice;$('memory-card').hidden=false;
+    // Rendering never speaks: autoplay is reserved for explicit button handlers.
+  }catch(_){console.debug('Mark memory unavailable; no history invented.');}
+}
+function speakRecall(){
+  if(!recallText)return false;
+  const notice=$('memory-source').textContent;
+  const spoken=speak((notice ? notice+'。' : '')+recallText);
+  if(spoken)recallSpoken=true;
+  return spoken;
+}
+function compareMetric(label,current,previous,unit){
+  // better/worse are required contract keys, not training-quality judgements.
+  const delta=current-previous, tolerance=previous*.03;
+  if(Math.abs(delta)<=tolerance+Number.EPSILON*Math.max(1,current,previous)*4)return PERSONA.compare_flat(label,memoryValue(current),memoryValue(previous),unit);
+  const amount=memoryValue(Math.abs(delta));
+  return (delta<0 ? PERSONA.compare_better : PERSONA.compare_worse)(label,amount,unit);
+}
+function compareMemories(current,previous){
+  const a=current.summary || {}, b=previous && previous.summary || {};
+  if(!previous)return PERSONA.no_compare('我还没有更早的记录');
+  if(!['avg_hr','duration_s'].every(k=>memoryNumber(a[k]) && memoryNumber(b[k])))return PERSONA.no_compare();
+  return compareMetric('样本平均心率',a.avg_hr,b.avg_hr,' bpm')+compareMetric('时长',a.duration_s/60,b.duration_s/60,'分钟')+PERSONA.compare_caution;
+}
+async function refreshComparison(memory){
+  const request=++comparisonRequest;
+  try {
+    const memories=await fetchMemories();
+    // Upload retries may reorder storage mtimes. Compare by ride start, not upload order.
+    const previous=memories.find(m=>m.id!==memory.id && memoryTime(m)<memoryTime(memory));
+    const notice=sourceNotice(previous ? [memory,previous] : [memory]);
+    if(request!==comparisonRequest || active || !lastSession || lastSession.id!==memory.id)return;
+    $('memory-compare').textContent=compareMemories(memory,previous);$('memory-compare').hidden=false;
+    $('compare-source').textContent=notice;$('compare-source').hidden=!notice;
+  }catch(_){
+    if(request!==comparisonRequest || active || !lastSession || lastSession.id!==memory.id)return;
+    $('memory-compare').textContent=PERSONA.no_compare('历史记录暂时无法读取');$('memory-compare').hidden=false;
+    const notice=sourceNotice([memory]);$('compare-source').textContent=notice;$('compare-source').hidden=!notice;
+  }
+}
 function readTarget(){
   const a = $('lower').value.trim(), b = $('upper').value.trim();
   if (!a && !b) return null;
@@ -100,6 +179,7 @@ function parseHeartRate(value){
 }
 function onHeartRate(event){try {receiveHR(parseHeartRate(event.target.value));} catch (_) {markGap(); state('心率数据格式异常，已标记缺口，没有补数。');}}
 function begin(){
+  comparisonRequest+=1;$('memory-compare').hidden=true;$('compare-source').hidden=true;
   target = readTarget(); startedMs = Date.now(); startedMono = performance.now();
   const random = new Uint32Array(4); crypto.getRandomValues(random);
   session = {schema_version:'luma-ride-memory/1', id:'ride-' + [...random].map(n=>n.toString(16).padStart(8,'0')).join(''), started_at:new Date(startedMs).toISOString(), ended_at:null, samples_hz:1, series:[], summary:null, coach_notes:[], persona_version:PERSONA.version, source:SIMULATED ? 'simulated' : 'ble_gatt_0x180d'};
@@ -122,7 +202,7 @@ async function startRide(){
   try {
     readTarget(); connecting=true; $('start-ride').disabled=true;
     // Warm up browser speech in a user gesture, without inventing a recorded alert.
-    speak('开始记录。');
+    if(recallSpoken || !speakRecall())speak(PERSONA.start);
     if (SIMULATED) {
       begin(); state('SIMULATED：仅演示；所有记录永久带 simulated 来源。');
       const generate = ()=>{const seconds=elapsedSeconds(), midpoint=target ? (target.lower+target.upper)/2 : 130; const amplitude=target ? Math.min(4,(target.upper-target.lower)/4) : 4;
@@ -165,7 +245,8 @@ async function upload(memory, retained){
     const result=await response.json();
     if(!response.ok || result.status!=='saved' || result.id!==memory.id) {if(response.status===403)token=''; throw new Error(result.error_code || 'upload_failed');}
     try {localStorage.removeItem(PENDING_PREFIX+memory.id);} catch (_) { /* A saved duplicate can be retried idempotently. */ }
-    $('save-status').textContent='已上传到临时存储（ephemeral），请下载备份；部署或重启可能丢失服务端数据。'; return true;
+    $('save-status').textContent='已上传到临时存储（ephemeral），请下载备份；部署或重启可能丢失服务端数据。';
+    await refreshComparison(memory); return true;
   } catch(error) {$('save-status').textContent='上报失败（'+error.message+'）。'+(retained ? '已在当前浏览器本地保留，稍后点击重试；请勿清理站点数据。' : '本地存储也不可用；记录仅在本页内存，请立即下载备份。'); return false;}
 }
 function finishRide(reason=''){
@@ -177,6 +258,7 @@ function finishRide(reason=''){
   lastSession=memory;$('download-session').disabled=false;$('connection').textContent='记录已结束';state(reason || '记录结束。平均值为实际样本算术平均，不推断训练效果。');
   const retained=retain(memory); void upload(memory,retained);
 }
+$('memory-listen').addEventListener('click',speakRecall);
 $('start-ride').addEventListener('click',startRide);
 $('end-ride').addEventListener('click',()=>finishRide());
 $('reconnect').addEventListener('click',async()=>{if(!active || SIMULATED || connecting)return;connecting=true;$('reconnect').disabled=true;try{await connectBLE();}catch(error){markGap();state(error.message || '重新连接失败，缺口仍保留。');}finally{connecting=false;$('reconnect').disabled=!active;}});
@@ -195,6 +277,8 @@ $('simulated-banner').hidden=!SIMULATED;
 if(SIMULATED){$('start-ride').textContent='开始模拟记录';$('compatibility').textContent='SIMULATED · 无需心率带，点击后生成合成数据；每分钟有一次越区演示，仅在你填写上下限后进行阈值提醒。演示值不代表你的训练区间。';}
 else if(!window.isSecureContext || !navigator.bluetooth){$('start-ride').disabled=true;state('当前浏览器不支持 BLE 或不是安全上下文。请使用 HTTPS Android Chrome；iOS Safari 不支持 Web Bluetooth。可用页面底部模拟模式联调。');}
 if(!('speechSynthesis' in window))$('compatibility').textContent+=' 系统 TTS 不可用，只有文字提示。';
+// Initial memory fetch is same-origin/token protected and never autoplays speech.
+void getToken().then(loadRecall).catch(()=>console.debug('Mark memory unavailable; no history invented.'));
 </script>
 </body>
 </html>
