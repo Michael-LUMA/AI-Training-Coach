@@ -3,50 +3,168 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Ride · AI Ride Coach</title>
+<title>Mark · 骑行图志</title>
 <link rel="manifest" href="/ride.webmanifest">
-<meta name="theme-color" content="#D4F23B">
+<meta name="theme-color" content="#F8F6EF">
 <style>
-:root{color-scheme:dark;--bg:#08090C;--volt:#D4F23B;--muted:#969aa6;--line:rgba(255,255,255,.07);--red:#ff777c}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#f4f5f7;font:16px/1.6 system-ui,sans-serif}nav{position:sticky;top:0;background:rgba(8,9,12,.9);backdrop-filter:blur(12px);border-bottom:1px solid var(--line);padding:16px 5vw;z-index:2;display:flex;gap:20px}a{color:inherit}nav a:first-child{margin-right:auto}main{max-width:960px;margin:auto;padding:48px 24px 80px}h1{font-size:clamp(36px,6vw,56px);letter-spacing:-.04em;line-height:1.1}h2{font-size:20px}.eyebrow{color:var(--volt);letter-spacing:.16em;font-size:12px;text-transform:uppercase}.muted,small{color:var(--muted)}.card{padding:28px;margin:20px 0;border:1px solid var(--line);border-radius:20px;background:rgba(255,255,255,.03);box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}.grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}.grid .card{margin:0}.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}label{display:grid;gap:6px;flex:1}input,select,button{font:inherit;border-radius:10px;padding:12px 16px}input,select{min-width:0;width:100%;background:#0b0c10;color:inherit;border:1px solid var(--line);box-shadow:inset 0 2px 8px #0006}input:focus{outline:1px solid var(--volt);box-shadow:0 0 16px #d4f23b20}button{border:1px solid transparent;color:#08090c;background:var(--volt);font-weight:650;cursor:pointer}button.secondary{color:#eee;background:transparent;border-color:var(--line)}button:disabled{opacity:.4;cursor:not-allowed}button:focus-visible,a:focus-visible{outline:2px solid var(--volt);outline-offset:4px}.hr{font-size:clamp(96px,18vw,150px);line-height:1.1;font-weight:750;letter-spacing:-.07em;font-variant-numeric:tabular-nums;color:var(--volt)}.pill{display:inline-block;border:1px solid var(--line);border-radius:30px;padding:5px 12px;font-size:13px}#simulated-banner{position:sticky;top:0;z-index:3;background:#ad132a;color:#fff;padding:12px 24px;text-align:center;font-weight:800;letter-spacing:.05em}.offline{color:var(--red)}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.7 ui-monospace,monospace;max-height:260px;overflow:auto}#summary{font-size:20px}footer{border-top:1px solid var(--line);padding-top:24px;margin-top:48px;color:var(--muted);font-size:13px}[hidden]{display:none!important}@media(max-width:640px){.grid{grid-template-columns:1fr}main{padding:32px 16px}.card{padding:20px}nav{font-size:13px}}
+@font-face{font-family:'Archivo';src:url('/fonts/archivo-latin-700-normal.woff2') format('woff2');font-weight:700;font-display:swap}
+@font-face{font-family:'Archivo';src:url('/fonts/archivo-latin-800-normal.woff2') format('woff2');font-weight:800;font-display:swap}
+@font-face{font-family:'Plex Mono';src:url('/fonts/ibm-plex-mono-latin-400-normal.woff2') format('woff2');font-weight:400;font-display:swap}
+@font-face{font-family:'Plex Mono';src:url('/fonts/ibm-plex-mono-latin-600-normal.woff2') format('woff2');font-weight:600;font-display:swap}
+:root{color-scheme:light;--paper:#F8F6EF;--sheet:#FDFCF6;--ink:#20211D;--contour:#96683B;--hydro:#3D74A6;--route:#C0442C;--flora:#5F7D4C;--faint:#6B6A62;--line:#D8D4C6;--red:#C0442C;--mono:'Plex Mono',Consolas,'Courier New',monospace;--sans:'Archivo','PingFang SC','Hiragino Sans GB','Microsoft YaHei',system-ui,sans-serif}
+*{box-sizing:border-box}
+::selection{background:var(--route);color:#fff}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.65 var(--sans);-webkit-font-smoothing:antialiased}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:var(--faint);border:3px solid var(--paper);border-radius:6px}
+::-webkit-scrollbar-track{background:var(--paper)}
+a{color:inherit;text-underline-offset:3px}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.titlebar{position:sticky;top:0;z-index:3;display:flex;align-items:baseline;gap:22px;padding:14px 28px;background:var(--paper);border-bottom:3px solid var(--ink)}
+.titlebar .brand{font-weight:800;font-size:19px;letter-spacing:.02em;text-decoration:none}
+.titlebar .sheetno{margin-right:auto;font-family:var(--mono);font-size:12px;letter-spacing:.22em;color:var(--faint)}
+.titlebar a:not(.brand){font-size:14px;opacity:.75;text-decoration:none}
+.titlebar a:not(.brand):hover{opacity:1;color:var(--route)}
+.lang{font-family:var(--mono);font-size:13px;padding:4px 10px;border:2px solid var(--ink);background:var(--paper);color:var(--ink);cursor:pointer;border-radius:2px}
+.lang:hover{background:var(--ink);color:var(--paper)}
+#simulated-banner{position:sticky;top:0;z-index:4;background:var(--route);color:#fff;padding:10px 24px;text-align:center;font-weight:700;letter-spacing:.06em;font-size:14px}
+.sheet{max-width:1180px;margin:0 auto;padding:36px 28px 64px}
+.masthead{border-bottom:3px solid var(--ink);padding-bottom:22px;margin-bottom:26px}
+h1{font:800 clamp(38px,5.6vw,60px)/1.12 var(--sans);letter-spacing:-.01em;margin:0 0 14px}
+.lede{font-size:18px;margin:0 0 10px;max-width:62ch}
+.note{color:var(--faint);font-size:13.5px;line-height:1.6}
+.masthead .note{margin:0;max-width:72ch}
+.sheetgrid{display:grid;grid-template-columns:minmax(0,7fr) minmax(0,5fr);gap:26px;align-items:start}
+.mapcol,.margincol{display:grid;gap:26px;align-content:start}
+.panel{background:var(--sheet);border:2px solid var(--ink);padding:22px 24px}
+.panel h2{font:600 15px/1.3 var(--mono);letter-spacing:.24em;margin:0 0 14px;padding-bottom:10px;border-bottom:1px solid var(--line)}
+.panel h3{font:600 14px/1.3 var(--mono);letter-spacing:.18em;margin:18px 0 8px}
+.inst-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:6px}
+.chip{display:inline-block;border:2px solid var(--ink);padding:3px 10px;font:600 12px/1.6 var(--mono);letter-spacing:.14em;background:var(--sheet)}
+.chip.offline{border-color:var(--route);color:var(--route)}
+.dim{color:var(--faint)}
+.bignumber{margin:0;display:flex;align-items:baseline;gap:12px}
+.hr{font:800 clamp(84px,15vw,132px)/1 var(--sans);letter-spacing:-.03em;font-variant-numeric:tabular-nums;color:var(--ink)}
+.hr.idle{color:var(--faint)}
+.unit{color:var(--faint);font:600 15px/1 var(--mono);letter-spacing:.2em}
+.zone{margin:6px 0 2px;font:600 14px/1.5 var(--mono);letter-spacing:.06em;color:var(--contour)}
+#profile-plot{display:block;width:100%;height:160px;background:var(--sheet)}
+#profile-line{stroke:var(--contour);stroke-width:2.5;fill:none;vector-effect:non-scaling-stroke}
+#profile-zone-above{fill:rgba(192,68,44,.08)}
+#profile-zone-within{fill:rgba(94,125,76,.10)}
+#profile-zone-below{fill:rgba(61,116,166,.08)}
+#profile-cursor{stroke:var(--route);stroke-width:2;vector-effect:non-scaling-stroke}
+.panel.alert{border:3px solid var(--route)}
+.countdown{font:800 64px/1 var(--sans);color:var(--route);margin:0 0 8px;font-variant-numeric:tabular-nums}
+.row{display:flex;gap:14px;flex-wrap:wrap;margin:12px 0}
+label{display:grid;gap:6px;flex:1;font-size:13.5px;font-weight:600;min-width:140px}
+label.check{display:flex;flex-direction:row;align-items:center;gap:10px;flex:none}
+input,select,button{font:inherit}
+input,select{width:100%;min-width:0;background:#fff;border:2px solid var(--ink);border-radius:2px;padding:10px 12px;color:var(--ink);caret-color:var(--route)}
+input:focus,select:focus{outline:2px solid var(--route);outline-offset:1px;border-color:var(--route)}
+input:disabled,select:disabled{background:var(--paper);color:var(--faint);border-color:var(--line)}
+input[type=checkbox]{width:18px;height:18px;padding:0;accent-color:var(--route)}
+button{border:2px solid var(--ink);background:var(--ink);color:var(--paper);font-weight:700;letter-spacing:.04em;padding:12px 18px;border-radius:2px;cursor:pointer}
+button:hover:not(:disabled){background:#000}
+button.secondary{background:transparent;color:var(--ink)}
+button.secondary:hover:not(:disabled){background:var(--ink);color:var(--paper)}
+button:disabled{opacity:.38;cursor:not-allowed}
+button:focus-visible,a:focus-visible{outline:2px solid var(--route);outline-offset:3px}
+.actions{margin-top:16px}
+.statusline{margin:14px 0 0;padding-top:12px;border-top:1px solid var(--line);font:14px/1.6 var(--mono)}
+.warn{color:var(--route)}
+.summaryline{font-size:17px;margin:0 0 6px}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px/1.75 var(--mono);max-height:240px;overflow:auto;margin:10px 0 0}
+#nav-steps:empty{display:none}
+.archive{margin-top:34px;border-top:3px solid var(--ink);padding-top:16px;color:var(--faint);font-size:13px;display:grid;gap:8px}
+.archive p{margin:0}
+.archive a{color:var(--ink)}
+[hidden]{display:none!important}
+@media(max-width:920px){.sheetgrid{grid-template-columns:1fr}.sheet{padding:24px 16px 48px}.titlebar{flex-wrap:wrap;gap:12px}.titlebar .sheetno{display:none}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
 <body>
 <div id="simulated-banner" hidden role="status">SIMULATED · 合成心率演示，不是真实骑行记录</div>
-<nav><a href="/">AI Ride Coach</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></nav>
-<main>
-<p class="eyebrow">Mark · Local voice · Honest memory</p>
-<h1>记录此刻，<br>不替你做判断。</h1>
-<p class="muted">我是 Mark。心率带直连，本地语音，自定义阈值提醒。没有目标区间就不推算、不提醒越区。</p>
-<p id="compatibility" class="muted">Android Chrome 支持 Web Bluetooth；iOS Safari 不支持。需 HTTPS 或本机 localhost 安全上下文。手机不能用电脑的 127.0.0.1 地址连接。</p>
-<section id="memory-card" class="card" hidden aria-labelledby="memory-heading"><h2 id="memory-heading">Mark 的记忆</h2><p id="memory-recall"></p><p id="memory-source" class="offline" hidden></p><button id="memory-listen" type="button" class="secondary">听 Mark 说</button></section>
-<section id="ride-weekly" class="card" aria-labelledby="ride-weekly-heading"><h2 id="ride-weekly-heading"></h2><p id="ride-weekly-summary"></p><p id="ride-weekly-scope" class="muted"></p><button id="ride-weekly-listen" type="button" class="secondary" disabled></button><p id="ride-weekly-speech" aria-live="polite"></p></section>
-<div class="card">
-<h2>01 / 设定记录</h2>
-<p id="demo-notice" class="offline" hidden></p>
-<p id="demo-target" class="muted" hidden></p>
-<button id="demo-start" type="button" hidden>看 Mark 演示</button>
-<div class="row"><label>自定义下限（bpm，可留空）<input id="lower" type="number" min="0" max="65535" step="1" inputmode="numeric" placeholder="由你填写"></label><label>自定义上限（bpm，可留空）<input id="upper" type="number" min="0" max="65535" step="1" inputmode="numeric" placeholder="由你填写"></label></div>
-<p class="muted">上下限须同时填写或同时留空；仅为你设定的提醒阈值，不是医学安全范围。不根据年龄、LTHR 或演示值猜测训练区间。</p>
-<div class="row"><label style="display:flex;flex-direction:row;align-items:center;gap:10px;flex:none"><input id="crash-detect" type="checkbox" style="width:auto"> 跌倒检测（实验）</label></div>
-<p class="muted">开启后，骑行中侦测到疑似摔倒会先问你，30 秒无响应就在本机发出警报音。手机需放在身上（骑行服口袋）才有效，放车把包或背包里会不准；屏幕熄灭时手机可能停发传感器数据，检测会失效。网页版不能自动发短信或打电话——它可能漏报或误报，不是可靠的安全设备。</p>
-<div class="row"><label>里程碑播报<select id="milestone-interval"><option value="900">每 15 分钟</option><option value="1800" selected>每 30 分钟（默认）</option><option value="2700">每 45 分钟</option><option value="3600">每 60 分钟</option><option value="0">关闭</option></select></label><label>补给提醒<select id="fuel-interval"><option value="1800">每 30 分钟</option><option value="2700" selected>每 45 分钟（默认）</option><option value="3600">每 60 分钟</option><option value="0">关闭</option></select></label></div>
-<p class="muted">里程碑：Mark 定时播报当前心率/功率/踏频并与上次对比；补给：定时提醒喝水吃东西。设置保存在本浏览器，下次打开自动带上；关闭只影响这两类播报，越区和安全提醒不受影响。</p>
-<div class="row"><button id="start-ride" type="button">连接心率带并开始</button><button id="end-ride" type="button" class="secondary" disabled>结束骑行</button><button id="reconnect" type="button" class="secondary" disabled>重新连接</button></div>
-<div class="row"><button id="connect-aux" type="button" class="secondary">加连功率计/踏频计（可选）</button></div>
-<p class="muted">可选第二步：连接功率计或踏频计（CSC/Cycling Power 标准协议）。只连接心率带也能正常记录，功率和踏频会如实留空。</p>
-<p id="status" role="status" aria-live="polite">准备记录。语音需点击开始激活；请先在静止状态连接设备。</p>
+<nav class="titlebar"><a class="brand" href="/" data-i18n="brand">Mark · 骑行图志</a><span class="sheetno">RIDE SHEET · GCJ-02</span><a href="/privacy">Privacy</a><a href="/terms">Terms</a><button id="lang-toggle" type="button" class="lang" aria-label="Switch language">EN</button></nav>
+<main class="sheet">
+<header class="masthead">
+<h1><span data-i18n="h1a">记录此刻，</span><br><span data-i18n="h1b">不替你做判断。</span></h1>
+<p class="lede" data-i18n="lede">我是 Mark。心率带直连，本地语音，自定义阈值提醒。没有目标区间就不推算、不提醒越区。</p>
+<p id="compatibility" class="note" data-i18n="compat">Android Chrome 支持 Web Bluetooth；iOS Safari 不支持。需 HTTPS 或本机 localhost 安全上下文。手机不能用电脑的 127.0.0.1 地址连接。</p>
+</header>
+<div class="sheetgrid">
+<div class="mapcol">
+<section id="fall-card" class="panel alert" hidden><h2 data-i18n="fall-h">疑似摔倒</h2><p id="fall-countdown" class="countdown">30</p><p id="fall-message"></p><button id="fall-ok" type="button" data-i18n="fall-ok">我没事，别报警</button></section>
+<section class="panel instrument" aria-label="实时读数">
+<div class="inst-head"><span id="connection" class="chip" data-i18n="conn-init">未连接</span><span id="elapsed" class="mono dim">00:00</span></div>
+<p class="bignumber"><span id="heart-rate" class="hr idle">—</span><span class="unit">bpm</span></p>
+<p id="zone-state" class="zone" data-i18n="zone-init">未设置目标区间</p>
+<p id="aux-live" class="note" data-i18n="aux-init">未连接功率/踏频计</p>
+</section>
+<section id="profile-panel" class="panel">
+<h2 data-i18n="profile-h">心率剖面</h2>
+<svg id="profile-plot" viewBox="0 0 1000 160" preserveAspectRatio="none" role="img" aria-label="心率剖面图"><rect id="profile-zone-above" x="0" y="0" width="1000" height="0"/><rect id="profile-zone-within" x="0" y="0" width="1000" height="0"/><rect id="profile-zone-below" x="0" y="0" width="1000" height="0"/><path id="profile-line" d=""/><line id="profile-cursor" x1="0" y1="0" x2="0" y2="160"/></svg>
+<p id="profile-empty" class="note" data-i18n="profile-empty">骑行开始后，这里画出你的心率剖面。只画实际读数；断线留空，不插值。</p>
+</section>
+<section class="panel">
+<h2 data-i18n="timeline-h">原始时间轴</h2>
+<p class="note" data-i18n="timeline-note">仅展示最近 60 个实际点。断线标记 gap，不插值、不用旧读数补齐。超过 5 秒没有新读数也标记信号缺口。</p>
+<pre id="timeline" aria-label="原始心率与断线记录"></pre>
+</section>
 </div>
-<section id="nav-card" class="card" aria-labelledby="nav-heading"><h2 id="nav-heading">骑行导航（实验 · 高德）</h2><p class="muted">开始前输入目的地，Mark 规划骑行路线，接近转向时语音提醒。位置只用于本次规划与途中比对，不写入骑行记录；坐标经本服务转发给高德。偏航不会自动重算路线，走错了请停下重新规划。</p><div class="row"><label>目的地（地址或地名）<input id="nav-destination" type="text" maxlength="100" placeholder="例如：奥林匹克森林公园南园"></label></div><div class="row"><button id="nav-plan" type="button" class="secondary">规划骑行路线</button><button id="nav-clear" type="button" class="secondary" hidden>清除路线</button></div><p id="nav-status" class="muted" role="status" aria-live="polite"></p><pre id="nav-steps" class="muted" aria-label="路线步骤"></pre><div class="row"><label style="display:flex;flex-direction:row;align-items:center;gap:10px;flex:none"><input id="nav-voice" type="checkbox" style="width:auto" checked> 接近转向时语音提醒（约 120 米前）</label></div></section>
-<div class="grid"><section class="card"><span id="connection" class="pill">未连接</span><p><span id="heart-rate" class="hr">—</span> <span class="muted">bpm</span></p><p id="zone-state">未设置目标区间</p><p id="aux-live" class="muted">未连接功率/踏频计</p><p id="elapsed" class="muted">00:00</p></section><section class="card"><h2>02 / 原始时间轴</h2><p class="muted">仅展示最近 60 个实际点。断线标记 gap，不插值、不用旧读数补齐。超过 5 秒没有新读数也标记信号缺口。</p><pre id="timeline" aria-label="原始心率与断线记录"></pre></section></div>
-<section id="fall-card" class="card" hidden style="border-color:var(--red)"><h2>疑似摔倒</h2><p id="fall-countdown" class="hr" style="font-size:64px">30</p><p id="fall-message"></p><button id="fall-ok" type="button">我没事，别报警</button></section>
-<section class="card"><h2>03 / 骑后一句话</h2><p id="summary">结束后根据记录生成。没有数据的部分保持缺失。</p><section id="brain-card" hidden aria-labelledby="brain-heading"><h3 id="brain-heading">Mark 想了想</h3><p id="brain-speech"></p><button id="brain-listen" type="button" class="secondary">听 Mark 说</button></section><p id="memory-compare" aria-live="polite" hidden></p><p id="compare-source" class="offline" hidden></p><p id="save-status" role="status" aria-live="polite">本片存储为 ephemeral：重启或重新部署可能丢失，请保留下载备份。</p><div class="row"><button id="retry-upload" type="button" class="secondary">重试上传本机待传记录</button><button id="download-session" type="button" class="secondary" disabled>下载本次 JSON 备份</button><button id="download-gpx" type="button" class="secondary" disabled>下载 GPX 备份（无 GPS）</button></div><p class="muted">GPX 备份只含心率时间轴与断线标记，没有 GPS 坐标；用于存档与复盘，不能直接导入需要轨迹的平台。</p></section>
-<footer><p>Record only. Not medical advice.</p><p>语音只报告记录和你设定的阈值，不提供训练处方或效果承诺。后台、锁屏、系统省电或浏览器挂起可能停止 BLE、计时或语音；本页不是可靠的安全报警器。请勿在骑行中操作屏幕。</p><p>心率数据保存在当前设备及本服务的临时目录；共用电脑请勿视为多用户私密空间。模拟来源会随记录保留，绝不转为真实来源。</p><p>AI Ride Coach · Early access · <a href="?simulate=1">打开模拟模式</a></p></footer>
+<div class="margincol">
+<section class="panel setup">
+<h2 data-i18n="setup-h">设定记录</h2>
+<p id="demo-notice" class="warn" hidden></p>
+<p id="demo-target" class="note" hidden></p>
+<button id="demo-start" type="button" hidden>看 Mark 演示</button>
+<div class="row"><label><span data-i18n="lower-label">自定义下限（bpm，可留空）</span><input id="lower" type="number" min="0" max="65535" step="1" inputmode="numeric" placeholder="由你填写" data-i18n-ph="bounds-ph"></label><label><span data-i18n="upper-label">自定义上限（bpm，可留空）</span><input id="upper" type="number" min="0" max="65535" step="1" inputmode="numeric" placeholder="由你填写" data-i18n-ph="bounds-ph"></label></div>
+<p class="note" data-i18n="bounds-note">上下限须同时填写或同时留空；仅为你设定的提醒阈值，不是医学安全范围。不根据年龄、LTHR 或演示值猜测训练区间。</p>
+<div class="row"><label class="check"><input id="crash-detect" type="checkbox"><span data-i18n="crash-label">跌倒检测（实验）</span></label></div>
+<p class="note" data-i18n="crash-note">开启后，骑行中侦测到疑似摔倒会先问你，30 秒无响应就在本机发出警报音。手机需放在身上（骑行服口袋）才有效，放车把包或背包里会不准；屏幕熄灭时手机可能停发传感器数据，检测会失效。网页版不能自动发短信或打电话——它可能漏报或误报，不是可靠的安全设备。</p>
+<div class="row"><label><span data-i18n="milestone-label">里程碑播报</span><select id="milestone-interval"><option value="900" data-i18n="opt-15">每 15 分钟</option><option value="1800" selected data-i18n="opt-30d">每 30 分钟（默认）</option><option value="2700" data-i18n="opt-45">每 45 分钟</option><option value="3600" data-i18n="opt-60">每 60 分钟</option><option value="0" data-i18n="opt-off">关闭</option></select></label><label><span data-i18n="fuel-label">补给提醒</span><select id="fuel-interval"><option value="1800" data-i18n="opt-30">每 30 分钟</option><option value="2700" selected data-i18n="opt-45d">每 45 分钟（默认）</option><option value="3600" data-i18n="opt-60b">每 60 分钟</option><option value="0" data-i18n="opt-offb">关闭</option></select></label></div>
+<p class="note" data-i18n="cadence-note">里程碑：Mark 定时播报当前心率/功率/踏频并与上次对比；补给：定时提醒喝水吃东西。设置保存在本浏览器，下次打开自动带上；关闭只影响这两类播报，越区和安全提醒不受影响。</p>
+<div class="row actions"><button id="start-ride" type="button" data-i18n="start">连接心率带并开始</button><button id="end-ride" type="button" class="secondary" disabled data-i18n="end">结束骑行</button><button id="reconnect" type="button" class="secondary" disabled data-i18n="reconnect">重新连接</button></div>
+<div class="row"><button id="connect-aux" type="button" class="secondary" data-i18n="aux">加连功率计/踏频计（可选）</button></div>
+<p class="note" data-i18n="aux-note">可选第二步：连接功率计或踏频计（CSC/Cycling Power 标准协议）。只连接心率带也能正常记录，功率和踏频会如实留空。</p>
+<p id="status" class="statusline" role="status" aria-live="polite" data-i18n="status-init">准备记录。语音需点击开始激活；请先在静止状态连接设备。</p>
+</section>
+<section id="nav-card" class="panel" aria-labelledby="nav-heading">
+<h2 id="nav-heading" data-i18n="nav-h">骑行导航（实验 · 高德）</h2>
+<p class="note" data-i18n="nav-note">开始前输入目的地，Mark 规划骑行路线，接近转向时语音提醒。位置只用于本次规划与途中比对，不写入骑行记录；坐标经本服务转发给高德。偏航不会自动重算路线，走错了请停下重新规划。</p>
+<div class="row"><label><span data-i18n="nav-dest">目的地（地址或地名）</span><input id="nav-destination" type="text" maxlength="100" placeholder="例如：奥林匹克森林公园南园" data-i18n-ph="nav-ph"></label></div>
+<div class="row"><button id="nav-plan" type="button" class="secondary" data-i18n="nav-plan">规划骑行路线</button><button id="nav-clear" type="button" class="secondary" hidden data-i18n="nav-clear">清除路线</button></div>
+<p id="nav-status" class="note" role="status" aria-live="polite"></p>
+<pre id="nav-steps" aria-label="路线步骤"></pre>
+<div class="row"><label class="check"><input id="nav-voice" type="checkbox" checked><span data-i18n="nav-voice">接近转向时语音提醒（约 120 米前）</span></label></div>
+</section>
+<section id="memory-card" class="panel" hidden aria-labelledby="memory-heading"><h2 id="memory-heading" data-i18n="memory-h">Mark 的记忆</h2><p id="memory-recall"></p><p id="memory-source" class="warn" hidden></p><button id="memory-listen" type="button" class="secondary" data-i18n="listen">听 Mark 说</button></section>
+<section id="ride-weekly" class="panel" aria-labelledby="ride-weekly-heading"><h2 id="ride-weekly-heading"></h2><p id="ride-weekly-summary"></p><p id="ride-weekly-scope" class="note"></p><button id="ride-weekly-listen" type="button" class="secondary" disabled></button><p id="ride-weekly-speech" aria-live="polite"></p></section>
+<section class="panel">
+<h2 data-i18n="summary-h">骑后一句话</h2>
+<p id="summary" class="summaryline" data-i18n="summary-init">结束后根据记录生成。没有数据的部分保持缺失。</p>
+<section id="brain-card" hidden aria-labelledby="brain-heading"><h3 id="brain-heading" data-i18n="brain-h">Mark 想了想</h3><p id="brain-speech"></p><button id="brain-listen" type="button" class="secondary" data-i18n="listen2">听 Mark 说</button></section>
+<p id="memory-compare" aria-live="polite" hidden></p>
+<p id="compare-source" class="warn" hidden></p>
+<p id="save-status" class="note" role="status" aria-live="polite" data-i18n="save-init">本片存储为 ephemeral：重启或重新部署可能丢失，请保留下载备份。</p>
+<div class="row"><button id="retry-upload" type="button" class="secondary" data-i18n="retry">重试上传本机待传记录</button><button id="download-session" type="button" class="secondary" disabled data-i18n="dl-json">下载本次 JSON 备份</button><button id="download-gpx" type="button" class="secondary" disabled data-i18n="dl-gpx">下载 GPX 备份（无 GPS）</button></div>
+<p class="note" data-i18n="gpx-note">GPX 备份只含心率时间轴与断线标记，没有 GPS 坐标；用于存档与复盘，不能直接导入需要轨迹的平台。</p>
+</section>
+</div>
+</div>
+<footer class="archive">
+<p data-i18n="f1">Record only. Not medical advice.</p>
+<p data-i18n="f2">语音只报告记录和你设定的阈值，不提供训练处方或效果承诺。后台、锁屏、系统省电或浏览器挂起可能停止 BLE、计时或语音；本页不是可靠的安全报警器。请勿在骑行中操作屏幕。</p>
+<p data-i18n="f3">心率数据保存在当前设备及本服务的临时目录；共用电脑请勿视为多用户私密空间。模拟来源会随记录保留，绝不转为真实来源。</p>
+<p><span data-i18n="f4">Mark · 骑行图志 · Early access · </span><a href="?simulate=1" data-i18n="f5">打开模拟模式</a></p>
+</footer>
 </main>
 <script>
 'use strict';
 // Device adapter only: ride_memory.py owns the reusable versioned memory contract.
 const PERSONA = Object.freeze({
-  version:'ride-persona/13', name:'Mark', above:'心率超过你设的上限了。', below:'心率低于你设的下限了。', disconnected:'心率信号断了，我看不到读数。', short:'记录太短，我还总结不了。',
+  version:'ride-persona/14', name:'Mark', above:'心率超过你设的上限了。', below:'心率低于你设的下限了。', disconnected:'心率信号断了，我看不到读数。', short:'记录太短，我还总结不了。',
   recall:parts=>'我记得上次'+parts.join('，')+'。记录还很少，这不算趋势。',
   recall_no_history:'我还没有可回放的历史记录。',
   compare_better:(label,amount,unit)=>'我看到'+label+'比上次'+(unit==='分钟' ? '少' : '低')+amount+unit+'。',
@@ -585,7 +703,49 @@ function loadSpeechPrefs(){
 function elapsedSeconds(){return demoPlaying ? demoElapsed : Math.max(0, Math.round(performance.now() - startedMono) / 1000);}
 function zone(hr){return !target ? null : hr < target.lower ? 'below' : hr > target.upper ? 'above' : 'within';}
 function resetOutside(){outsideSince = null; outsideKind = null; if(speechKind==='zone')cancelSpeech();}
-function drawTimeline(){ $('timeline').textContent = session.series.slice(-60).map(p => p.t.toFixed(3) + 's  ' + ('gap' in p ? 'gap — 信号缺失' : p.hr + ' bpm')).join('\n'); }
+function drawTimeline(){ $('timeline').textContent = session.series.slice(-60).map(p => p.t.toFixed(3) + 's  ' + ('gap' in p ? 'gap — 信号缺失' : p.hr + ' bpm')).join('\n'); drawProfile(); }
+// Profile band (signature move): the recorded HR series drawn as a topographic
+// profile — contour line over zone tints, red cursor at the latest sample.
+// Decorative projection of the record, never a data source: long series are
+// visually decimated (record untouched), and DOMs without setAttribute
+// (offline test harness) skip it entirely.
+function drawProfile(){
+  const line=$('profile-line');
+  if(!line || typeof line.setAttribute!=='function' || !session)return;
+  const zoneAbove=$('profile-zone-above'), zoneWithin=$('profile-zone-within'), zoneBelow=$('profile-zone-below');
+  const cursor=$('profile-cursor'), empty=$('profile-empty');
+  const setRect=(el,y,h)=>{if(el){el.setAttribute('y',y.toFixed(1));el.setAttribute('height',Math.max(0,h).toFixed(1));}};
+  const clearZones=()=>{setRect(zoneAbove,0,0);setRect(zoneWithin,0,0);setRect(zoneBelow,0,0);};
+  const pts=session.series.filter(p=>'hr' in p);
+  if(pts.length<2){
+    line.setAttribute('d','');
+    clearZones();
+    if(cursor){cursor.setAttribute('x1','0');cursor.setAttribute('x2','0');}
+    if(empty)empty.hidden=false;
+    return;
+  }
+  if(empty)empty.hidden=true;
+  const W=1000,H=160,PAD=10;
+  const t0=pts[0].t, t1=Math.max(pts[pts.length-1].t,t0+1);
+  let lo=Infinity, hi=-Infinity;
+  for(const p of pts){if(p.hr<lo)lo=p.hr;if(p.hr>hi)hi=p.hr;}
+  if(target){lo=Math.min(lo,target.lower);hi=Math.max(hi,target.upper);}
+  if(hi<=lo)hi=lo+1;
+  const X=t=>PAD+(t-t0)/(t1-t0)*(W-2*PAD);
+  const Y=hr=>H-PAD-(hr-lo)/(hi-lo)*(H-2*PAD);
+  const stride=Math.max(1,Math.ceil(pts.length/600));
+  let d='';
+  for(let i=0;i<pts.length;i+=stride)d+=(d?'L':'M')+X(pts[i].t).toFixed(1)+' '+Y(pts[i].hr).toFixed(1);
+  line.setAttribute('d',d);
+  if(target){
+    setRect(zoneAbove,0,Y(target.upper));
+    setRect(zoneWithin,Y(target.upper),Y(target.lower)-Y(target.upper));
+    setRect(zoneBelow,Y(target.lower),H-Y(target.lower));
+  }else{
+    clearZones();
+  }
+  if(cursor){const x=X(pts[pts.length-1].t).toFixed(1);cursor.setAttribute('x1',x);cursor.setAttribute('x2',x);}
+}
 function addPoint(point){
   if (!active) return false;
   if (session.series.length >= MAX_SERIES) {finishRide('已到 20000 点上限，停止记录，未静默丢弃后续数据。'); return false;}
@@ -597,7 +757,7 @@ function markGap(){
   if (!active || gapOpen) return;
   if (!addPoint({t:elapsedSeconds(), gap:true})) return;
   gapOpen = true; previous = null; lastSignal = null; resetOutside();
-  $('heart-rate').textContent = '—'; $('connection').textContent = '信号缺失 · gap'; $('connection').classList.add('offline');
+  $('heart-rate').textContent = '—'; $('heart-rate').classList.add('idle'); $('connection').textContent = '信号缺失 · gap'; $('connection').classList.add('offline');
   $('zone-state').textContent = '读数不可用，不判断区间'; noteAndSpeak(PERSONA.disconnected);
 }
 function receiveHR(hr, now = performance.now()){
@@ -613,7 +773,7 @@ function receiveHR(hr, now = performance.now()){
   if (latestCad && now - latestCad.mono <= STALE_MS) point.cad = latestCad.value;
   if (latestPwr && now - latestPwr.mono <= STALE_MS) point.pwr = latestPwr.value;
   previous = {t:point.t, hr, mono:now}; lastSignal = now; gapOpen = false;
-  $('heart-rate').textContent = String(hr); $('connection').textContent = session.source === 'simulated' ? 'SIMULATED · 合成信号' : 'BLE · 实时读数'; $('connection').classList.remove('offline');
+  $('heart-rate').textContent = String(hr); $('heart-rate').classList.remove('idle'); $('connection').textContent = session.source === 'simulated' ? 'SIMULATED · 合成信号' : 'BLE · 实时读数'; $('connection').classList.remove('offline');
   const kind = zone(hr); $('zone-state').textContent = kind === null ? '未设置目标区间，仅记录' : kind === 'within' ? '位于自定义范围内' : kind === 'above' ? '高于自定义上限' : '低于自定义下限';
   remindFuel(); remindMilestone();
   if (kind === null || kind === 'within') {resetOutside(); return;}
@@ -731,7 +891,7 @@ function begin(options={}){
   nextFuelSeconds=fuelStepS||Infinity;nextMilestoneSeconds=milestoneStepS||Infinity;lastCoachSpeech=-Infinity;
   crashState='idle';clearInterval(fallTimer);$('fall-card').hidden=true;
   active = true; void requestScreenLock(); startNavWatch(); previous = null; lastSignal = null; gapOpen = false; outsideSince = null; outsideKind = null; lastAlert = -Infinity; alerts = 0; totals = {below:0, within:0, above:0};
-  $('lower').disabled = $('upper').disabled = true; $('milestone-interval').disabled = $('fuel-interval').disabled = true; $('start-ride').disabled = true; $('end-ride').disabled = false; $('timeline').textContent = ''; $('summary').textContent = '记录中，结束后总结。';
+  $('lower').disabled = $('upper').disabled = true; $('milestone-interval').disabled = $('fuel-interval').disabled = true; $('start-ride').disabled = true; $('end-ride').disabled = false; $('timeline').textContent = ''; $('heart-rate').textContent = '—'; $('heart-rate').classList.add('idle'); $('summary').textContent = '记录中，结束后总结。'; drawProfile();
   timer = setInterval(()=>{if (!active) return; remindFuel(); remindMilestone(); const s=Math.floor(elapsedSeconds()); $('elapsed').textContent = String(Math.floor(s/60)).padStart(2,'0') + ':' + String(s%60).padStart(2,'0'); if (lastSignal !== null && performance.now()-lastSignal > STALE_MS) markGap();}, 500);
 }
 async function connectBLE(){
@@ -967,6 +1127,60 @@ if(DEMO && (!window.isSecureContext || !navigator.bluetooth)){$('start-ride').di
 if(!('speechSynthesis' in window))$('compatibility').textContent+=' 系统 TTS 不可用，只有文字提示。';
 renderWeekly([]);
 loadSpeechPrefs();
+// Chrome i18n: translates the static shell only. Mark's spoken voice and every
+// generated string stay zh-CN (the coach voice is Chinese); DOMs without
+// querySelectorAll (offline test harness) never enter this path.
+const I18N_EN=Object.freeze({
+  brand:'Mark · Ride Sheet',
+  h1a:'Record the moment.', h1b:'No calls made for you.',
+  lede:"I'm Mark. Direct heart-rate-strap connection, on-device voice, your own threshold alerts. No target zone, no inference, no zone alerts.",
+  compat:"Android Chrome supports Web Bluetooth; iOS Safari does not. Requires HTTPS or a localhost secure context. A phone cannot reach a computer's 127.0.0.1 address.",
+  'fall-h':'Possible fall', 'fall-ok':"I'm OK, don't alarm",
+  'conn-init':'Not connected', 'zone-init':'No target zone set', 'aux-init':'No power/cadence meter',
+  'profile-h':'Heart-rate profile', 'profile-empty':'Once you start, your heart-rate profile is drawn here. Real samples only; gaps stay empty, never interpolated.',
+  'timeline-h':'Raw timeline', 'timeline-note':'Only the latest 60 real samples. Gaps are marked, never interpolated or backfilled. More than 5 seconds without a reading also marks a signal gap.',
+  'setup-h':'Set up recording',
+  'lower-label':'Custom lower bound (bpm, optional)', 'upper-label':'Custom upper bound (bpm, optional)', 'bounds-ph':'Your call',
+  'bounds-note':'Fill both bounds or leave both empty. These are your alert thresholds, not a medical safety range. Training zones are never guessed from age, LTHR, or demo values.',
+  'crash-label':'Fall detection (experimental)',
+  'crash-note':'When enabled, a suspected fall during a ride asks you first; 30 seconds without response triggers a local alarm tone. The phone must be on your body (jersey pocket); in a bar bag or backpack it misfires, and a sleeping screen may stop sensor delivery. A web page cannot text or call anyone — it can miss falls and raise false alarms. It is not a reliable safety device.',
+  'milestone-label':'Milestone callouts', 'fuel-label':'Fuel reminders',
+  'opt-15':'Every 15 min', 'opt-30d':'Every 30 min (default)', 'opt-45':'Every 45 min', 'opt-60':'Every 60 min', 'opt-off':'Off',
+  'opt-30':'Every 30 min', 'opt-45d':'Every 45 min (default)', 'opt-60b':'Every 60 min', 'opt-offb':'Off',
+  'cadence-note':'Milestones: Mark periodically reports current HR/power/cadence and compares with your last ride. Fuel: periodic drink-and-eat reminders. Settings persist in this browser. Turning these off never silences zone or safety alerts.',
+  start:'Connect strap & start', end:'End ride', reconnect:'Reconnect',
+  aux:'Also connect power/cadence (optional)',
+  'aux-note':'Optional second step: connect a power or cadence meter (standard CSC / Cycling Power). Recording works with the strap alone; power and cadence honestly stay blank.',
+  'status-init':'Ready to record. Voice activates after you press start; connect the device while stationary.',
+  'nav-h':'Ride navigation (experimental · AMap)',
+  'nav-note':'Enter a destination before you start; Mark plans a cycling route and speaks up near turns. Location is used only for this plan and en-route checks, never written into the ride record; coordinates are relayed to AMap by this service. Going off-course does not trigger rerouting — stop somewhere safe and replan.',
+  'nav-dest':'Destination (address or place name)', 'nav-ph':'e.g. Olympic Forest Park South Gate',
+  'nav-plan':'Plan route', 'nav-clear':'Clear route', 'nav-voice':'Voice reminder near turns (about 120 m ahead)',
+  'memory-h':"Mark's memory", listen:'Hear Mark', listen2:'Hear Mark',
+  'summary-h':'One line after the ride', 'summary-init':'Generated from the record after you finish. Whatever has no data stays missing.',
+  'brain-h':'Mark thought it over',
+  'save-init':'Server storage is ephemeral: restarts or redeploys may lose it. Keep a downloaded backup.',
+  retry:'Retry uploading pending records', 'dl-json':'Download JSON backup', 'dl-gpx':'Download GPX backup (no GPS)',
+  'gpx-note':'The GPX backup holds only the heart-rate timeline and gap markers — no GPS coordinates. It is for archive and review and cannot be imported into platforms that need a track.',
+  f1:'Record only. Not medical advice.',
+  f2:'Voice reports only the record and your thresholds — no training prescriptions or promised outcomes. Backgrounding, screen lock, battery savers, or browser suspension may stop BLE, timing, or speech; this page is not a reliable safety alarm. Never operate the screen while riding.',
+  f3:'Heart-rate data lives on this device and in this service\u2019s temporary directory; do not treat a shared computer as private multi-user space. Simulated sources stay with their records and never become real sources.',
+  f4:'Mark · Ride Sheet · Early access · ', f5:'Open simulation mode'
+});
+function applyLang(lang){
+  if(lang!=='en' || typeof document.querySelectorAll!=='function')return;
+  document.querySelectorAll('[data-i18n]').forEach(el=>{const text=I18N_EN[el.getAttribute('data-i18n')];if(typeof text==='string')el.textContent=text;});
+  document.querySelectorAll('[data-i18n-ph]').forEach(el=>{const text=I18N_EN[el.getAttribute('data-i18n-ph')];if(typeof text==='string' && typeof el.setAttribute==='function')el.setAttribute('placeholder',text);});
+  const toggle=$('lang-toggle');if(toggle)toggle.textContent='中文';
+}
+function currentLang(){try{return localStorage.getItem('luma.lang')==='en' ? 'en' : 'zh';}catch(_){return 'zh';}}
+$('lang-toggle').addEventListener('click',()=>{
+  const next=currentLang()==='en' ? 'zh' : 'en';
+  try{localStorage.setItem('luma.lang',next);}catch(_){/* language never blocks a ride */}
+  if(next==='en')applyLang('en');
+  else if(location && typeof location.reload==='function')location.reload();
+});
+if(currentLang()==='en')applyLang('en');
 // Initial memory fetch is same-origin/token protected and never autoplays speech.
 void getToken().then(loadRecall).catch(()=>console.debug('Mark memory unavailable; no history invented.'));
 </script>

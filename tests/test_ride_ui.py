@@ -109,7 +109,7 @@ class RideMemoryUI(unittest.TestCase):
         return json.loads(result.stdout)
 
     def test_page_strings_and_existing_csp_with_mock_store(self):
-        for text in ('Mark 的记忆', '这不算趋势', '听 Mark 说', 'ride-persona/13', "name:'Mark'",
+        for text in ('Mark 的记忆', '这不算趋势', '听 Mark 说', 'ride-persona/14', "name:'Mark'",
                      'recall:', 'recall_no_history:', 'compare_better:', 'compare_worse:',
                      'compare_flat:', 'no_compare:', '两次记录还说明不了趋势', 'Record only. Not medical advice.'):
             with self.subTest(text=text):
@@ -156,7 +156,7 @@ class RideMemoryUI(unittest.TestCase):
         result = self.run_js("await $('start-ride').click(); return {spoken:_spoken,version:session.persona_version};", history=[metadata()], simulate=True)
         self.assertEqual(len(result['spoken']), 1)
         self.assertIn('我记得', result['spoken'][0])
-        self.assertEqual(result['version'], 'ride-persona/13')
+        self.assertEqual(result['version'], 'ride-persona/14')
         result = self.run_js("$('memory-listen').click(); await $('start-ride').click(); return _spoken;", history=[metadata()], simulate=True)
         self.assertEqual(len(result), 2)
         self.assertIn('我记得', result[0])
@@ -271,7 +271,7 @@ class RideMemoryUI(unittest.TestCase):
 
 
     def test_demo_strings_source_notice_and_version(self):
-        for text in ('demo_notice:', 'demo_start:', '看 Mark 演示', 'ride-persona/13',
+        for text in ('demo_notice:', 'demo_start:', '看 Mark 演示', 'ride-persona/14',
                      '这是一段合成的 45 分钟骑行，90 秒放完', 'Mark 说的每句话都是真实逻辑，数据是假的。'):
             self.assertIn(text,self.html)
         result=self.run_js("return {notice:$('demo-notice').textContent,hidden:$('demo-notice').hidden,button:$('demo-start').hidden,bar:$('simulated-banner').hidden,startDisabled:$('start-ride').disabled,spoken:_spoken};",demo=True)
@@ -291,7 +291,7 @@ class RideMemoryUI(unittest.TestCase):
         """,demo=True)
         from ride_memory import validate_session
         item=validate_session(result['uploaded'])
-        self.assertEqual(item['source'],'simulated');self.assertEqual(item['persona_version'],'ride-persona/13')
+        self.assertEqual(item['source'],'simulated');self.assertEqual(item['persona_version'],'ride-persona/14')
         self.assertEqual(item['summary']['duration_s'],2700)
         self.assertEqual(item['series'][-1]['t'],2700)
         self.assertEqual(item['samples_hz'],1/30)
@@ -420,7 +420,7 @@ class RideMemoryUI(unittest.TestCase):
             self.assertEqual(result['inputs'],[lower,upper])
 
     def test_s5_strings_and_manifest_link(self):
-        for text in ("wakelock_unavailable:", "fuel:(minutes)=>", "fuel_again:", "ride-persona/13",
+        for text in ("wakelock_unavailable:", "fuel:(minutes)=>", "fuel_again:", "ride-persona/14",
                      "分钟了，喝口水、补点吃的。", "又到补给的点了，别忘了喝。",
                      'rel="manifest"', "ride.webmanifest"):
             with self.subTest(text=text):
@@ -461,7 +461,7 @@ class RideMemoryUI(unittest.TestCase):
         self.assertTrue(result['active'])
 
     def test_s7_strings_milestone_gpx_and_ducking(self):
-        for text in ("milestone:", "milestone_compare_flat:", "ride-persona/13",
+        for text in ("milestone:", "milestone_compare_flat:", "ride-persona/14",
                      "buildRideGpx", "下载 GPX 备份", "audioSession", "signal_gap",
                      "不能直接导入需要 GPS 轨迹的平台"):
             with self.subTest(text=text):
@@ -634,7 +634,7 @@ class RideMemoryUI(unittest.TestCase):
         self.assertTrue(result['survived'])
 
     def test_fall_detection_strings_and_ui(self):
-        for text in ('fall_alert:', 'fall_cancel:', 'fall_alarm:', 'ride-persona/13',
+        for text in ('fall_alert:', 'fall_cancel:', 'fall_alarm:', 'ride-persona/14',
                      'crash-detect', 'fall-card', 'fall-ok', '跌倒检测（实验）',
                      '不是可靠的安全设备', 'devicemotion'):
             with self.subTest(text=text):
@@ -711,7 +711,7 @@ class RideMemoryUI(unittest.TestCase):
         self.assertTrue(result['cardHidden'])
 
     def test_s9_strings_aux_ui_and_version(self):
-        for text in ('ride-persona/13', 'connect-aux', 'parseCadence', 'parsePower',
+        for text in ('ride-persona/14', 'connect-aux', 'parseCadence', 'parsePower',
                      '0x1816', '0x2A5B', '0x1818', '0x2A63', 'milestone_power:', 'luma-ride-memory/2'):
             with self.subTest(text=text):
                 self.assertIn(text, self.html)
@@ -783,7 +783,7 @@ class RideMemoryUI(unittest.TestCase):
                  'summary': {'duration_s': 6, 'avg_hr': 121, 'max_hr': 122, 'time_in_zone_s': None,
                              'zone_target': None, 'gaps': 0, 'alerts': 0,
                              'avg_cadence': 90, 'avg_power': 210, 'max_power': 210},
-                 'coach_notes': ['x'], 'persona_version': 'ride-persona/13', 'source': 'simulated'}
+                 'coach_notes': ['x'], 'persona_version': 'ride-persona/14', 'source': 'simulated'}
         self.assertEqual(validate_session(check)['summary']['avg_power'], 210)
 
     def test_milestone_mentions_power_and_cadence_when_present(self):
@@ -841,7 +841,7 @@ class RideNavUI(RideMemoryUI):
                      'nav-voice', 'wgs84ToGcj02', 'outOfChina', 'haversineM', 'NAV_TURN_M',
                      'distToPathM', 'distToSegmentM', 'NAV_ON_ROUTE_M', 'NAV_OFF_ROUTE_M',
                      'nav_offroute', '好像偏航了', '回到路线上了',
-                     '/api/coach/ride/route', 'ride-persona/13', '偏航不会自动重算',
+                     '/api/coach/ride/route', 'ride-persona/14', '偏航不会自动重算',
                      '不写入骑行记录', '高德'):
             with self.subTest(text=text):
                 self.assertIn(text, self.html)
