@@ -6,7 +6,7 @@ services:
     runtime: python
     plan: free
     buildCommand: ""
-    startCommand: python coach_server.py --host 0.0.0.0 --port $PORT
+    startCommand: python coach_server.py --host 0.0.0.0
     healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION

@@ -281,7 +281,10 @@ def _bind_config(host=None, port=None):
         address = ipaddress.IPv4Address(host)
     except (ipaddress.AddressValueError, TypeError):
         raise ValueError("LUMA_COACH_HOST must be an IPv4 literal") from None
-    port = os.environ.get("LUMA_COACH_PORT", str(DEFAULT_PORT)) if port is None else port
+    if port is None:
+        # LUMA_COACH_PORT wins; otherwise honor the platform-injected PORT
+        # (Render, Zeabur, and most PaaS routers), then the default.
+        port = os.environ.get("LUMA_COACH_PORT") or os.environ.get("PORT") or str(DEFAULT_PORT)
     if isinstance(port, bool) or not re.fullmatch(r"[0-9]{1,5}", str(port)):
         raise ValueError("LUMA_COACH_PORT must be an integer from 1024 to 65535")
     port = int(port)
