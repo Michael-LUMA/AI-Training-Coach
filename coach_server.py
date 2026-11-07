@@ -20,7 +20,7 @@ import time
 from collections import deque
 from threading import Lock
 from contextlib import closing
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -38,6 +38,7 @@ from coach_billing import BillingStore, verify as verify_billing
 from ride_gpx import GPXError
 from ride_review import ReviewError
 from ride_memory import validate_session, RideMemoryError
+from ride_brain import build_ride_review
 from ride_server import strict_json, dumps
 
 BRAND_NAME = "AI Ride Coach"
@@ -48,6 +49,7 @@ MAX_BODY_BYTES = 8192
 MAX_RIDE_BODY_BYTES = 2 * 1024 * 1024
 RIDE_POST = "/api/coach/ride/session"
 RIDE_LIST = "/api/coach/ride/sessions"
+RIDE_REVIEW = "/api/coach/ride/review"
 DEFAULT_PORT = 8794
 
 
@@ -207,7 +209,7 @@ class App:
             token = headers.get("X-Coach-Token", "")
             require(type(token) is str and token.isascii() and secrets.compare_digest(token, self.token), "Session token required", "token_denied", 403)
         allowed = ((method == "GET" and parsed.path in ("/", "/privacy", "/terms", "/api/coach/config", "/api/coach/activities", "/ride", RIDE_LIST)) or
-                   (method == "POST" and path in ("/api/coach/connect", "/api/coach/review", "/api/coach/review-l2", "/api/coach/demo-review", "/api/coach/waitlist", "/api/coach/weekly", RIDE_POST)))
+                   (method == "POST" and path in ("/api/coach/connect", "/api/coach/review", "/api/coach/review-l2", "/api/coach/demo-review", "/api/coach/waitlist", "/api/coach/weekly", RIDE_POST, RIDE_REVIEW)))
         require(allowed, "Endpoint not found", "not_found", 404)
         if method == "POST":
             require(headers.get("Transfer-Encoding") is None and headers.get("Content-Type") == "application/json", "Fixed-length JSON required", "invalid_body", 415)
@@ -221,7 +223,7 @@ class App:
 
     def dispatch(self, method, path, headers, body=b"", port=DEFAULT_PORT):
         length = self.preflight(method, path, headers, port)
-        if urlsplit(path).path in (RIDE_POST, RIDE_LIST):
+        if urlsplit(path).path in (RIDE_POST, RIDE_LIST, RIDE_REVIEW):
             self._ride_rate_limit(method)
         if method == "POST" and path == "/api/coach/billing/webhook":
             require(len(body) == length, "Incomplete request body", "invalid_body")
@@ -265,6 +267,8 @@ class App:
             raise ActionError("invalid_json", "Strict UTF-8 JSON required") from None
         if path == RIDE_POST:
             return self._save_ride(payload)
+        if path == RIDE_REVIEW:
+            return self._review_ride(payload)
         if path == "/api/coach/waitlist":
             require(type(payload) is dict and set(payload) == {"email"}, "Expected email only")
             status = self.waitlist.register(payload["email"])
@@ -317,6 +321,45 @@ class App:
             result["llm"] = build_llm_review(
                 copy.deepcopy(review), api_key=os.environ.get("DASHSCOPE_API_KEY"), http_post=self.llm_post)
         return result
+
+    def _review_ride(self, payload):
+        """Read a validated snapshot under lock; never hold disk lock during cloud I/O."""
+        require(type(payload) is dict and set(payload) == {"session_id"}, "Expected session_id only")
+        identifier = payload["session_id"]
+        require(type(identifier) is str and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", identifier) is not None,
+                "Invalid session_id")
+        with self._ride_lock:
+            directory = self.ride_dir
+            require(not directory.is_symlink(), "Ride storage unavailable", "storage_unavailable", 503)
+            path = directory / (identifier + ".json")
+            require(not path.is_symlink(), "Session not found", "not_found", 404)
+            try:
+                require(path.stat().st_size <= MAX_RIDE_BODY_BYTES, "Invalid stored session", "storage_unavailable", 503)
+                memory = validate_session(strict_json(path.read_bytes()))
+                require(memory["id"] == identifier, "Invalid stored session", "storage_unavailable", 503)
+            except FileNotFoundError:
+                raise ActionError("not_found", "Session not found", 404) from None
+            except (RideMemoryError, OSError):
+                raise ActionError("storage_unavailable", "Ride storage unavailable", 503) from None
+            current_time = datetime.fromisoformat(memory["started_at"].replace("Z", "+00:00"))
+            previous, previous_time = None, None
+            for candidate in directory.glob("*.json"):
+                if candidate == path or candidate.is_symlink():
+                    continue
+                try:
+                    if candidate.stat().st_size > MAX_RIDE_BODY_BYTES:
+                        continue
+                    stored = validate_session(strict_json(candidate.read_bytes()))
+                    when = datetime.fromisoformat(stored["started_at"].replace("Z", "+00:00"))
+                    if stored["id"] != identifier and when < current_time and (previous_time is None or when > previous_time):
+                        previous, previous_time = stored["summary"], when
+                except (RideMemoryError, ActionError, OSError, ValueError):
+                    continue
+        result = build_ride_review(copy.deepcopy(memory), copy.deepcopy(previous),
+                                   api_key=os.environ.get("DASHSCOPE_API_KEY"), http_post=self.llm_post)
+        return {"speech_status": result["llm_status"],
+                "speech": result["draft"]["speech"] if result["draft"] else None,
+                "fallback": result["fallback"], "usage": result["usage"]}
 
     def _ride_rate_limit(self, method):
         """Bound local disk traffic per single-user app, never an upstream quota.

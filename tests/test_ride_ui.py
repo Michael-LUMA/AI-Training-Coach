@@ -85,7 +85,7 @@ class RideMemoryUI(unittest.TestCase):
         return json.loads(result.stdout)
 
     def test_page_strings_and_existing_csp_with_mock_store(self):
-        for text in ('Mark 的记忆', '这不算趋势', '听 Mark 说', 'ride-persona/3', "name:'Mark'",
+        for text in ('Mark 的记忆', '这不算趋势', '听 Mark 说', 'ride-persona/4', "name:'Mark'",
                      'recall:', 'recall_no_history:', 'compare_better:', 'compare_worse:',
                      'compare_flat:', 'no_compare:', '两次记录还说明不了趋势', 'Record only. Not medical advice.'):
             with self.subTest(text=text):
@@ -132,7 +132,7 @@ class RideMemoryUI(unittest.TestCase):
         result = self.run_js("await $('start-ride').click(); return {spoken:_spoken,version:session.persona_version};", history=[metadata()], simulate=True)
         self.assertEqual(len(result['spoken']), 1)
         self.assertIn('我记得', result['spoken'][0])
-        self.assertEqual(result['version'], 'ride-persona/3')
+        self.assertEqual(result['version'], 'ride-persona/4')
         result = self.run_js("$('memory-listen').click(); await $('start-ride').click(); return _spoken;", history=[metadata()], simulate=True)
         self.assertEqual(len(result), 2)
         self.assertIn('我记得', result[0])
@@ -188,7 +188,10 @@ class RideMemoryUI(unittest.TestCase):
           return {saved,calls:_calls,text:$('memory-compare').textContent,hidden:$('memory-compare').hidden,local:_storage.size,spoken:_spoken};
         """, history=history)
         self.assertTrue(result['saved'])
-        self.assertEqual([c['url'] for c in result['calls']][-2:], ['/api/coach/ride/session', '/api/coach/ride/sessions'])
+        urls = [c['url'] for c in result['calls']]
+        last_sessions = max(i for i, u in enumerate(urls) if u == '/api/coach/ride/sessions')
+        self.assertLess(urls.index('/api/coach/ride/session'), last_sessions)
+        self.assertIn('/api/coach/ride/review', urls)
         self.assertIn('低4 bpm', result['text'])
         self.assertIn('多12分钟', result['text'])
         self.assertFalse(result['hidden'])

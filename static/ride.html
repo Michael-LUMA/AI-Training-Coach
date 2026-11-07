@@ -25,14 +25,14 @@
 <p id="status" role="status" aria-live="polite">准备记录。语音需点击开始激活；请先在静止状态连接设备。</p>
 </div>
 <div class="grid"><section class="card"><span id="connection" class="pill">未连接</span><p><span id="heart-rate" class="hr">—</span> <span class="muted">bpm</span></p><p id="zone-state">未设置目标区间</p><p id="elapsed" class="muted">00:00</p></section><section class="card"><h2>02 / 原始时间轴</h2><p class="muted">仅展示最近 60 个实际点。断线标记 gap，不插值、不用旧读数补齐。超过 5 秒没有新读数也标记信号缺口。</p><pre id="timeline" aria-label="原始心率与断线记录"></pre></section></div>
-<section class="card"><h2>03 / 骑后一句话</h2><p id="summary">结束后根据记录生成。没有数据的部分保持缺失。</p><p id="memory-compare" aria-live="polite" hidden></p><p id="compare-source" class="offline" hidden></p><p id="save-status" role="status" aria-live="polite">本片存储为 ephemeral：重启或重新部署可能丢失，请保留下载备份。</p><div class="row"><button id="retry-upload" type="button" class="secondary">重试上传本机待传记录</button><button id="download-session" type="button" class="secondary" disabled>下载本次 JSON 备份</button></div></section>
+<section class="card"><h2>03 / 骑后一句话</h2><p id="summary">结束后根据记录生成。没有数据的部分保持缺失。</p><section id="brain-card" hidden aria-labelledby="brain-heading"><h3 id="brain-heading">Mark 想了想</h3><p id="brain-speech"></p><button id="brain-listen" type="button" class="secondary">听 Mark 说</button></section><p id="memory-compare" aria-live="polite" hidden></p><p id="compare-source" class="offline" hidden></p><p id="save-status" role="status" aria-live="polite">本片存储为 ephemeral：重启或重新部署可能丢失，请保留下载备份。</p><div class="row"><button id="retry-upload" type="button" class="secondary">重试上传本机待传记录</button><button id="download-session" type="button" class="secondary" disabled>下载本次 JSON 备份</button></div></section>
 <footer><p>Record only. Not medical advice.</p><p>语音只报告记录和你设定的阈值，不提供训练处方或效果承诺。后台、锁屏、系统省电或浏览器挂起可能停止 BLE、计时或语音；本页不是可靠的安全报警器。请勿在骑行中操作屏幕。</p><p>心率数据保存在当前设备及本服务的临时目录；共用电脑请勿视为多用户私密空间。模拟来源会随记录保留，绝不转为真实来源。</p><p>AI Ride Coach · Early access · <a href="?simulate=1">打开模拟模式</a></p></footer>
 </main>
 <script>
 'use strict';
 // Device adapter only: ride_memory.py owns the reusable versioned memory contract.
 const PERSONA = Object.freeze({
-  version:'ride-persona/3', name:'Mark', above:'心率超过你设的上限了。', below:'心率低于你设的下限了。', disconnected:'心率信号断了，我看不到读数。', short:'记录太短，我还总结不了。',
+  version:'ride-persona/4', name:'Mark', above:'心率超过你设的上限了。', below:'心率低于你设的下限了。', disconnected:'心率信号断了，我看不到读数。', short:'记录太短，我还总结不了。',
   recall:parts=>'我记得上次'+parts.join('，')+'。记录还很少，这不算趋势。',
   recall_no_history:'我还没有可回放的历史记录。',
   compare_better:(label,amount,unit)=>'我看到'+label+'比上次'+(unit==='分钟' ? '少' : '低')+amount+unit+'。',
@@ -41,7 +41,7 @@ const PERSONA = Object.freeze({
   no_compare:(reason='上次记录字段不全')=>'我这次无法对比：'+reason+'。',
   compare_caution:'两次记录还说明不了趋势。',
   simulated:'SIMULATED · 合成记录，不是真实骑行',
-  start:'开始记录。'
+  start:'开始记录。', thinking:'Mark 想了想'
 });
 const SERVICE = 0x180D, CHARACTERISTIC = 0x2A37;
 const OUTSIDE_DWELL_MS = 10000, ALERT_COOLDOWN_MS = 60000, STALE_MS = 5000, MAX_SERIES = 20000;
@@ -53,6 +53,7 @@ let outsideSince = null, outsideKind = null, lastAlert = -Infinity, alerts = 0;
 let timer = null, simulator = null, lastSession = null, target = null;
 let totals = {below:0, within:0, above:0};
 let recallText = '', recallSpoken = false, comparisonRequest = 0;
+let brainSpeech = '', brainRequest = 0;
 const PENDING_PREFIX = 'luma.ride.pending.';
 function state(text){$('status').textContent = text;}
 function cancelSpeech(){if ('speechSynthesis' in window) window.speechSynthesis.cancel();}
@@ -98,6 +99,23 @@ function speakRecall(){
   const spoken=speak((notice ? notice+'。' : '')+recallText);
   if(spoken)recallSpoken=true;
   return spoken;
+}
+// Only explicit Listen buttons consume this queue; cloud completion never speaks.
+function speakMark(){
+  return brainSpeech ? speak(brainSpeech) : speakRecall();
+}
+async function requestRideSpeech(memory){
+  if(active || !lastSession || lastSession.id!==memory.id)return;
+  const request=++brainRequest;
+  try {
+    const response=await fetch('/api/coach/ride/review',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify({session_id:memory.id})});
+    if(!response.ok)return;
+    const result=await response.json();
+    if(request!==brainRequest || active || !lastSession || lastSession.id!==memory.id)return;
+    if(result.speech_status!=='ok' || result.fallback!==null || typeof result.speech!=='string' || !result.speech.trim() || result.speech.length>300)return;
+    brainSpeech=(memory.source==='simulated' ? PERSONA.simulated+'。' : '')+result.speech;
+    $('brain-heading').textContent=PERSONA.thinking;$('brain-speech').textContent=brainSpeech;$('brain-card').hidden=false;
+  }catch(_){ /* Quiet, honest fallback: existing template is never removed. */ }
 }
 function compareMetric(label,current,previous,unit){
   // better/worse are required contract keys, not training-quality judgements.
@@ -179,6 +197,7 @@ function parseHeartRate(value){
 }
 function onHeartRate(event){try {receiveHR(parseHeartRate(event.target.value));} catch (_) {markGap(); state('心率数据格式异常，已标记缺口，没有补数。');}}
 function begin(){
+  brainRequest+=1;brainSpeech='';$('brain-card').hidden=true;
   comparisonRequest+=1;$('memory-compare').hidden=true;$('compare-source').hidden=true;
   target = readTarget(); startedMs = Date.now(); startedMono = performance.now();
   const random = new Uint32Array(4); crypto.getRandomValues(random);
@@ -246,6 +265,7 @@ async function upload(memory, retained){
     if(!response.ok || result.status!=='saved' || result.id!==memory.id) {if(response.status===403)token=''; throw new Error(result.error_code || 'upload_failed');}
     try {localStorage.removeItem(PENDING_PREFIX+memory.id);} catch (_) { /* A saved duplicate can be retried idempotently. */ }
     $('save-status').textContent='已上传到临时存储（ephemeral），请下载备份；部署或重启可能丢失服务端数据。';
+    void requestRideSpeech(memory);
     await refreshComparison(memory); return true;
   } catch(error) {$('save-status').textContent='上报失败（'+error.message+'）。'+(retained ? '已在当前浏览器本地保留，稍后点击重试；请勿清理站点数据。' : '本地存储也不可用；记录仅在本页内存，请立即下载备份。'); return false;}
 }
@@ -258,7 +278,8 @@ function finishRide(reason=''){
   lastSession=memory;$('download-session').disabled=false;$('connection').textContent='记录已结束';state(reason || '记录结束。平均值为实际样本算术平均，不推断训练效果。');
   const retained=retain(memory); void upload(memory,retained);
 }
-$('memory-listen').addEventListener('click',speakRecall);
+$('memory-listen').addEventListener('click',speakMark);
+$('brain-listen').addEventListener('click',speakMark);
 $('start-ride').addEventListener('click',startRide);
 $('end-ride').addEventListener('click',()=>finishRide());
 $('reconnect').addEventListener('click',async()=>{if(!active || SIMULATED || connecting)return;connecting=true;$('reconnect').disabled=true;try{await connectBLE();}catch(error){markGap();state(error.message || '重新连接失败，缺口仍保留。');}finally{connecting=false;$('reconnect').disabled=!active;}});
