@@ -17,7 +17,7 @@ from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_ope
 from coach_review_en import DISCLAIMER
 
 ENDPOINT = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
-MODEL = "qwen-turbo"
+MODEL = "qwen-flash"
 MAX_TOKENS = 800
 TIMEOUT_S = 20
 MAX_RESPONSE_BYTES = 64 * 1024

@@ -273,7 +273,7 @@ class LLMReviewTests(unittest.TestCase):
         self.assertEqual(request.get_header("Authorization"), "Bearer " + KEY)
         self.assertEqual(transport.call_args.kwargs, {"timeout": 20})
         payload = json.loads(request.data)
-        self.assertEqual(payload["model"], "qwen-turbo")
+        self.assertEqual(payload["model"], "qwen-flash")
         self.assertEqual(payload["max_tokens"], 800)
         self.assertEqual(payload["response_format"], {"type": "json_object"})
         self.assertEqual([m["role"] for m in payload["messages"]], ["system", "user"])
