@@ -342,5 +342,13 @@ class CoachServerTests(unittest.TestCase):
         self.assertEqual(facts['reported_context'], {'ctl': 46.0, 'atl': 54.0})
 
 
+    def test_page_includes_weekly_summary_controls_and_endpoint(self):
+        page = self.request('/')[0].decode('utf-8')
+        for text in ('id="week-start"', 'id="weekly"', 'id="weekly-result"',
+                     '/api/coach/weekly'):
+            with self.subTest(text=text):
+                self.assertIn(text, page)
+
+
 if __name__ == '__main__':
     unittest.main()
