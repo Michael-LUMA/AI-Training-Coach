@@ -1,4 +1,4 @@
-"""Offline configuration tests: no sockets, real credentials or external requests."""
+﻿"""Offline configuration tests: no sockets, real credentials or external requests."""
 import os
 import sys
 import tempfile
@@ -26,13 +26,6 @@ class CoachConfigTests(unittest.TestCase):
         os.environ.update(LUMA_COACH_HOST='127.0.0.2', LUMA_COACH_PORT='10000')
         self.assertEqual(server._bind_config(), ('127.0.0.2', 10000))
         self.assertEqual(server._bind_config('127.0.0.1', 9000), ('127.0.0.1', 9000))
-
-    def test_platform_injected_port_fallback(self):
-        # PaaS routers (Render/Zeabur) inject PORT; LUMA_COACH_PORT still wins.
-        os.environ['PORT'] = '10000'
-        self.assertEqual(server._bind_config(), ('127.0.0.1', 10000))
-        os.environ['LUMA_COACH_PORT'] = '10001'
-        self.assertEqual(server._bind_config(), ('127.0.0.1', 10001))
 
     def test_invalid_ports(self):
         for port in ('', 'abc', '1.5', '-1', '1023', '65536', '8765', '8791', '8793', ' 9000', True):

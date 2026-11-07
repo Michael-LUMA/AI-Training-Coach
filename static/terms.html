@@ -1,24 +1,24 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Terms of use</title>
 <style>body{max-width:820px;margin:2rem auto;padding:0 1.2rem;font:17px/1.65 system-ui,sans-serif;color:#182632;background:#f5f8fa}main{background:white;padding:1.5rem;border-radius:12px}a{color:#075c91}h1,h2{line-height:1.3}code{overflow-wrap:anywhere}.notice{border-left:4px solid #986300;padding:.6rem 1rem;background:#fff5dc}nav{margin:1rem 0}#config-status{font-size:.9rem}</style></head><body>
-<header><p id="brand">Local cycling review pilot</p><h1 id="page-title">Terms of use</h1><p>Last updated: November 7, 2026</p></header>
+<header><p id="brand">Early-access cycling review pilot</p><h1 id="page-title">Terms of use</h1><p>Last updated: November 7, 2026</p></header>
 <nav aria-label="Main"><a href="/">Review app</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></nav>
 <p id="config-status" role="status">Loading brand and contact configuration…</p>
-<main><p class="notice">Local evaluation terms. Hosted accounts, billing and subscriptions are not available. Operator identity and a working support contact are pending; public release requires review before launch.</p>
+<main><p class="notice">Hosted early-access evaluation terms. Accounts, billing and subscriptions are not available. Operator identity and a working support contact are pending; paid release requires review before launch.</p>
 <h2>Scope and authorized use</h2>
-<p>This single-user pilot retrieves activities you are authorized to access using your own Intervals.icu API key and produces English, rule-based review drafts. Use it only on a trusted computer. Do not submit another person's credentials or expose the local server to other users. Saving a key does not verify authorization or connectivity.</p>
+<p>This hosted pilot retrieves activities you are authorized to access using your own Intervals.icu API key and produces English, rule-based review drafts. It is a single shared demo slot: a key saved by another visitor replaces yours, and storage is ephemeral on the free host. Do not submit another person's credentials, and do not rely on the slot being private or persistent. Saving a key does not verify authorization or connectivity.</p>
 <h2>Not medical advice</h2>
 <p>Reviews are informational, not medical advice, diagnosis, treatment or a personalized training prescription. Facts, rule inferences and suggestions are presented separately. Missing or insufficient data may limit or invalidate conclusions; check the underlying evidence rather than relying on a draft alone.</p>
 <h2>Training risk and your decisions</h2>
 <p>You make your own training decisions and assume the risks of exercise to the extent permitted by applicable law. Assess your health, fitness and surroundings and seek qualified professional advice where appropriate. Do not read or operate the app while riding. The pilot does not automatically schedule workouts or provide emergency monitoring.</p>
 <h2>Availability and limitations</h2>
-<p>The pilot is provided for evaluation without a guarantee of accuracy, fitness for a particular purpose, continuous availability or compatibility with future third-party API changes. Intervals.icu controls its API access, availability and limits. Keep independent copies of data you need. These terms do not exclude mandatory consumer rights or liabilities that cannot lawfully be excluded.</p>
+<p>The pilot is provided for evaluation without a guarantee of accuracy, fitness for a particular purpose, continuous availability or compatibility with future third-party API changes. It runs on a free hosting tier that may sleep, restart or wipe ephemeral storage at any time. Intervals.icu controls its API access, availability and limits. Keep independent copies of data you need. These terms do not exclude mandatory consumer rights or liabilities that cannot lawfully be excluded.</p>
 <h2>Subscriptions, payments and refunds — pending payment provider</h2>
-<p>An optional signed Creem callback skeleton records local billing metadata only; it is not a checkout or a paid-access system. No subscription is sold, and this pilot does not collect card details or charge you. Pricing, billing period, renewal, cancellation, refund process and payment-provider terms are pending public-launch review. They must be published and accepted before any paid service is enabled; no refund entitlement or policy for a future service is promised here.</p>
+<p>An optional signed Creem callback skeleton records billing metadata only; it is not a checkout or a paid-access system. No subscription is sold, and this pilot does not collect card details or charge you. Pricing, billing period, renewal, cancellation, refund process and payment-provider terms are pending public-launch review. They must be published and accepted before any paid service is enabled; no refund entitlement or policy for a future service is promised here.</p>
 <h2>Privacy and ending use</h2>
-<p>Read the <a href="/privacy">privacy notice</a> for storage, third parties and deletion instructions. Stop the server, close browser pages and remove the dedicated local data store to end local use; revoke your key at Intervals.icu as needed. Backups and provider-held data require separate action.</p>
+<p>Read the <a href="/privacy">privacy notice</a> for storage, third parties and deletion instructions. To end use: close the browser pages and revoke your key at Intervals.icu; the host's ephemeral storage is wiped on redeploy or restart. Backups and provider-held data require separate action.</p>
 <h2>Changes</h2>
-<p>Future hosting, model integrations or payments require updated notices and terms. These evaluation terms do not establish a paid service or authorize silent changes to data use.</p>
+<p>Future accounts, model integrations or payments require updated notices and terms. These evaluation terms do not establish a paid service or authorize silent changes to data use.</p>
 <h2>Contact</h2><p>Support email: <span id="support-email">Configuration pending</span>. This is a placeholder, not a monitored support address. A working contact and the operator's identity must be published before public launch. Never send an API key by email.</p>
 </main><script>'use strict';
 (async () => {
@@ -30,7 +30,7 @@
     document.getElementById('brand').textContent = config.brand_name;
     document.title = document.getElementById('page-title').textContent + ' | ' + config.brand_name;
     document.getElementById('support-email').textContent = config.support_email;
-    document.getElementById('config-status').textContent = 'Local configuration loaded. No activity request was sent.';
+    document.getElementById('config-status').textContent = 'Configuration loaded. No activity request was sent.';
   } catch (_) {
     document.getElementById('config-status').textContent = 'Brand/contact configuration unavailable. This policy remains readable; no activity request was sent.';
   }

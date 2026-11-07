@@ -21,19 +21,28 @@
 
 Without any encryption backend (non-Windows + no master key) the service **refuses to store keys** (fail closed).
 
-## Render free tier (blueprint ready — awaiting account)
+## Railway (current live host — deployed 2026-11-07)
 
-The repo root carries `render.yaml`. Render dashboard → **New → Blueprint** → pick the repo; the blueprint wires everything except one value.
+Live at `https://ai-ride-coach-production-7887.up.railway.app` (trial credit, ~30 days).
 
-1. Blueprint sets: `startCommand: python coach_server.py --host 0.0.0.0 --port $PORT`, health check `/health`, `LUMA_COACH_ALLOW_REMOTE=1`, auto-generated `LUMA_COACH_MASTER_KEY`, Python 3.12.
+1. Railway dashboard → **New Project → Deploy from GitHub repo** → pick this repo. Railway detects the `Dockerfile` (python:3.12-slim, non-root, port via injected `PORT`).
+2. **Networking → Generate Domain** for a public `*.up.railway.app` URL.
+3. **Variables**: `LUMA_COACH_ALLOW_REMOTE=1`, `LUMA_COACH_MASTER_KEY=<random 32+ chars>`, `LUMA_COACH_PUBLIC_ORIGIN=https://<assigned-domain>` — the value **must include the `https://` scheme**; a malformed value aborts startup by design and the previous deployment keeps serving.
+4. Pushes to `main` auto-redeploy. Verify: `GET /health` → `{"status":"ok"}`; open the URL, connect an Intervals.icu key, list activities, request one review.
+
+## Render free tier (blueprint ready — awaiting card verification)
+
+The repo root carries `render.yaml`. Render dashboard → **New → Blueprint** → pick the repo; the blueprint wires everything except one value. Note: Render asked for a credit-card identity check (2026-11), so the MVP launched on Railway first.
+
+1. Blueprint sets: `startCommand: python coach_server.py --host 0.0.0.0`, health check `/health`, `LUMA_COACH_ALLOW_REMOTE=1`, auto-generated `LUMA_COACH_MASTER_KEY`, Python 3.12.
 2. During the blueprint deploy Render prompts for `LUMA_COACH_PUBLIC_ORIGIN` (marked `sync: false`). First deploy with a placeholder, then set it to the assigned URL (`https://<service>.onrender.com`) and redeploy — without it browser requests are denied by design (fail closed).
 3. Verify: `GET /health` → `{"status":"ok"}`; open the URL, connect an Intervals.icu key, list activities, request one review.
 
 ## Known limitations (honest list)
 
-- **Single-user**: one credential slot, session token is per-process memory. No public multi-user auth.
-- **Free-tier sleep**: Render free services sleep on idle; first request after sleep is slow.
-- **SQLite on ephemeral disk**: free tier filesystem is not persistent — stored API keys vanish on redeploy/restart. Users must re-connect. Acceptable for MVP; migration path: persistent disk or hosted KV (not implemented).
+- **Single-slot demo**: one credential slot shared by all visitors (a later key replaces an earlier one), session token is per-process memory. No public multi-user auth.
+- **Trial credit runway**: the Railway trial (~$5) funds roughly 30 days of a tiny always-on service; afterwards migrate or attach payment.
+- **SQLite on ephemeral disk**: container filesystem is not persistent — stored API keys vanish on redeploy/restart. Users must re-connect. Acceptable for MVP; migration path: persistent disk or hosted KV (not implemented).
 - **stdlib-only encryption construction** (HKDF + HMAC-CTR + HMAC-SHA256 tag): not an audited cipher; migrate to Fernet/libsodium once dependencies are allowed.
 - Business routes still enforce loopback Host/Origin headers; this is defense-in-depth, **not** public authentication.
 - Payment, OAuth, and multi-user accounts are not implemented.

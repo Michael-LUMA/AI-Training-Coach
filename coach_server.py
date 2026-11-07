@@ -27,6 +27,7 @@ from coach_demo import build_demo_review
 from coach_keystore import KeyStore
 from coach_review_en import build_review
 from coach_waitlist import WaitlistStore
+from coach_weekly import build_weekly_summary
 from coach_billing import BillingStore, verify as verify_billing
 from ride_gpx import GPXError
 from ride_review import ReviewError
@@ -167,7 +168,7 @@ class App:
             token = headers.get("X-Coach-Token", "")
             require(type(token) is str and token.isascii() and secrets.compare_digest(token, self.token), "Session token required", "token_denied", 403)
         allowed = ((method == "GET" and parsed.path in ("/", "/privacy", "/terms", "/api/coach/config", "/api/coach/activities")) or
-                   (method == "POST" and path in ("/api/coach/connect", "/api/coach/review", "/api/coach/demo-review", "/api/coach/waitlist")))
+                   (method == "POST" and path in ("/api/coach/connect", "/api/coach/review", "/api/coach/demo-review", "/api/coach/waitlist", "/api/coach/weekly")))
         require(allowed, "Endpoint not found", "not_found", 404)
         if method == "POST":
             require(headers.get("Transfer-Encoding") is None and headers.get("Content-Type") == "application/json", "Fixed-length JSON required", "invalid_body", 415)
@@ -225,13 +226,16 @@ class App:
         if path == "/api/coach/demo-review":
             require(type(payload) is dict and not payload, "Demo expects an empty object")
             return build_demo_review()
-        required = {"api_key"} if path == "/api/coach/connect" else {"activity_id"}
+        required = {"api_key"} if path == "/api/coach/connect" else (
+            {"week_start"} if path == "/api/coach/weekly" else {"activity_id"})
         require(type(payload) is dict and set(payload) == required, "Request fields do not match")
         if path == "/api/coach/connect":
             key = payload["api_key"]
             IntervalsClient(key, fetch=self.fetch)  # Validate locally, never fetch.
             self.store.save_key(key)
             return {"connected": True, "masked_key": _masked(key), "verified": False, **self.store.encryption_status}
+        if path == "/api/coach/weekly":
+            return self._weekly(payload["week_start"])
         api = self._client()
         activity = api.get_activity(payload["activity_id"])
         warnings = []
@@ -267,6 +271,36 @@ class App:
         key = self.store.get_key()
         require(key is not None, "Connect an API key first", "auth_required", 401)
         return IntervalsClient(key, fetch=self.fetch)
+
+    def _weekly(self, week_start):
+        """Explicit Monday-bounded week summary; wellness fetch is out of scope."""
+        require(type(week_start) is str, "week_start must be an ISO Monday")
+        try:
+            start = date.fromisoformat(week_start)
+        except ValueError:
+            raise ActionError("invalid_input", "week_start must be an ISO date (YYYY-MM-DD)") from None
+        require(start.weekday() == 0, "week_start must be a Monday", "invalid_input")
+        require(start <= self.today(), "week_start must not be in the future", "invalid_input")
+        api = self._client()
+        newest = (start + timedelta(days=6)).isoformat()
+        # The engine also receives the preceding week for explicit comparison.
+        activities = api.list_activities((start - timedelta(days=7)).isoformat(), newest)
+        ctl = atl = None  # Latest reported values within the week; never estimated.
+        for row in sorted(activities, key=lambda r: str(r.get("start_date_local") or "")):
+            day = str(row.get("start_date_local") or "")[:10]
+            if start.isoformat() <= day <= newest:
+                for field, name in (("icu_ctl", "ctl"), ("icu_atl", "atl")):
+                    value = row.get(field)
+                    if isinstance(value, (int, float)) and not isinstance(value, bool):
+                        if name == "ctl":
+                            ctl = value
+                        else:
+                            atl = value
+        try:
+            summary = build_weekly_summary(activities, None, week_start=start.isoformat(), ctl=ctl, atl=atl)
+        except (TypeError, ValueError, OverflowError):
+            raise ActionError("invalid_upstream_data", "Weekly data could not be summarized", 502) from None
+        return {"weekly": summary, "wellness": "not_fetched", "verified": False}
 
 
 def _bind_config(host=None, port=None):

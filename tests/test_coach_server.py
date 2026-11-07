@@ -274,14 +274,16 @@ class CoachServerTests(unittest.TestCase):
         self.assertFalse(self.calls)
         self.assertFalse(self.path.exists())
 
-    def test_legal_content_matches_current_local_pilot(self):
+    def test_legal_content_matches_current_hosted_pilot(self):
         privacy = self.request('/privacy')[0].decode()
         terms = self.request('/terms')[0].decode()
         for text in ('no persistent activity-data cache', 'no in-app delete button', '.runtime/coach/',
-                     'do not sell', 'train models', 'Intervals.icu API', 'backups', 'placeholder'):
+                     'do not sell', 'train models', 'Intervals.icu API', 'backups', 'placeholder',
+                     'shared demo slot', 'ephemeral', 'Railway'):
             self.assertIn(text, privacy)
         for text in ('not medical advice', 'risks of exercise', 'pending payment provider',
-                     'refund', 'mandatory consumer rights', 'placeholder'):
+                     'refund', 'mandatory consumer rights', 'placeholder',
+                     'shared demo slot', 'ephemeral'):
             self.assertIn(text, terms)
 
     def test_public_origin_retargets_host_and_origin_checks(self):
@@ -309,6 +311,35 @@ class CoachServerTests(unittest.TestCase):
             with patch.dict('os.environ', {'LUMA_COACH_PUBLIC_ORIGIN': bad}):
                 with self.assertRaises(ValueError):
                     server.create_server(port=8794, app=self.app)
+
+    def test_weekly_requires_monday_and_connection(self):
+        with self.assertRaises(ActionError) as denied:
+            self.request('/api/coach/weekly', {'week_start': '2026-11-02'})
+        self.assertEqual(denied.exception.code, 'auth_required')
+        self.connect()
+        # Tuesday, garbage, and a future Monday (stub today is 2026-11-06).
+        for bad in ('2026-11-03', 'not-a-date', '2026-11-09'):
+            with self.subTest(bad=bad), self.assertRaises(ActionError) as rejected:
+                self.request('/api/coach/weekly', {'week_start': bad})
+            self.assertEqual(rejected.exception.code, 'invalid_input')
+        result = self.request('/api/coach/weekly', {'week_start': '2026-11-02'})
+        self.assertEqual(result['wellness'], 'not_fetched')
+        self.assertEqual(result['weekly']['facts']['current']['activity_count'], 0)
+
+    def test_weekly_bounds_previous_week_and_latest_reported_ctl(self):
+        self.connect()
+        self.replies['/api/v1/athlete/0/activities'] = [
+            {'id': 'a1', 'start_date_local': '2026-10-28T07:00:00', 'moving_time': 1800, 'icu_training_load': 40},
+            {'id': 'a2', 'start_date_local': '2026-11-04T07:00:00', 'moving_time': 3600, 'distance': 30000, 'icu_training_load': 60, 'icu_ctl': 45, 'icu_atl': 55},
+            {'id': 'a3', 'start_date_local': '2026-11-05T07:00:00', 'moving_time': 2700, 'icu_training_load': 50, 'icu_ctl': 46, 'icu_atl': 54},
+        ]
+        result = self.request('/api/coach/weekly', {'week_start': '2026-11-02'})
+        facts = result['weekly']['facts']
+        self.assertEqual(facts['current']['activity_count'], 2)
+        self.assertEqual(facts['current']['total_training_load'], 110.0)
+        self.assertEqual(facts['previous']['activity_count'], 1)
+        # Latest reported CTL/ATL inside the selected week, not the first.
+        self.assertEqual(facts['reported_context'], {'ctl': 46.0, 'atl': 54.0})
 
 
 if __name__ == '__main__':
