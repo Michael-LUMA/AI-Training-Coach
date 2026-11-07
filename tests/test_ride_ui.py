@@ -109,7 +109,7 @@ class RideMemoryUI(unittest.TestCase):
         return json.loads(result.stdout)
 
     def test_page_strings_and_existing_csp_with_mock_store(self):
-        for text in ('Mark 的记忆', '这不算趋势', '听 Mark 说', 'ride-persona/12', "name:'Mark'",
+        for text in ('Mark 的记忆', '这不算趋势', '听 Mark 说', 'ride-persona/13', "name:'Mark'",
                      'recall:', 'recall_no_history:', 'compare_better:', 'compare_worse:',
                      'compare_flat:', 'no_compare:', '两次记录还说明不了趋势', 'Record only. Not medical advice.'):
             with self.subTest(text=text):
@@ -156,7 +156,7 @@ class RideMemoryUI(unittest.TestCase):
         result = self.run_js("await $('start-ride').click(); return {spoken:_spoken,version:session.persona_version};", history=[metadata()], simulate=True)
         self.assertEqual(len(result['spoken']), 1)
         self.assertIn('我记得', result['spoken'][0])
-        self.assertEqual(result['version'], 'ride-persona/12')
+        self.assertEqual(result['version'], 'ride-persona/13')
         result = self.run_js("$('memory-listen').click(); await $('start-ride').click(); return _spoken;", history=[metadata()], simulate=True)
         self.assertEqual(len(result), 2)
         self.assertIn('我记得', result[0])
@@ -271,7 +271,7 @@ class RideMemoryUI(unittest.TestCase):
 
 
     def test_demo_strings_source_notice_and_version(self):
-        for text in ('demo_notice:', 'demo_start:', '看 Mark 演示', 'ride-persona/12',
+        for text in ('demo_notice:', 'demo_start:', '看 Mark 演示', 'ride-persona/13',
                      '这是一段合成的 45 分钟骑行，90 秒放完', 'Mark 说的每句话都是真实逻辑，数据是假的。'):
             self.assertIn(text,self.html)
         result=self.run_js("return {notice:$('demo-notice').textContent,hidden:$('demo-notice').hidden,button:$('demo-start').hidden,bar:$('simulated-banner').hidden,startDisabled:$('start-ride').disabled,spoken:_spoken};",demo=True)
@@ -291,7 +291,7 @@ class RideMemoryUI(unittest.TestCase):
         """,demo=True)
         from ride_memory import validate_session
         item=validate_session(result['uploaded'])
-        self.assertEqual(item['source'],'simulated');self.assertEqual(item['persona_version'],'ride-persona/12')
+        self.assertEqual(item['source'],'simulated');self.assertEqual(item['persona_version'],'ride-persona/13')
         self.assertEqual(item['summary']['duration_s'],2700)
         self.assertEqual(item['series'][-1]['t'],2700)
         self.assertEqual(item['samples_hz'],1/30)
@@ -420,7 +420,7 @@ class RideMemoryUI(unittest.TestCase):
             self.assertEqual(result['inputs'],[lower,upper])
 
     def test_s5_strings_and_manifest_link(self):
-        for text in ("wakelock_unavailable:", "fuel:(minutes)=>", "fuel_again:", "ride-persona/12",
+        for text in ("wakelock_unavailable:", "fuel:(minutes)=>", "fuel_again:", "ride-persona/13",
                      "分钟了，喝口水、补点吃的。", "又到补给的点了，别忘了喝。",
                      'rel="manifest"', "ride.webmanifest"):
             with self.subTest(text=text):
@@ -461,7 +461,7 @@ class RideMemoryUI(unittest.TestCase):
         self.assertTrue(result['active'])
 
     def test_s7_strings_milestone_gpx_and_ducking(self):
-        for text in ("milestone:", "milestone_compare_flat:", "ride-persona/12",
+        for text in ("milestone:", "milestone_compare_flat:", "ride-persona/13",
                      "buildRideGpx", "下载 GPX 备份", "audioSession", "signal_gap",
                      "不能直接导入需要 GPS 轨迹的平台"):
             with self.subTest(text=text):
@@ -634,7 +634,7 @@ class RideMemoryUI(unittest.TestCase):
         self.assertTrue(result['survived'])
 
     def test_fall_detection_strings_and_ui(self):
-        for text in ('fall_alert:', 'fall_cancel:', 'fall_alarm:', 'ride-persona/12',
+        for text in ('fall_alert:', 'fall_cancel:', 'fall_alarm:', 'ride-persona/13',
                      'crash-detect', 'fall-card', 'fall-ok', '跌倒检测（实验）',
                      '不是可靠的安全设备', 'devicemotion'):
             with self.subTest(text=text):
@@ -711,7 +711,7 @@ class RideMemoryUI(unittest.TestCase):
         self.assertTrue(result['cardHidden'])
 
     def test_s9_strings_aux_ui_and_version(self):
-        for text in ('ride-persona/12', 'connect-aux', 'parseCadence', 'parsePower',
+        for text in ('ride-persona/13', 'connect-aux', 'parseCadence', 'parsePower',
                      '0x1816', '0x2A5B', '0x1818', '0x2A63', 'milestone_power:', 'luma-ride-memory/2'):
             with self.subTest(text=text):
                 self.assertIn(text, self.html)
@@ -783,7 +783,7 @@ class RideMemoryUI(unittest.TestCase):
                  'summary': {'duration_s': 6, 'avg_hr': 121, 'max_hr': 122, 'time_in_zone_s': None,
                              'zone_target': None, 'gaps': 0, 'alerts': 0,
                              'avg_cadence': 90, 'avg_power': 210, 'max_power': 210},
-                 'coach_notes': ['x'], 'persona_version': 'ride-persona/12', 'source': 'simulated'}
+                 'coach_notes': ['x'], 'persona_version': 'ride-persona/13', 'source': 'simulated'}
         self.assertEqual(validate_session(check)['summary']['avg_power'], 210)
 
     def test_milestone_mentions_power_and_cadence_when_present(self):
@@ -830,14 +830,18 @@ class RideMemoryUI(unittest.TestCase):
 class RideNavUI(RideMemoryUI):
     ROUTE = {'route_status': 'ok', 'distance_m': 5231, 'duration_s': 1800, 'destination': '北京市东城区天安门',
              'steps': [{'instruction': '向东骑行200米右转', 'road': '长安街', 'distance_m': 200,
-                        'end_lng': 116.392, 'end_lat': 39.908},
+                        'end_lng': 116.392, 'end_lat': 39.908,
+                        'path': [[116.394, 39.908], [116.392, 39.908]]},
                        {'instruction': '向南骑行5031米到达终点', 'road': '', 'distance_m': 5031,
-                        'end_lng': 116.397477, 'end_lat': 39.908692}]}
+                        'end_lng': 116.397477, 'end_lat': 39.908692,
+                        'path': [[116.392, 39.908], [116.397477, 39.908692]]}]}
 
     def test_nav_page_strings(self):
         for text in ('nav-card', 'nav-destination', 'nav-plan', 'nav-clear', 'nav-status', 'nav-steps',
                      'nav-voice', 'wgs84ToGcj02', 'outOfChina', 'haversineM', 'NAV_TURN_M',
-                     '/api/coach/ride/route', 'ride-persona/12', '偏航不会自动重算',
+                     'distToPathM', 'distToSegmentM', 'NAV_ON_ROUTE_M', 'NAV_OFF_ROUTE_M',
+                     'nav_offroute', '好像偏航了', '回到路线上了',
+                     '/api/coach/ride/route', 'ride-persona/13', '偏航不会自动重算',
                      '不写入骑行记录', '高德'):
             with self.subTest(text=text):
                 self.assertIn(text, self.html)
@@ -906,7 +910,13 @@ class RideNavUI(RideMemoryUI):
                         {'route': {'route_status': 'ok', 'distance_m': 1, 'duration_s': 1, 'steps': [
                             {'instruction': '', 'road': '', 'distance_m': 1, 'end_lng': 116.4, 'end_lat': 39.9}]}},
                         {'route': {'route_status': 'ok', 'distance_m': 1, 'duration_s': 1, 'steps': [
-                            {'instruction': '走', 'road': '', 'distance_m': 1, 'end_lng': 'x', 'end_lat': 39.9}]}}):
+                            {'instruction': '走', 'road': '', 'distance_m': 1, 'end_lng': 'x', 'end_lat': 39.9,
+                             'path': [[116.4, 39.9]]}]}},
+                        {'route': {'route_status': 'ok', 'distance_m': 1, 'duration_s': 1, 'steps': [
+                            {'instruction': '走', 'road': '', 'distance_m': 1, 'end_lng': 116.4, 'end_lat': 39.9}]}},
+                        {'route': {'route_status': 'ok', 'distance_m': 1, 'duration_s': 1, 'steps': [
+                            {'instruction': '走', 'road': '', 'distance_m': 1, 'end_lng': 116.4, 'end_lat': 39.9,
+                             'path': [['x', 39.9]]}]}}):
             with self.subTest(options=options):
                 result = self.run_js("""
                   $('nav-destination').value='天安门';
@@ -978,6 +988,73 @@ class RideNavUI(RideMemoryUI):
         self.assertNotIn('向东骑行200米右转', result['muted']['spoken'])
         self.assertEqual(result['muted']['index'], 0)
         self.assertIn('下一转向', result['muted']['status'])
+
+    def test_corridor_geometry_helpers(self):
+        result = self.run_js("""
+          const seg=distToSegmentM(0.001,0.005,[0,0],[0,0.01]);
+          const beyond=distToSegmentM(0.001,0.02,[0,0],[0,0.01]);
+          const path=distToPathM(0.001,0.005,[[0,0],[0,0.01]]);
+          const single=distToPathM(0,0,[[0,0.01]]);
+          const empty=distToPathM(0,0,[]);
+          return {seg,beyond,path,single,empty};
+        """)
+        self.assertTrue(105 < result['seg'] < 117)        # ~111 m perpendicular to the segment
+        self.assertTrue(1100 < result['beyond'] < 1160)   # clamps to the far endpoint
+        self.assertAlmostEqual(result['path'], result['seg'], places=6)
+        self.assertTrue(1100 < result['single'] < 1130)   # one-point path: distance to the point
+        self.assertIsNone(result['empty'])                # Infinity serializes to null
+
+    def test_offroute_warns_once_snoozes_and_recovers(self):
+        result = self.run_js("""
+          $('nav-destination').value='天安门';
+          await $('nav-plan').click();
+          await $('start-ride').click();
+          _geoEmit(116.396,39.920);   // far from both corridors even after the GCJ shift
+          const first={spoken:_spoken.slice(),status:$('nav-status').textContent,flag:navOffRoute};
+          _geoEmit(116.396,39.920);   // snoozed: no immediate repeat
+          const repeat=_spoken.length;
+          await _advance(181000);     // snooze expires
+          _geoEmit(116.396,39.920);
+          const third=_spoken.length;
+          // Land back on the step-1 corridor within 60 m (invert the GCJ shift).
+          const on=wgs84ToGcj02(116.394,39.9083);
+          _geoEmit(116.394-(on[0]-116.394),39.9083-(on[1]-39.9083));
+          return {first,repeat,third,spoken:_spoken,flag:navOffRoute};
+        """, simulate=1, route=self.ROUTE)
+        self.assertIn('好像偏航了', result['first']['spoken'][-1])
+        self.assertIn('好像偏航了', result['first']['status'])
+        self.assertTrue(result['first']['flag'])
+        self.assertEqual(result['repeat'], len(result['first']['spoken']))
+        self.assertEqual(result['third'], len(result['first']['spoken']) + 1)
+        self.assertEqual(result['spoken'][-1], '回到路线上了。')
+        self.assertFalse(result['flag'])
+
+    def test_corridor_skip_advances_silently(self):
+        result = self.run_js("""
+          $('nav-destination').value='天安门';
+          await $('nav-plan').click();
+          await $('start-ride').click();
+          // Land on the step-2 corridor 300+ m past the skipped turn point.
+          const on=wgs84ToGcj02(116.396,39.9085);
+          _geoEmit(116.396-(on[0]-116.396),39.9085-(on[1]-39.9085));
+          return {index:navRoute.index,spoken:_spoken.slice(),steps:$('nav-steps').textContent};
+        """, simulate=1, route=self.ROUTE)
+        self.assertEqual(result['index'], 1)
+        self.assertFalse(any('向东骑行200米右转' in t for t in result['spoken']))
+        self.assertIn('▶ 2.', result['steps'])
+
+    def test_offroute_voice_off_updates_status_only(self):
+        result = self.run_js("""
+          $('nav-destination').value='天安门';
+          await $('nav-plan').click();
+          $('nav-voice').checked=false;$('nav-voice').click();
+          await $('start-ride').click();
+          _geoEmit(116.396,39.920);
+          return {spoken:_spoken.slice(),status:$('nav-status').textContent,flag:navOffRoute};
+        """, simulate=1, route=self.ROUTE)
+        self.assertFalse(any('好像偏航了' in t for t in result['spoken']))
+        self.assertIn('好像偏航了', result['status'])
+        self.assertTrue(result['flag'])
 
     def test_clear_and_finish_stop_watch(self):
         result = self.run_js("""

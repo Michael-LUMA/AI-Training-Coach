@@ -30,7 +30,7 @@ def memory(identifier='ride-current', started='2026-11-04T12:00:00Z', *, duratio
         'started_at': started, 'ended_at': end.isoformat(), 'samples_hz': 1,
         'series': points, 'summary': {'duration_s': duration, 'avg_hr': hr, 'max_hr': hr,
             'time_in_zone_s': None, 'zone_target': None, 'gaps': 0, 'alerts': 0},
-        'coach_notes': ['private note never for cloud'], 'persona_version': 'ride-persona/12', 'source': source})
+        'coach_notes': ['private note never for cloud'], 'persona_version': 'ride-persona/13', 'source': source})
 
 
 def transport(speech='这周骑了1次，记录60分钟。', *, draft=None, status=200, finish='stop'):
@@ -464,7 +464,7 @@ class RideWeeklyBrowserTests(unittest.TestCase):
         self.assertEqual(result['text'], '这周骑了1次，一共60分钟。')
 
     def test_new_weekly_card_strings_version_and_existing_ids_retained(self):
-        for text in ('ride-persona/12', "name:'Mark'", '本周', '听 Mark 说这星期', '还没有记录',
+        for text in ('ride-persona/13', "name:'Mark'", '本周', '听 Mark 说这星期', '还没有记录',
                      'id="ride-weekly"', 'id="memory-card"', 'id="demo-start"', 'id="end-ride"',
                      '/api/coach/ride/weekly', 'weekly_no_rides:', 'weekly_current:', 'weekly_comparison:'):
             self.assertIn(text, self.html)

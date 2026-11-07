@@ -20,6 +20,8 @@ DIRECTION_ENDPOINT = "https://restapi.amap.com/v4/direction/bicycling"
 TIMEOUT_S = 10
 MAX_RESPONSE_BYTES = 256 * 1024
 MAX_STEPS = 500
+MAX_STEP_POINTS = 500
+MAX_TOTAL_POINTS = 5000
 MAX_TEXT_CHARS = 300
 _ORIGIN = re.compile(r"^(-?[0-9]{1,3}(?:\.[0-9]{1,7})?),(-?[0-9]{1,2}(?:\.[0-9]{1,7})?)$")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
@@ -187,6 +189,7 @@ def _direction(origin: str, destination: str, api_key: str, http_get) -> dict:
     if len(raw_steps) > MAX_STEPS:
         return _result("route_too_complex")
     steps = []
+    total_points = 0
     for raw in raw_steps:
         if type(raw) is not dict:
             return _result("upstream_error")
@@ -196,12 +199,23 @@ def _direction(origin: str, destination: str, api_key: str, http_get) -> dict:
         polyline = raw.get("polyline")
         if instruction is None or road is None or step_m is None or type(polyline) is not str:
             return _result("upstream_error")
-        pairs = polyline.strip().split(";")
-        end = _coordinate(pairs[-1]) if pairs and pairs[-1] else None
-        if end is None or len(polyline) > MAX_RESPONSE_BYTES // 4:
+        if len(polyline) > MAX_RESPONSE_BYTES // 4:
             return _result("upstream_error")
+        pairs = polyline.strip().split(";") if polyline.strip() else []
+        if not 1 <= len(pairs) <= MAX_STEP_POINTS:
+            return _result("upstream_error")
+        total_points += len(pairs)
+        if total_points > MAX_TOTAL_POINTS:
+            return _result("route_too_complex")
+        path = []
+        for pair in pairs:
+            point = _coordinate(pair)
+            if point is None:
+                return _result("upstream_error")
+            path.append([point[0], point[1]])
+        end = path[-1]
         steps.append({"instruction": instruction, "road": road, "distance_m": step_m,
-                      "end_lng": end[0], "end_lat": end[1]})
+                      "end_lng": end[0], "end_lat": end[1], "path": path})
     return _result("ok", distance_m=distance_m, duration_s=duration_s, steps=steps)
 
 
@@ -219,7 +233,8 @@ def plan_route(origin: Any, destination_address: Any, *, api_key: str | None,
     Returns:
         route_status plus, on "ok", distance_m/duration_s/destination/steps.
         Steps carry instruction/road/distance_m/end_lng/end_lat (the step END
-        coordinate), never the raw polyline. No key or upstream message text is
+        coordinate) plus path: the decoded GCJ-02 polyline as [lng, lat] pairs
+        for corridor (off-route) checks. No key or upstream message text is
         ever included in any result.
     Raises:
         No expected input, transport or JSON errors escape. Unexpected programming

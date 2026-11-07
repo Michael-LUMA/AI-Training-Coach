@@ -115,7 +115,10 @@ class DirectionMapping(unittest.TestCase):
         self.assertEqual(first['road'], '长安街')
         self.assertEqual(first['distance_m'], 200)
         self.assertEqual((first['end_lng'], first['end_lat']), (116.392, 39.908))
+        self.assertEqual(first['path'], [[116.390, 39.908], [116.392, 39.908]])
         self.assertEqual((last['end_lng'], last['end_lat']), (116.397477, 39.908692))
+        self.assertEqual(last['path'], [[116.392, 39.908], [116.392, 39.900], [116.397477, 39.908692]])
+        self.assertEqual(last['path'][-1], [last['end_lng'], last['end_lat']])
         # The direction request uses the geocoded destination, never the raw address.
         direction_request = http_get.calls[1]
         self.assertTrue(direction_request.full_url.startswith(ride_nav.DIRECTION_ENDPOINT + '?'))
@@ -151,6 +154,24 @@ class DirectionMapping(unittest.TestCase):
                  for _ in range(ride_nav.MAX_STEPS + 1)]
         result, _ = self.plan({'errcode': 0, 'data': {'paths': [{'distance': 10, 'duration': 10, 'steps': steps}]}})
         self.assertEqual(result['route_status'], 'route_too_complex')
+
+    def test_point_caps(self):
+        too_many = ';'.join(['116.1,39.9'] * (ride_nav.MAX_STEP_POINTS + 1))
+        payload = {'errcode': 0, 'data': {'paths': [{'distance': 10, 'duration': 10, 'steps': [
+            {'instruction': '直走', 'road': '', 'distance': 10, 'polyline': too_many}]}]}}
+        result, _ = self.plan(payload)
+        self.assertEqual(result['route_status'], 'upstream_error')  # per-step cap: malformed shape
+        hundred = ';'.join(['116.1,39.9'] * 100)
+        steps = [{'instruction': '直走', 'road': '', 'distance': 10, 'polyline': hundred} for _ in range(51)]
+        result, _ = self.plan({'errcode': 0, 'data': {'paths': [{'distance': 10, 'duration': 10, 'steps': steps}]}})
+        self.assertEqual(result['route_status'], 'route_too_complex')  # total cap 5000
+
+    def test_single_point_step_is_allowed(self):
+        payload = {'errcode': 0, 'data': {'paths': [{'distance': 5, 'duration': 3, 'steps': [
+            {'instruction': '到达终点', 'road': '', 'distance': 5, 'polyline': '116.392,39.908'}]}]}}
+        result, _ = self.plan(payload)
+        self.assertEqual(result['route_status'], 'ok')
+        self.assertEqual(result['steps'][0]['path'], [[116.392, 39.908]])
 
     def test_number_coercion_and_control_strip(self):
         payload = {'errcode': 0, 'data': {'paths': [{'distance': 5231.4, 'duration': 1800.2, 'steps': [

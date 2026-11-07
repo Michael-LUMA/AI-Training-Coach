@@ -46,7 +46,7 @@
 'use strict';
 // Device adapter only: ride_memory.py owns the reusable versioned memory contract.
 const PERSONA = Object.freeze({
-  version:'ride-persona/12', name:'Mark', above:'心率超过你设的上限了。', below:'心率低于你设的下限了。', disconnected:'心率信号断了，我看不到读数。', short:'记录太短，我还总结不了。',
+  version:'ride-persona/13', name:'Mark', above:'心率超过你设的上限了。', below:'心率低于你设的下限了。', disconnected:'心率信号断了，我看不到读数。', short:'记录太短，我还总结不了。',
   recall:parts=>'我记得上次'+parts.join('，')+'。记录还很少，这不算趋势。',
   recall_no_history:'我还没有可回放的历史记录。',
   compare_better:(label,amount,unit)=>'我看到'+label+'比上次'+(unit==='分钟' ? '少' : '低')+amount+unit+'。',
@@ -93,7 +93,9 @@ const PERSONA = Object.freeze({
   nav_geo_denied:'定位权限被拒绝，无法规划路线和转向提醒。',
   nav_geo_failed:'获取当前位置失败，请到空旷处重试。',
   nav_next:(text,dist)=>'下一转向：'+text+' · 约 '+dist+' 米',
-  nav_arrival:'已接近终点附近，导航结束。'
+  nav_arrival:'已接近终点附近，导航结束。',
+  nav_offroute:'好像偏航了，离规划路线有点远。我不会自动重算，到安全的地方停下来可以重新规划。',
+  nav_back:'回到路线上了。'
 });
 const SERVICE = 0x180D, CHARACTERISTIC = 0x2A37;
 const CSC_SERVICE = 0x1816, CSC_MEASUREMENT = 0x2A5B, POWER_SERVICE = 0x1818, POWER_MEASUREMENT = 0x2A63;
@@ -275,6 +277,9 @@ function onDeviceMotion(event){
 // fix is converted before distance math (standard eviltransform; no shift abroad).
 // GPS is never written into the ride record; rerouting is out of scope for v1.
 const GCJ_A=6378245.0, GCJ_EE=0.00669342162296594323, NAV_TURN_M=120;
+// Corridor model: on-route within 60 m of the current/next step polyline,
+// off-route beyond 250 m of both; the band between is honestly "unsure".
+const NAV_ON_ROUTE_M=60, NAV_OFF_ROUTE_M=250, NAV_OFF_ROUTE_SNOOZE_MS=180000;
 function outOfChina(lng,lat){return lng<72.004||lng>137.8347||lat<0.8293||lat>55.8271;}
 function transformLat(x,y){
   let ret=-100.0+2.0*x+3.0*y+0.2*y*y+0.1*x*y+0.2*Math.sqrt(Math.abs(x));
@@ -305,7 +310,29 @@ function haversineM(lng1,lat1,lng2,lat2){
   const a=Math.sin(dlat/2)*Math.sin(dlat/2)+Math.cos(lat1*rad)*Math.cos(lat2*rad)*Math.sin(dlng/2)*Math.sin(dlng/2);
   return 2*6371000*Math.asin(Math.min(1,Math.sqrt(a)));
 }
+// Point-to-segment on an equirectangular projection around the point; valid at riding distances.
+function distToSegmentM(lng,lat,a,b){
+  const rad=Math.PI/180, R=6371000, coslat=Math.cos(lat*rad);
+  const ax=(a[0]-lng)*rad*R*coslat, ay=(a[1]-lat)*rad*R;
+  const bx=(b[0]-lng)*rad*R*coslat, by=(b[1]-lat)*rad*R;
+  const dx=bx-ax, dy=by-ay, len2=dx*dx+dy*dy;
+  let t=len2 ? -(ax*dx+ay*dy)/len2 : 0;
+  t=Math.max(0,Math.min(1,t));
+  const px=ax+t*dx, py=ay+t*dy;
+  return Math.sqrt(px*px+py*py);
+}
+function distToPathM(lng,lat,path){
+  if(!Array.isArray(path) || !path.length)return Infinity;
+  if(path.length===1)return haversineM(lng,lat,path[0][0],path[0][1]);
+  let min=Infinity;
+  for(let i=0;i<path.length-1;i++){
+    const d=distToSegmentM(lng,lat,path[i],path[i+1]);
+    if(d<min)min=d;
+  }
+  return min;
+}
 let navRoute=null, navWatch=null, navVoice=true, navPlanning=false;
+let navOffRoute=false, navOffRouteSnooze=0;
 function navStatus(text){$('nav-status').textContent=text;}
 function stopNavWatch(){
   if(navWatch!==null && navigator.geolocation && typeof navigator.geolocation.clearWatch==='function')navigator.geolocation.clearWatch(navWatch);
@@ -323,7 +350,7 @@ function renderNavSteps(){
   }).join('\n');
 }
 function clearNav(){
-  stopNavWatch();navRoute=null;
+  stopNavWatch();navRoute=null;navOffRoute=false;navOffRouteSnooze=0;
   $('nav-clear').hidden=true;$('nav-steps').textContent='';navStatus('');
 }
 async function planNav(){
@@ -343,8 +370,13 @@ async function planNav(){
     if(!response.ok || !result || typeof result.route_status!=='string'){navStatus(PERSONA.nav_upstream);return;}
     if(result.route_status!=='ok'){navStatus(PERSONA['nav_'+result.route_status] || PERSONA.nav_upstream);return;}
     if(!Array.isArray(result.steps) || !result.steps.length || typeof result.distance_m!=='number' || typeof result.duration_s!=='number'){navStatus(PERSONA.nav_upstream);return;}
-    const steps=result.steps.map(raw=>({instruction:String(raw && raw.instruction || ''),road:String(raw && raw.road || ''),distance_m:Number(raw && raw.distance_m)||0,end_lng:Number(raw && raw.end_lng),end_lat:Number(raw && raw.end_lat),announced:false}));
-    if(steps.some(step=>!step.instruction || !Number.isFinite(step.end_lng) || !Number.isFinite(step.end_lat))){navStatus(PERSONA.nav_upstream);return;}
+    const steps=result.steps.map(raw=>{
+      const path=Array.isArray(raw && raw.path) ? raw.path.map(p=>[Number(p && p[0]),Number(p && p[1])]) : [];
+      return {instruction:String(raw && raw.instruction || ''),road:String(raw && raw.road || ''),distance_m:Number(raw && raw.distance_m)||0,end_lng:Number(raw && raw.end_lng),end_lat:Number(raw && raw.end_lat),announced:false,path};
+    });
+    const badStep=step=>!step.instruction || !Number.isFinite(step.end_lng) || !Number.isFinite(step.end_lat) ||
+      !step.path.length || step.path.some(p=>!Number.isFinite(p[0]) || !Number.isFinite(p[1]));
+    if(steps.some(badStep)){navStatus(PERSONA.nav_upstream);return;}
     stopNavWatch();
     navRoute={destination,distance_m:result.distance_m,duration_s:result.duration_s,steps,index:0};
     navStatus(PERSONA.nav_planned((navRoute.distance_m/1000).toFixed(1),Math.max(1,Math.round(navRoute.duration_s/60))));
@@ -358,7 +390,7 @@ function onNavPosition(position){
   const coords=position.coords;
   if(typeof coords.longitude!=='number' || typeof coords.latitude!=='number')return;
   const converted=wgs84ToGcj02(coords.longitude,coords.latitude);
-  const step=navRoute.steps[navRoute.index];
+  let step=navRoute.steps[navRoute.index];
   if(!step)return;
   const dist=Math.round(haversineM(converted[0],converted[1],step.end_lng,step.end_lat));
   navStatus(PERSONA.nav_next(step.instruction,dist));
@@ -366,8 +398,31 @@ function onNavPosition(position){
   if(active && navVoice && dist<=NAV_TURN_M && !step.announced){
     step.announced=true;navRoute.index+=1;
     noteAndSpeak(step.instruction,'nav');
-    if(navRoute.index>=navRoute.steps.length){noteAndSpeak(PERSONA.nav_arrival,'nav');stopNavWatch();}
+    if(navRoute.index>=navRoute.steps.length){noteAndSpeak(PERSONA.nav_arrival,'nav');stopNavWatch();return;}
     renderNavSteps();
+  }
+  if(!active)return;
+  // Corridor checks against the real polyline: silent catch-up when the rider
+  // rejoins a later step, off-route warning (snoozed) when far from both.
+  step=navRoute.steps[navRoute.index];
+  if(!step)return;
+  const nextStep=navRoute.steps[navRoute.index+1];
+  const distCurrent=distToPathM(converted[0],converted[1],step.path);
+  const distNext=nextStep ? distToPathM(converted[0],converted[1],nextStep.path) : Infinity;
+  if(nextStep && distNext<=NAV_ON_ROUTE_M && distCurrent>NAV_ON_ROUTE_M){
+    navRoute.index+=1;renderNavSteps();
+    if(navOffRoute){navOffRoute=false;if(navVoice)noteAndSpeak(PERSONA.nav_back,'nav');}
+    return;
+  }
+  if(Math.min(distCurrent,distNext)>NAV_OFF_ROUTE_M){
+    if(performance.now()>=navOffRouteSnooze){
+      navOffRoute=true;navOffRouteSnooze=performance.now()+NAV_OFF_ROUTE_SNOOZE_MS;
+      navStatus(PERSONA.nav_offroute);
+      if(navVoice)noteAndSpeak(PERSONA.nav_offroute,'nav');
+    }
+  }else if(navOffRoute && Math.min(distCurrent,distNext)<=NAV_ON_ROUTE_M){
+    navOffRoute=false;
+    if(navVoice)noteAndSpeak(PERSONA.nav_back,'nav');
   }
 }
 // Metadata only; no raw series request and no inference from missing fields.
