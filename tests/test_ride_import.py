@@ -192,6 +192,24 @@ class ImportServerTests(unittest.TestCase):
         error = self.error('no_heart_rate', lambda: self.post({'data': GPX_NO_HR}))
         self.assertNotIn('trkpt', str(error))
 
+    def test_imported_session_is_reviewable(self):
+        result = self.post({'data': GPX})
+        review = self.post({'session_id': result['id']}, path='/api/coach/ride/review')
+        # Same degradation as live rides: without an LLM key the status is
+        # not_configured and speech stays None; with one, speech is non-empty.
+        self.assertIn(review['speech_status'], ('fallback', 'ok', 'not_configured'))
+        if review['speech'] is not None:
+            self.assertIsInstance(review['speech'], str)
+            self.assertTrue(review['speech'])
+
+    def test_imported_session_is_chat_context(self):
+        result = self.post({'data': GPX})
+        answer = self.post({'session_id': result['id'], 'question': '这次骑了多久？'},
+                           path='/api/coach/ride/chat')
+        self.assertIsInstance(answer, dict)
+        text = json.dumps(answer, ensure_ascii=False)
+        self.assertNotIn('error_code', text)
+
 
 if __name__ == '__main__':
     unittest.main()
