@@ -37,6 +37,7 @@ from coach_waitlist import WaitlistStore
 from coach_weekly import build_weekly_summary
 from coach_billing import BillingStore, verify as verify_billing
 from ride_gpx import GPXError
+from ride_import import ImportBuildError, build_import_session
 from ride_review import ReviewError
 from ride_memory import validate_session, RideMemoryError
 from ride_brain import build_ride_review
@@ -54,8 +55,10 @@ ROOT = Path(__file__).resolve().parent
 DEFAULT_DB = ROOT / ".runtime/coach/coach.sqlite3"
 MAX_BODY_BYTES = 8192
 MAX_RIDE_BODY_BYTES = 2 * 1024 * 1024
+MAX_IMPORT_BODY_BYTES = 6 * 1024 * 1024  # 5 MB file text plus JSON envelope.
 RIDE_POST = "/api/coach/ride/session"
 RIDE_LIST = "/api/coach/ride/sessions"
+RIDE_IMPORT = "/api/coach/ride/import"
 RIDE_REVIEW = "/api/coach/ride/review"
 RIDE_WEEKLY = "/api/coach/ride/weekly"
 RIDE_ROUTE = "/api/coach/ride/route"
@@ -265,21 +268,22 @@ class App:
             token = headers.get("X-Coach-Token", "")
             require(type(token) is str and token.isascii() and secrets.compare_digest(token, self.token), "Session token required", "token_denied", 403)
         allowed = ((method == "GET" and (parsed.path in ("/", "/privacy", "/terms", "/api/coach/config", "/api/coach/activities", "/ride", "/ride.webmanifest", "/icon.svg", RIDE_LIST) or font_path is not None)) or
-                   (method == "POST" and path in ("/api/coach/connect", "/api/coach/review", "/api/coach/review-l2", "/api/coach/demo-review", "/api/coach/waitlist", "/api/coach/weekly", RIDE_POST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE, RIDE_CHAT, RIDE_LIVE)))
+                   (method == "POST" and path in ("/api/coach/connect", "/api/coach/review", "/api/coach/review-l2", "/api/coach/demo-review", "/api/coach/waitlist", "/api/coach/weekly", RIDE_POST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE, RIDE_CHAT, RIDE_LIVE, RIDE_IMPORT)))
         require(allowed, "Endpoint not found", "not_found", 404)
         if method == "POST":
             require(headers.get("Transfer-Encoding") is None and headers.get("Content-Type") == "application/json", "Fixed-length JSON required", "invalid_body", 415)
             raw = headers.get("Content-Length", "")
             require(type(raw) is str and re.fullmatch(r"[0-9]{1,8}", raw) is not None, "Body length invalid", "body_too_large", 413)
             length = int(raw)
-            limit = MAX_RIDE_BODY_BYTES if path == RIDE_POST else MAX_BODY_BYTES
+            limit = (MAX_IMPORT_BODY_BYTES if path == RIDE_IMPORT
+                     else MAX_RIDE_BODY_BYTES if path == RIDE_POST else MAX_BODY_BYTES)
             require(0 < length <= limit, "Body size exceeds limit", "body_too_large", 413)
             return length
         return 0
 
     def dispatch(self, method, path, headers, body=b"", port=DEFAULT_PORT):
         length = self.preflight(method, path, headers, port)
-        if urlsplit(path).path in (RIDE_POST, RIDE_LIST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE, RIDE_CHAT, RIDE_LIVE):
+        if urlsplit(path).path in (RIDE_POST, RIDE_LIST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE, RIDE_CHAT, RIDE_LIVE, RIDE_IMPORT):
             self._ride_rate_limit(method)
         if method == "POST" and path == "/api/coach/billing/webhook":
             require(len(body) == length, "Incomplete request body", "invalid_body")
@@ -334,6 +338,8 @@ class App:
             raise ActionError("invalid_json", "Strict UTF-8 JSON required") from None
         if path == RIDE_POST:
             return self._save_ride(payload)
+        if path == RIDE_IMPORT:
+            return self._import_ride(payload)
         if path == RIDE_ROUTE:
             return self._route_ride(payload)
         if path == RIDE_WEEKLY:
@@ -817,6 +823,23 @@ class App:
                     if temporary is not None:
                         temporary.unlink(missing_ok=True)
         return {"status": "saved", "id": session["id"], "storage": "ephemeral"}
+
+    def _import_ride(self, payload):
+        """Build a v3 session from user-exported GPX/TCX text, then store it.
+
+        The builder validates against the same contract as live rides, so the
+        result flows through the standard idempotent save path unchanged.
+        """
+        require(type(payload) is dict and set(payload) == {"data"}, "Expected data only")
+        require(type(payload["data"]) is str, "Expected data as text", "invalid_input")
+        try:
+            session = build_import_session(payload["data"])
+        except ImportBuildError as error:
+            raise ActionError(error.code, str(error), 422) from None
+        existed = (self.ride_dir / (session["id"] + ".json")).exists()
+        result = self._save_ride(session)
+        return {"status": "duplicate" if existed else "saved",
+                "id": result["id"], "source": session["source"]}
 
     def _ride_sessions(self, query):
         """Return newest persisted metadata only, with a strict 1..20 limit."""
