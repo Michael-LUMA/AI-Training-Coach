@@ -251,6 +251,7 @@ const PERSONA = Object.freeze({
   greeting_long:(n)=>n+'天没见了，我还在。',
   greeting_usual:(h,m)=>'你通常'+h+'点出门'+(m!==null?'，一次'+m+'分钟左右':'')+'。',
   greeting_tail:'今天出门吗？',
+  stop_notice:'你停了几分钟了。我不催你——要继续，随时出发。',
   compare_better:(label,amount,unit)=>'我看到'+label+'比上次'+(unit==='分钟' ? '少' : '低')+amount+unit+'。',
   compare_worse:(label,amount,unit)=>'我看到'+label+'比上次'+(unit==='分钟' ? '多' : '高')+amount+unit+'。',
   compare_flat:(label,current,previous,unit)=>'我看到'+label+'变化不超过3%（本次'+current+unit+'，上次'+previous+unit+'）。',
@@ -584,6 +585,8 @@ function distToPathM(lng,lat,path){
 // aggregates. Fixes worse than 30 m accuracy are dropped, never guessed.
 const TRACK_STALE_MS=10000, TRACK_MAX_ACCURACY_M=30, TRACK_CLIP_M=500;
 let trackWatch=null, lastFix=null;
+// Stop-care state: movement timestamps drive one gentle notice per stop episode.
+let prevTrackFix=null, lastMoveAt=null, stopNotifiedAt=null;
 function trackPrefsSave(){try{localStorage.setItem('luma.track',JSON.stringify({enabled:$('track-enabled').checked!==false,uploadNone:$('track-upload-none').checked===true,clip:$('track-clip').checked!==false}));}catch(_){/* tracking never blocks a ride */}}
 function trackPrefsLoad(){try{const p=JSON.parse(localStorage.getItem('luma.track')||'null');if(p&&typeof p==='object'){$('track-enabled').checked=p.enabled!==false;$('track-upload-none').checked=p.uploadNone===true;$('track-clip').checked=p.clip!==false;}}catch(_){/* defaults stay */}}
 function stopTrackWatch(){
@@ -603,6 +606,13 @@ function onTrackFix(position){
   const alt=typeof coords.altitude==='number' && Number.isFinite(coords.altitude) ? coords.altitude : null;
   const spd=typeof coords.speed==='number' && Number.isFinite(coords.speed) && coords.speed>=0 && coords.speed<=30 ? coords.speed : 0;
   lastFix={lat:coords.latitude,lng:coords.longitude,alt,acc,spd,mono:performance.now()};
+  // Movement = displacement beyond GPS jitter; it resets the stop-care episode.
+  if(prevTrackFix){
+    const moved=haversineM(prevTrackFix.lng,prevTrackFix.lat,lastFix.lng,lastFix.lat);
+    const jitter=Math.max(10,prevTrackFix.acc===Infinity?50:prevTrackFix.acc,lastFix.acc===Infinity?50:lastFix.acc);
+    if(moved>=jitter)lastMoveAt=lastFix.mono;
+  }
+  prevTrackFix=lastFix;
   drawTrackLive();
 }
 function trackAttach(point){
@@ -1092,6 +1102,17 @@ function readGoal(){
   return {minutes, km};
 }
 let goalDistCheckedAt = -Infinity;
+// Stop care: one gentle line after three still minutes, only while GPS fixes
+// keep arriving and movement had been seen before (never guesses without data).
+function remindStopCare(){
+  if(!active || lastMoveAt===null || !lastFix || !coachCanSpeak())return;
+  const now=performance.now();
+  if(now-lastFix.mono>60000)return;          // GPS gone quiet: no claim about stopping
+  if(now-lastMoveAt<180000)return;           // still moving, or paused only briefly
+  if(stopNotifiedAt!==null && stopNotifiedAt>=lastMoveAt)return;  // already said it
+  stopNotifiedAt=now;
+  noteAndSpeak(activePersona.stop_notice,'other');
+}
 function checkGoalProgress(){
   if (!active || !goal || !goalState) return;
   // Check speakability before setting one-shot flags: a milestone due while the
@@ -1321,7 +1342,8 @@ function begin(options={}){
   const random = new Uint32Array(4); crypto.getRandomValues(random);
   session = {schema_version:'luma-ride-memory/3', id:'ride-' + [...random].map(n=>n.toString(16).padStart(8,'0')).join(''), started_at:new Date(startedMs).toISOString(), ended_at:null, samples_hz:1, series:[], summary:null, coach_notes:[], persona_version:activePersona.version, source:SIMULATED ? 'simulated' : 'ble_gatt_0x180d', activity:currentActivity()};
   latestCad = null; latestPwr = null; crankPrev = null; drawAuxLive();
-  lastFix=null; startTrackWatch(); drawTrackLive(); drawTrackMap(null);
+  lastFix=null; prevTrackFix=null; lastMoveAt=null; stopNotifiedAt=null;
+  startTrackWatch(); drawTrackLive(); drawTrackMap(null);
   const viewLive=$('view-live');if(viewLive)viewLive.checked=true;
   if(options.source)session.source=options.source;
   if(options.samplesHz)session.samples_hz=options.samplesHz;
@@ -1331,7 +1353,7 @@ function begin(options={}){
   crashState='idle';clearInterval(fallTimer);$('fall-card').hidden=true;
   active = true; void requestScreenLock(); startNavWatch(); liveResetSession(); previous = null; lastSignal = null; gapOpen = false; outsideSince = null; outsideKind = null; lastAlert = -Infinity; alerts = 0; totals = {below:0, within:0, above:0};
   $('lower').disabled = $('upper').disabled = true; $('goal-min').disabled = $('goal-km').disabled = true; $('milestone-interval').disabled = $('fuel-interval').disabled = true; $('activity-select').disabled = true; $('start-ride').disabled = true; $('end-ride').disabled = false; $('timeline').textContent = ''; $('heart-rate').textContent = '—'; $('heart-rate').classList.add('idle'); $('summary').textContent = '记录中，结束后总结。'; drawProfile();
-  timer = setInterval(()=>{if (!active) return; remindFuel(); remindMilestone(); checkGoalProgress(); const s=Math.floor(elapsedSeconds()); $('elapsed').textContent = String(Math.floor(s/60)).padStart(2,'0') + ':' + String(s%60).padStart(2,'0'); if (lastSignal !== null && performance.now()-lastSignal > STALE_MS) markGap();}, 500);
+  timer = setInterval(()=>{if (!active) return; remindFuel(); remindMilestone(); checkGoalProgress(); remindStopCare(); const s=Math.floor(elapsedSeconds()); $('elapsed').textContent = String(Math.floor(s/60)).padStart(2,'0') + ':' + String(s%60).padStart(2,'0'); if (lastSignal !== null && performance.now()-lastSignal > STALE_MS) markGap();}, 500);
 }
 async function connectBLE(){
   if (!window.isSecureContext || !navigator.bluetooth) throw new Error('此浏览器不能连接 BLE：请使用 HTTPS 下的 Android Chrome；iOS Safari 不支持 Web Bluetooth。');

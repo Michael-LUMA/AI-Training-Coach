@@ -1803,3 +1803,33 @@ class GoalLoopUI(RideMemoryUI):
         self.assertEqual(result['both'], {'minutes': 45, 'km': 20})
         self.assertIsNone(result['none'])
         self.assertIsNotNone(result['bad'])
+
+    def test_stop_care_once_per_episode_and_reset_on_movement(self):
+        result = self.run_js("""
+          const idle=async(ms)=>{for(let t=0;t<ms;t+=4000){_geoEmit(116.002,39.0);receiveHR(120);await _advance(4000);}};
+          begin({});
+          _geoEmit(116.0,39.0);receiveHR(120);
+          await _advance(1000);
+          _geoEmit(116.002,39.0);receiveHR(120);
+          await _advance(4000);
+          await idle(190000);
+          const afterFirst=_spoken.filter(s=>s.includes('停了几分钟')).length;
+          await idle(60000);
+          const afterMore=_spoken.filter(s=>s.includes('停了几分钟')).length;
+          _geoEmit(116.004,39.0);receiveHR(120);
+          await _advance(4000);
+          for(let t=0;t<190000;t+=4000){_geoEmit(116.004,39.0);receiveHR(120);await _advance(4000);}
+          const afterSecond=_spoken.filter(s=>s.includes('停了几分钟')).length;
+          return {afterFirst,afterMore,afterSecond};
+        """)
+        self.assertEqual(result['afterFirst'], 1)
+        self.assertEqual(result['afterMore'], 1)
+        self.assertEqual(result['afterSecond'], 2)
+
+    def test_stop_care_silent_without_any_movement(self):
+        result = self.run_js("""
+          begin({});
+          for(let t=0;t<200000;t+=4000){_geoEmit(116.0,39.0);receiveHR(120);await _advance(4000);}
+          return _spoken.filter(s=>s.includes('停了几分钟')).length;
+        """)
+        self.assertEqual(result, 0)
