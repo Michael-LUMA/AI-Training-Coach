@@ -250,7 +250,7 @@ class ChatEndpointTests(unittest.TestCase):
     def test_unconfigured_returns_quiet_template_shape(self):
         self.save()
         result=self.request('/api/coach/ride/chat',{'question':'心率？','session_id':'current'})
-        self.assertEqual(result,{'speech_status':'not_configured','speech':None,'fallback':'template','usage':None})
+        self.assertEqual(result,{'speech_status':'not_configured','speech':None,'fallback':'template','usage':None,'lane':'knowledge'})
         self.post.assert_not_called()
 
     def test_chat_with_session_and_history_aggregation(self):
@@ -315,6 +315,38 @@ class ChatEndpointTests(unittest.TestCase):
         facts=json.loads(json.loads(self.post.call_args.args[0].data)['messages'][1]['content'])
         self.assertIsNone(facts['totals']['distance_km'])
         self.assertIsNone(facts['totals']['month']['distance_km'])
+
+    def test_personal_marker_routes_personal_lane(self):
+        self.save()
+        self.post.return_value=transport('这次平均心率120 bpm。').return_value
+        with patch.dict(os.environ,{'DASHSCOPE_API_KEY':'synthetic-key'}):
+            result=self.request('/api/coach/ride/chat',{'question':'这次心率多少？','session_id':'current'})
+        self.assertEqual((result['speech_status'],result['lane']),('ok','personal'))
+        self.assertEqual(self.post.call_count,1)
+
+    def test_knowledge_question_routes_knowledge_lane(self):
+        cards=self.app.knowledge_cards
+        body=next(card['body'] for card in cards if card['id']=='cadence-basics')
+        self.assertNotRegex(body,r'\d')
+        speech='踏频是曲柄每分钟转动的圈数，和车速不同。（来源：通用运动常识）'
+        self.post.return_value=transport(speech).return_value
+        with patch.dict(os.environ,{'DASHSCOPE_API_KEY':'synthetic-key'}):
+            result=self.request('/api/coach/ride/chat',{'question':'踏频是什么？'})
+        self.assertEqual((result['speech_status'],result['lane']),('ok','knowledge'))
+        self.assertEqual(self.post.call_count,1)
+
+    def test_preferred_lane_failure_falls_through_once(self):
+        # Knowledge question with no matching card falls through to personal.
+        self.post.return_value=transport('这个我没记到。').return_value
+        with patch.dict(os.environ,{'DASHSCOPE_API_KEY':'synthetic-key'}):
+            result=self.request('/api/coach/ride/chat',{'question':'量子力学是什么？'})
+        self.assertEqual((result['speech_status'],result['lane']),('ok','personal'))
+        # Personal rejection falls through to knowledge; still honest template.
+        self.post.return_value=transport('心率999。').return_value
+        with patch.dict(os.environ,{'DASHSCOPE_API_KEY':'synthetic-key'}):
+            result=self.request('/api/coach/ride/chat',{'question':'我这次心率多少？'})
+        self.assertEqual(result['lane'],'knowledge')
+        self.assertEqual(result['speech_status'],'rejected_unverifiable_number')
 
     def test_chat_writes_no_history_to_disk(self):
         self.save()

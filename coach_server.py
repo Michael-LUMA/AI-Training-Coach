@@ -41,6 +41,7 @@ from ride_review import ReviewError
 from ride_memory import validate_session, RideMemoryError
 from ride_brain import build_ride_review
 from ride_chat import build_ride_chat
+from ride_knowledge import build_knowledge_answer, load_cards
 from ride_nav import plan_route
 from ride_weekly import build_ride_weekly, aggregate_ride_weeks, split_week_sessions, weekly_template
 from ride_server import strict_json, dumps
@@ -58,6 +59,8 @@ RIDE_WEEKLY = "/api/coach/ride/weekly"
 RIDE_ROUTE = "/api/coach/ride/route"
 RIDE_CHAT = "/api/coach/ride/chat"
 DEFAULT_PORT = 8794
+_PERSONAL_MARKERS = ("我", "这次", "上次", "最近", "今天", "昨天",
+                     "这周", "本周", "这个月", "本月", "累计")
 
 
 class CoachStore:
@@ -161,6 +164,14 @@ class App:
         self._ride_dir = None
         self._ride_lock = Lock()
         self._ride_requests = {"GET": deque(), "POST": deque()}
+        self._knowledge_cards = None
+
+    @property
+    def knowledge_cards(self):
+        """Curated grounded-knowledge library, loaded once per process."""
+        if self._knowledge_cards is None:
+            self._knowledge_cards = load_cards(ROOT / "knowledge" / "cards_zh_v1.json")
+        return self._knowledge_cards
 
     @property
     def ride_dir(self):
@@ -483,16 +494,32 @@ class App:
                           "distance_km": _kilometers(entries), "month_sessions": len(month_entries),
                           "month_duration_min": _minutes(month_entries),
                           "month_distance_km": _kilometers(month_entries)}
-        result = build_ride_chat(payload["question"],
-                                 session=copy.deepcopy(memory) if memory is not None else None,
-                                 recent_summaries=copy.deepcopy(recent),
-                                 activity_ordinal=ordinal if ordinal else None,
-                                 excluded_simulated=excluded_simulated,
-                                 totals=totals,
-                                 api_key=os.environ.get("DASHSCOPE_API_KEY"), http_post=self.llm_post)
+        # Two lanes, one door: personal-record questions try the private lane
+        # first; everything else tries the grounded knowledge library. The
+        # other lane is consulted once when the preferred one cannot answer.
+        question = payload["question"]
+        prefer_personal = any(marker in question for marker in _PERSONAL_MARKERS)
+        key = os.environ.get("DASHSCOPE_API_KEY")
+
+        def personal():
+            return "personal", build_ride_chat(
+                question, session=copy.deepcopy(memory) if memory is not None else None,
+                recent_summaries=copy.deepcopy(recent),
+                activity_ordinal=ordinal if ordinal else None,
+                excluded_simulated=excluded_simulated, totals=totals,
+                api_key=key, http_post=self.llm_post)
+
+        def knowledge():
+            return "knowledge", build_knowledge_answer(
+                question, self.knowledge_cards, api_key=key, http_post=self.llm_post)
+
+        first, second = (personal, knowledge) if prefer_personal else (knowledge, personal)
+        lane, result = first()
+        if result["llm_status"] != "ok" and result["llm_status"] != "not_configured":
+            lane, result = second()
         return {"speech_status": result["llm_status"],
                 "speech": result["draft"]["speech"] if result["draft"] else None,
-                "fallback": result["fallback"], "usage": result["usage"]}
+                "fallback": result["fallback"], "usage": result["usage"], "lane": lane}
 
     def _weekly_ride(self, payload):
         """Snapshot/aggregate under disk lock; cloud request always outside it.
