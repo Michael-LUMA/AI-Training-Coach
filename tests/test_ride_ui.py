@@ -21,8 +21,14 @@ NODE = shutil.which('node.exe') or (str(cached) if cached.is_file() else shutil.
 HARNESS = r"""
 const fs=require('node:fs'), vm=require('node:vm');
 const input=JSON.parse(fs.readFileSync(0,'utf8'));
-const elements={}, calls=[], spoken=[], debug=[], storage=new Map(), clock={now:0}, intervals=new Map();
+const elements={}, calls=[], spoken=[], debug=[], storage=new Map(), clock={now:0}, intervals=new Map(), _sr=[];
 let nextTimer=0, bleCalls=0;
+class MockSR{
+  constructor(){_sr.push(this);this.lang='';this.interimResults=false;this.maxAlternatives=1;this.started=false;}
+  start(){this.started=true;}
+  stop(){this.started=false;if(this.onend)this.onend();}
+  abort(){this.started=false;}
+}
 for(const match of input.html.matchAll(/<[^>]*\bid="([^"]+)"[^>]*>/g)){
   const tag=match[0];
   elements[match[1]]={textContent:'',value:'',hidden:/\shidden(?:\s|>)/.test(tag),disabled:/\sdisabled(?:\s|>)/.test(tag),
@@ -48,13 +54,14 @@ const sandbox={URLSearchParams,Date,DataView,Uint32Array,Uint8Array,Uint16Array,
   localStorage:{setItem:(k,v)=>storage.set(k,v),getItem:k=>storage.get(k),removeItem:k=>storage.delete(k),key:i=>[...storage.keys()][i],get length(){return storage.size;}},
   setInterval:(fn,ms)=>{const id=++nextTimer;intervals.set(id,{fn,ms,next:clock.now+ms});return id;},clearInterval:id=>intervals.delete(id),setTimeout:()=>1,
   SpeechSynthesisUtterance:function(text){this.text=text;},
-  _elements:elements,_calls:calls,_spoken:spoken,_debug:debug,_options:options,_clock:clock,_storage:storage,
+  _elements:elements,_calls:calls,_spoken:spoken,_debug:debug,_options:options,_clock:clock,_storage:storage,_sr:_sr,
   _geoEmit:(lng,lat)=>{for(const fn of geo.watches.values())fn({coords:{longitude:lng,latitude:lat,accuracy:5}});},
   _geoWatches:()=>geo.watches.size,
   _bleCalls:()=>bleCalls,_flush:()=>new Promise(resolve=>setImmediate(resolve)),
   _advance:async(ms)=>{const end=clock.now+ms;while(true){let nextId=null,next=null;for(const [id,item] of intervals){if(item.next<=end && (!next || item.next<next.next)){nextId=id;next=item;}}if(!next)break;clock.now=next.next;next.next+=next.ms;next.fn();await Promise.resolve();}clock.now=end;await new Promise(resolve=>setImmediate(resolve));}};
 sandbox.window={isSecureContext:true,SpeechSynthesisUtterance:sandbox.SpeechSynthesisUtterance,
   speechSynthesis:{cancel(){},speak:utterance=>spoken.push(utterance.text)},addEventListener(){}};
+if(options.sr){sandbox.window.SpeechRecognition=MockSR;sandbox.window.webkitSpeechRecognition=MockSR;}
 sandbox.fetch=async(url,init={})=>{
   calls.push({url,...init});
   if(url==='/api/coach/config'){
@@ -113,7 +120,7 @@ class RideMemoryUI(unittest.TestCase):
         return json.loads(result.stdout)
 
     def test_page_strings_and_existing_csp_with_mock_store(self):
-        for text in ('Mark 的记忆', '这不算趋势', '听 Mark 说', 'ride-persona/15', "name:'Mark'",
+        for text in ('Mark 的记忆', '这不算趋势', '听 Mark 说', 'ride-persona/16', "name:'Mark'",
                      'recall:', 'recall_no_history:', 'compare_better:', 'compare_worse:',
                      'compare_flat:', 'no_compare:', '两次记录还说明不了趋势', 'Record only. Not medical advice.'):
             with self.subTest(text=text):
@@ -160,7 +167,7 @@ class RideMemoryUI(unittest.TestCase):
         result = self.run_js("await $('start-ride').click(); return {spoken:_spoken,version:session.persona_version};", history=[metadata()], simulate=True)
         self.assertEqual(len(result['spoken']), 1)
         self.assertIn('我记得', result['spoken'][0])
-        self.assertEqual(result['version'], 'ride-persona/15')
+        self.assertEqual(result['version'], 'ride-persona/16')
         result = self.run_js("$('memory-listen').click(); await $('start-ride').click(); return _spoken;", history=[metadata()], simulate=True)
         self.assertEqual(len(result), 2)
         self.assertIn('我记得', result[0])
@@ -275,7 +282,7 @@ class RideMemoryUI(unittest.TestCase):
 
 
     def test_demo_strings_source_notice_and_version(self):
-        for text in ('demo_notice:', 'demo_start:', '看 Mark 演示', 'ride-persona/15',
+        for text in ('demo_notice:', 'demo_start:', '看 Mark 演示', 'ride-persona/16',
                      '这是一段合成的 45 分钟骑行，90 秒放完', 'Mark 说的每句话都是真实逻辑，数据是假的。'):
             self.assertIn(text,self.html)
         result=self.run_js("return {notice:$('demo-notice').textContent,hidden:$('demo-notice').hidden,button:$('demo-start').hidden,bar:$('simulated-banner').hidden,startDisabled:$('start-ride').disabled,spoken:_spoken};",demo=True)
@@ -295,7 +302,7 @@ class RideMemoryUI(unittest.TestCase):
         """,demo=True)
         from ride_memory import validate_session
         item=validate_session(result['uploaded'])
-        self.assertEqual(item['source'],'simulated');self.assertEqual(item['persona_version'],'ride-persona/15')
+        self.assertEqual(item['source'],'simulated');self.assertEqual(item['persona_version'],'ride-persona/16')
         self.assertEqual(item['summary']['duration_s'],2700)
         self.assertEqual(item['series'][-1]['t'],2700)
         self.assertEqual(item['samples_hz'],1/30)
@@ -424,7 +431,7 @@ class RideMemoryUI(unittest.TestCase):
             self.assertEqual(result['inputs'],[lower,upper])
 
     def test_s5_strings_and_manifest_link(self):
-        for text in ("wakelock_unavailable:", "fuel:(minutes)=>", "fuel_again:", "ride-persona/15",
+        for text in ("wakelock_unavailable:", "fuel:(minutes)=>", "fuel_again:", "ride-persona/16",
                      "分钟了，喝口水、补点吃的。", "又到补给的点了，别忘了喝。",
                      'rel="manifest"', "ride.webmanifest"):
             with self.subTest(text=text):
@@ -480,7 +487,7 @@ class RideMemoryUI(unittest.TestCase):
         self.assertTrue(result['active'])
 
     def test_s7_strings_milestone_gpx_and_ducking(self):
-        for text in ("milestone:", "milestone_compare_flat:", "ride-persona/15",
+        for text in ("milestone:", "milestone_compare_flat:", "ride-persona/16",
                      "buildRideGpx", "下载 GPX 备份", "audioSession", "signal_gap",
                      "不能直接导入需要 GPS 轨迹的平台"):
             with self.subTest(text=text):
@@ -653,7 +660,7 @@ class RideMemoryUI(unittest.TestCase):
         self.assertTrue(result['survived'])
 
     def test_fall_detection_strings_and_ui(self):
-        for text in ('fall_alert:', 'fall_cancel:', 'fall_alarm:', 'ride-persona/15',
+        for text in ('fall_alert:', 'fall_cancel:', 'fall_alarm:', 'ride-persona/16',
                      'crash-detect', 'fall-card', 'fall-ok', '跌倒检测（实验）',
                      '不是可靠的安全设备', 'devicemotion'):
             with self.subTest(text=text):
@@ -730,7 +737,7 @@ class RideMemoryUI(unittest.TestCase):
         self.assertTrue(result['cardHidden'])
 
     def test_s9_strings_aux_ui_and_version(self):
-        for text in ('ride-persona/15', 'connect-aux', 'parseCadence', 'parsePower',
+        for text in ('ride-persona/16', 'connect-aux', 'parseCadence', 'parsePower',
                      '0x1816', '0x2A5B', '0x1818', '0x2A63', 'milestone_power:', 'luma-ride-memory/2'):
             with self.subTest(text=text):
                 self.assertIn(text, self.html)
@@ -802,7 +809,7 @@ class RideMemoryUI(unittest.TestCase):
                  'summary': {'duration_s': 6, 'avg_hr': 121, 'max_hr': 122, 'time_in_zone_s': None,
                              'zone_target': None, 'gaps': 0, 'alerts': 0,
                              'avg_cadence': 90, 'avg_power': 210, 'max_power': 210},
-                 'coach_notes': ['x'], 'persona_version': 'ride-persona/15', 'source': 'simulated'}
+                 'coach_notes': ['x'], 'persona_version': 'ride-persona/16', 'source': 'simulated'}
         self.assertEqual(validate_session(check)['summary']['avg_power'], 210)
 
     def test_milestone_mentions_power_and_cadence_when_present(self):
@@ -911,7 +918,7 @@ class RideMemoryUI(unittest.TestCase):
         from ride_memory import validate_session
         item = validate_session(result['local'])
         self.assertEqual(item['activity'], 'ride')  # default scene label
-        self.assertEqual(item['persona_version'], 'ride-persona/15')
+        self.assertEqual(item['persona_version'], 'ride-persona/16')
         self.assertGreater(item['summary']['ascent_m'], 100)  # synthetic hill loop climbed
         alts = [p['alt'] for p in item['series'] if 'alt' in p]
         self.assertGreater(len(alts), 80)
@@ -984,7 +991,7 @@ class RideNavUI(RideMemoryUI):
                      'nav-voice', 'wgs84ToGcj02', 'outOfChina', 'haversineM', 'NAV_TURN_M',
                      'distToPathM', 'distToSegmentM', 'NAV_ON_ROUTE_M', 'NAV_OFF_ROUTE_M',
                      'nav_offroute', '好像偏航了', '回到路线上了',
-                     '/api/coach/ride/route', 'ride-persona/15', '偏航不会自动重算',
+                     '/api/coach/ride/route', 'ride-persona/16', '偏航不会自动重算',
                      '不写入骑行记录', '高德'):
             with self.subTest(text=text):
                 self.assertIn(text, self.html)
@@ -1284,9 +1291,74 @@ class ChatCardUI(RideMemoryUI):
     def test_chat_copy_pinned(self):
         for text in ('问 Mark', '问问这次记录…', 'chat_fallback',
                      '这个我现在答不上来，等我记到更多数据再聊。',
-                     'chat-input', 'chat-send', 'chat-answer', 'chat-card', 'ride-persona/15'):
+                     'chat-input', 'chat-send', 'chat-answer', 'chat-card', 'ride-persona/16',
+                     'chat-mic', 'chat-listen', 'chat_listening', '在听…', '听回答'):
             with self.subTest(text=text):
                 self.assertIn(text, self.html)
+
+    def test_mic_hidden_without_speech_recognition(self):
+        result = self.run_js("return $('chat-mic').hidden;")
+        self.assertTrue(result)
+
+    def test_voice_question_transcribes_and_sends(self):
+        result = self.run_js("""
+          await $('chat-mic').click();
+          const r=_sr[0];
+          const micText=$('chat-mic').textContent;
+          const res=[{transcript:'这次心率多少'}];res.isFinal=true;
+          r.onresult({resultIndex:0,results:[res]});
+          r.onend();
+          await _flush();
+          const call=_calls.find(c=>c.url==='/api/coach/ride/chat');
+          return {started:r.started,micText:micText,micAfter:$('chat-mic').textContent,
+                  input:$('chat-input').value,answer:$('chat-answer').textContent,
+                  body:call?JSON.parse(call.body):null};
+        """, sr=True, chat={'speech_status':'ok','speech':'这次平均心率120。','fallback':None,'usage':None})
+        self.assertTrue(result['started'])
+        self.assertEqual(result['micText'], '在听…')
+        self.assertEqual(result['micAfter'], '说')
+        self.assertEqual(result['input'], '这次心率多少')
+        self.assertEqual(result['body'], {'question': '这次心率多少'})
+        self.assertEqual(result['answer'], '这次平均心率120。')
+
+    def test_interim_transcript_not_sent_until_final(self):
+        result = self.run_js("""
+          await $('chat-mic').click();
+          const r=_sr[0];
+          const res=[{transcript:'这次'}];res.isFinal=false;
+          r.onresult({resultIndex:0,results:[res]});
+          const interim=$('chat-input').value;
+          const sentBefore=_calls.some(c=>c.url==='/api/coach/ride/chat');
+          r.onend();
+          await _flush();
+          return {interim:interim,sentBefore:sentBefore,
+                  sentAfter:_calls.some(c=>c.url==='/api/coach/ride/chat')};
+        """, sr=True, chat={'speech_status':'ok','speech':'好。','fallback':None,'usage':None})
+        self.assertFalse(result['sentBefore'])
+        self.assertFalse(result['sentAfter'])  # no final transcript, nothing auto-sent
+
+    def test_listen_button_speaks_the_answer(self):
+        result = self.run_js("""
+          $('chat-input').value='这次心率多少？';
+          await $('chat-send').click();
+          await _flush();
+          const listenHidden=$('chat-listen').hidden;
+          $('chat-listen').click();
+          return {listenHidden:listenHidden,spoken:_spoken};
+        """, chat={'speech_status':'ok','speech':'这次平均心率120。','fallback':None,'usage':None})
+        self.assertFalse(result['listenHidden'])
+        self.assertEqual(result['spoken'], ['这次平均心率120。'])
+
+    def test_recognition_error_restores_mic(self):
+        result = self.run_js("""
+          await $('chat-mic').click();
+          const r=_sr[0];
+          r.onerror({error:'not-allowed'});
+          return {micText:$('chat-mic').textContent,
+                  sent:_calls.some(c=>c.url==='/api/coach/ride/chat')};
+        """, sr=True)
+        self.assertEqual(result['micText'], '说')
+        self.assertFalse(result['sent'])
 
 
 if __name__ == '__main__':
