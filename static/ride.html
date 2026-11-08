@@ -656,7 +656,7 @@ async function planNav(){
     if(!coords || typeof coords.longitude!=='number' || typeof coords.latitude!=='number'){navStatus(activePersona.nav_geo_failed);return;}
     const converted=wgs84ToGcj02(coords.longitude,coords.latitude);
     if(!token)await getToken();
-    const response=await fetch('/api/coach/ride/route',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify({origin:converted[0].toFixed(6)+','+converted[1].toFixed(6),destination_address:destination})});
+    const response=await fetch('/api/coach/ride/route',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify({origin:converted[0].toFixed(6)+','+converted[1].toFixed(6),destination_address:destination,mode:currentActivity()==='hike'?'walking':'bicycling'})});
     const result=await response.json().catch(()=>null);
     if(!response.ok || !result || typeof result.route_status!=='string'){navStatus(activePersona.nav_upstream);return;}
     if(result.route_status!=='ok'){navStatus(PERSONA['nav_'+result.route_status] || activePersona.nav_upstream);return;}

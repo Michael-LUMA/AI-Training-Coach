@@ -1027,6 +1027,24 @@ class RideNavUI(RideMemoryUI):
         self.assertRegex(result['body']['origin'], r'^116\.40[0-9]+,39\.90[0-9]+$')  # GCJ-02 shifted, not raw WGS-84
         self.assertNotEqual(result['body']['origin'], '116.397000,39.908000')
 
+    def test_plan_mode_follows_activity_scene(self):
+        hike = self.run_js("""
+          $('activity-select').value='hike';
+          $('nav-destination').value='天安门';
+          await $('nav-plan').click();
+          const call=_calls.find(c=>c.url==='/api/coach/ride/route');
+          return {mode:JSON.parse(call.body).mode};
+        """, route=self.ROUTE)
+        self.assertEqual(hike['mode'], 'walking')
+        ride = self.run_js("""
+          $('activity-select').value='ride';
+          $('nav-destination').value='天安门';
+          await $('nav-plan').click();
+          const call=_calls.find(c=>c.url==='/api/coach/ride/route');
+          return {mode:JSON.parse(call.body).mode};
+        """, route=self.ROUTE)
+        self.assertEqual(ride['mode'], 'bicycling')
+
     def test_plan_status_mapping(self):
         cases = [('not_configured', '还没有配置'), ('key_rejected', '钥匙被拒绝'),
                  ('quota_exceeded', '额度用完'), ('address_not_found', '没找到这个目的地'),

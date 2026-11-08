@@ -645,6 +645,60 @@ class CoachServerTests(unittest.TestCase):
         self.assertNotIn('synthetic-secret-amap-key', json.dumps(result))
         self.assertFalse(self.calls)
 
+    def test_ride_route_walking_mode_hits_walking_endpoint(self):
+        seen = []
+
+        def nav_get(request, *, timeout):
+            seen.append(request.full_url)
+            if 'geocode' in request.full_url:
+                return 200, {}, json.dumps({'status': '1', 'geocodes': [
+                    {'formatted_address': '北京市东城区天安门', 'location': '116.397477,39.908692'}]}).encode()
+            return 200, {}, json.dumps({'status': '1', 'info': 'OK', 'route': {'paths': [
+                {'distance': '5231', 'duration': '3600', 'steps': [
+                    {'instruction': '向东步行200米右转', 'road': '长安街', 'distance': '200',
+                     'polyline': '116.390,39.908;116.392,39.908'}]}]}}).encode()
+
+        self.app.nav_get = nav_get
+        key_env = patch.dict('os.environ', {'AMAP_API_KEY': 'synthetic-secret-amap-key'})
+        key_env.start(); self.addCleanup(key_env.stop)
+        result = self.request('/api/coach/ride/route', {'origin': '116.397,39.908',
+                                                        'destination_address': '天安门', 'mode': 'walking'})
+        self.assertEqual(result['route_status'], 'ok')
+        self.assertEqual(result['distance_m'], 5231)
+        self.assertIs(type(result['duration_s']), int)
+        self.assertIn('/v3/direction/walking', seen[1])
+        self.assertNotIn('synthetic-secret-amap-key', json.dumps(result))
+
+    def test_ride_route_default_mode_stays_bicycling(self):
+        seen = []
+
+        def nav_get(request, *, timeout):
+            seen.append(request.full_url)
+            if 'geocode' in request.full_url:
+                return 200, {}, json.dumps({'status': '1', 'geocodes': [
+                    {'formatted_address': '北京市东城区天安门', 'location': '116.397477,39.908692'}]}).encode()
+            return 200, {}, json.dumps({'errcode': 0, 'data': {'paths': [
+                {'distance': 5231, 'duration': 1800, 'steps': [
+                    {'instruction': '向东骑行200米右转', 'road': '长安街', 'distance': 200,
+                     'polyline': '116.390,39.908;116.392,39.908'}]}]}}).encode()
+
+        self.app.nav_get = nav_get
+        key_env = patch.dict('os.environ', {'AMAP_API_KEY': 'synthetic-secret-amap-key'})
+        key_env.start(); self.addCleanup(key_env.stop)
+        result = self.request('/api/coach/ride/route', {'origin': '116.397,39.908', 'destination_address': '天安门'})
+        self.assertEqual(result['route_status'], 'ok')
+        self.assertIn('/v4/direction/bicycling', seen[1])
+
+    def test_ride_route_invalid_mode_rejected_without_upstream(self):
+        self.app.nav_get = Mock(side_effect=AssertionError('No upstream for invalid mode'))
+        key_env = patch.dict('os.environ', {'AMAP_API_KEY': 'synthetic-secret-amap-key'})
+        key_env.start(); self.addCleanup(key_env.stop)
+        for bad in ('flying', '', 123, None, True):
+            with self.subTest(mode=bad):
+                self.error('invalid_input', lambda: self.request('/api/coach/ride/route',
+                           {'origin': '116.397,39.908', 'destination_address': '天安门', 'mode': bad}))
+        self.app.nav_get.assert_not_called()
+
     def test_ride_route_not_configured_without_env_key(self):
         self.app.nav_get = Mock(side_effect=AssertionError('Upstream must not be called without a key'))
         with patch.dict('os.environ') as env:

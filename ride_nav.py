@@ -1,6 +1,6 @@
-"""AMap (Gaode) geocoding + bicycling directions; the key never leaves the server.
+"""AMap (Gaode) geocoding + bicycling/walking directions; the key never leaves the server.
 
-中文摘要：只做地址解析与骑行路径规划的归一化转发；key 由调用方显式提供，
+中文摘要：只做地址解析与骑行/步行路径规划的归一化转发；key 由调用方显式提供，
 永不写入任何返回、日志或持久化；上游形状全部防御性解析，失败只给状态码。
 Transport contract: http_get(request, *, timeout) -> (status, headers, bytes).
 No environment key lookup: the caller supplies api_key explicitly. Never retry.
@@ -17,6 +17,7 @@ from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_ope
 
 GEOCODE_ENDPOINT = "https://restapi.amap.com/v3/geocode/geo"
 DIRECTION_ENDPOINT = "https://restapi.amap.com/v4/direction/bicycling"
+WALKING_ENDPOINT = "https://restapi.amap.com/v3/direction/walking"
 TIMEOUT_S = 10
 MAX_RESPONSE_BYTES = 256 * 1024
 MAX_STEPS = 500
@@ -162,17 +163,34 @@ def _geocode(address: str, api_key: str, http_get) -> tuple[str, tuple[float, fl
     return "ok", point, label
 
 
-def _direction(origin: str, destination: str, api_key: str, http_get) -> dict:
-    url = DIRECTION_ENDPOINT + "?" + urlencode({"key": api_key, "origin": origin, "destination": destination})
+def _walking_meters(value: Any) -> int | None:
+    # v3 returns decimal strings; retain the same finite/range checks as v4.
+    if type(value) is str:
+        if not re.fullmatch(r"[0-9]{1,9}", value):
+            return None
+        value = int(value)
+    return _meters(value)
+
+
+def _direction(origin: str, destination: str, api_key: str, http_get, *, mode: str) -> dict:
+    walking = mode == "walking"
+    endpoint = WALKING_ENDPOINT if walking else DIRECTION_ENDPOINT
+    params = {"key": api_key, "origin": origin, "destination": destination}
+    if walking:
+        params["output"] = "json"
+    url = endpoint + "?" + urlencode(params)
     fetched = _fetch_json(url, http_get)
     if fetched is None:
         return _result("upstream_error")
     status, envelope = fetched
     if status != 200 or type(envelope) is not dict:
         return _result("upstream_error")
-    if envelope.get("errcode") != 0:
+    if walking:
+        if envelope.get("status") != "1":
+            return _result(_status_for(envelope.get("infocode")))
+    elif envelope.get("errcode") != 0:
         return _result(_status_for(envelope.get("errcode")))
-    data = envelope.get("data")
+    data = envelope.get("route" if walking else "data")
     paths = data.get("paths") if type(data) is dict else None
     if type(paths) is not list:
         return _result("upstream_error")
@@ -181,8 +199,9 @@ def _direction(origin: str, destination: str, api_key: str, http_get) -> dict:
     path = paths[0]
     if type(path) is not dict:
         return _result("upstream_error")
-    distance_m = _meters(path.get("distance"))
-    duration_s = _meters(path.get("duration"))
+    number = _walking_meters if walking else _meters
+    distance_m = number(path.get("distance"))
+    duration_s = number(path.get("duration"))
     raw_steps = path.get("steps")
     if distance_m is None or duration_s is None or type(raw_steps) is not list or not raw_steps:
         return _result("upstream_error")
@@ -195,7 +214,7 @@ def _direction(origin: str, destination: str, api_key: str, http_get) -> dict:
             return _result("upstream_error")
         instruction = _text(raw.get("instruction"), required=True)
         road = _text(raw.get("road"), required=False)
-        step_m = _meters(raw.get("distance"))
+        step_m = number(raw.get("distance"))
         polyline = raw.get("polyline")
         if instruction is None or road is None or step_m is None or type(polyline) is not str:
             return _result("upstream_error")
@@ -220,14 +239,15 @@ def _direction(origin: str, destination: str, api_key: str, http_get) -> dict:
 
 
 def plan_route(origin: Any, destination_address: Any, *, api_key: str | None,
-               http_get: Callable[..., tuple[int, Mapping[str, str], bytes]] | None = None) -> dict:
-    """Plan one bicycling route from a GCJ-02 origin to a free-text address.
+               mode: str = "bicycling", http_get: Callable[..., tuple[int, Mapping[str, str], bytes]] | None = None) -> dict:
+    """Plan one bicycling or walking route from a GCJ-02 origin to a free-text address.
 
     Args:
         origin: "lng,lat" string in GCJ-02 (the client converts browser GPS).
         destination_address: 1..100 visible characters; control characters rejected.
         api_key: Explicit printable ASCII AMap Web-service key; None/blank means
             not configured. This module never reads environment variables.
+        mode: "bicycling" (default, v4) or "walking" (v3).
         http_get: Optional offline transport receiving a urllib Request and keyword
             timeout=10, returning (HTTP status, headers mapping, body bytes).
     Returns:
@@ -243,6 +263,8 @@ def plan_route(origin: Any, destination_address: Any, *, api_key: str | None,
         >>> plan_route('116.397,39.908', '天安门', api_key=None)['route_status']
         'not_configured'
     """
+    if type(mode) is not str or mode not in ("bicycling", "walking"):
+        return _result("invalid_input")
     if type(origin) is not str or _coordinate(origin) is None:
         return _result("invalid_input")
     if (type(destination_address) is not str or _CONTROL.search(destination_address)
@@ -259,7 +281,7 @@ def plan_route(origin: Any, destination_address: Any, *, api_key: str | None,
     if status != "ok":
         return _result(status)
     destination = f"{point[0]:.6f},{point[1]:.6f}"
-    route = _direction(origin.strip(), destination, api_key, transport)
+    route = _direction(origin.strip(), destination, api_key, transport, mode=mode)
     if route["route_status"] == "ok":
         route["destination"] = label
     return route

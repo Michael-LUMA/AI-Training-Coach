@@ -1,4 +1,4 @@
-﻿"""Offline ride-service tests: temporary SQLite, fake requests, no bound sockets.
+"""Offline ride-service tests: temporary SQLite, fake requests, no bound sockets.
 
 All fixture uploads are synthetic. ICS uses explicit version-bound authorization;
 HTTP handler checks use memory streams and never bind real sockets.
@@ -12,6 +12,7 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -455,9 +456,12 @@ class RideServerTests(unittest.TestCase):
     def test_independent_sqlite_and_default_path_never_touch_action_store(self):
         action_path = self.root / 'action-pilot' / 'actions.sqlite3'
         action_path.parent.mkdir()
-        with sqlite3.connect(action_path) as db:
-            db.execute('CREATE TABLE actions (marker TEXT)')
-            db.execute('INSERT INTO actions VALUES (?)', ('sentinel-do-not-change',))
+        # `with sqlite3.connect()` never closes the connection; on Windows an open
+        # handle blocks tempdir cleanup, so close explicitly via closing().
+        with closing(sqlite3.connect(action_path)) as db:
+            with db:
+                db.execute('CREATE TABLE actions (marker TEXT)')
+                db.execute('INSERT INTO actions VALUES (?)', ('sentinel-do-not-change',))
         before = action_path.read_bytes()
         connect = sqlite3.connect
         with patch.object(ActionStore, 'connect', side_effect=AssertionError('action store forbidden')):

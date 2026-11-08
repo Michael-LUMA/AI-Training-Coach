@@ -432,11 +432,15 @@ class App:
                 "week": public_week(facts["week"]), "previous_week": public_week(facts["previous_week"])}
 
     def _route_ride(self, payload):
-        """Proxy one bicycling plan; the provider key never reaches the client."""
-        require(type(payload) is dict and set(payload) == {"origin", "destination_address"},
+        """Proxy one bicycling/walking plan; the provider key never reaches the client."""
+        require(type(payload) is dict and set(payload) in ({"origin", "destination_address"},
+                {"origin", "destination_address", "mode"}),
                 "Expected origin and destination_address only")
+        mode = payload.get("mode", "bicycling")
+        require(type(mode) is str and mode in ("bicycling", "walking"), "Invalid mode")
         result = plan_route(payload["origin"], payload["destination_address"],
-                            api_key=os.environ.get("AMAP_API_KEY"), http_get=self.nav_get)
+                            api_key=os.environ.get("AMAP_API_KEY"), http_get=self.nav_get,
+                            mode=mode)
         require(result["route_status"] != "invalid_input", "Invalid origin or destination_address")
         return result
 

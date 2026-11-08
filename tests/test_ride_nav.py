@@ -229,5 +229,144 @@ class TransportFailures(unittest.TestCase):
                 self.assertNotIn(KEY, json.dumps(result, ensure_ascii=False))
 
 
+
+class WalkingDirectionMapping(unittest.TestCase):
+    def direction(self, **changes):
+        path = {'distance': '5231', 'duration': '3600', 'steps': [
+            {'instruction': '向东步行200米右转', 'road': '长安街', 'distance': '200',
+             'polyline': '116.390,39.908;116.392,39.908'},
+            {'instruction': '步行至终点', 'distance': '5031',
+             'polyline': '116.392,39.908;116.397477,39.908692'}]}
+        path.update(changes)
+        return {'status': '1', 'info': 'OK', 'infocode': '10000', 'route': {'paths': [path]}}
+
+    def plan(self, direction, **kwargs):
+        transport = fake_transport([(200, GEOCODE_OK), (200, direction)])
+        result = ride_nav.plan_route('116.397,39.908', '天安门', api_key=KEY,
+                                     mode='walking', http_get=transport, **kwargs)
+        self.assertNotIn(KEY, json.dumps(result, ensure_ascii=False))
+        return result, transport
+
+    def test_walking_endpoint_and_normalized_contract(self):
+        from urllib.parse import parse_qs, urlsplit
+        result, transport = self.plan(self.direction())
+        self.assertEqual(result, {
+            'route_status': 'ok', 'distance_m': 5231, 'duration_s': 3600,
+            'destination': '北京市东城区天安门', 'steps': [
+                {'instruction': '向东步行200米右转', 'road': '长安街', 'distance_m': 200,
+                 'end_lng': 116.392, 'end_lat': 39.908,
+                 'path': [[116.390, 39.908], [116.392, 39.908]]},
+                {'instruction': '步行至终点', 'road': '', 'distance_m': 5031,
+                 'end_lng': 116.397477, 'end_lat': 39.908692,
+                 'path': [[116.392, 39.908], [116.397477, 39.908692]]}]})
+        self.assertIs(type(result['distance_m']), int)
+        self.assertIs(type(result['duration_s']), int)
+        self.assertTrue(all(type(step['distance_m']) is int for step in result['steps']))
+        self.assertEqual(len(transport.calls), 2)
+        request = transport.calls[1]
+        parsed = urlsplit(request.full_url)
+        self.assertEqual((parsed.scheme, parsed.netloc, parsed.path),
+                         ('https', 'restapi.amap.com', '/v3/direction/walking'))
+        self.assertEqual(parse_qs(parsed.query), {
+            'key': [KEY], 'origin': ['116.397,39.908'],
+            'destination': ['116.397477,39.908692'], 'output': ['json']})
+        self.assertEqual(request.get_method(), 'GET')
+
+    def test_bicycling_default_and_explicit_mode_are_identical(self):
+        results = []
+        for options in ({}, {'mode': 'bicycling'}):
+            transport = fake_transport([(200, GEOCODE_OK), (200, DIRECTION_OK)])
+            result = ride_nav.plan_route('116.397,39.908', '天安门', api_key=KEY,
+                                         http_get=transport, **options)
+            self.assertEqual(result['route_status'], 'ok')
+            self.assertNotIn(KEY, json.dumps(result, ensure_ascii=False))
+            self.assertTrue(transport.calls[1].full_url.startswith(
+                'https://restapi.amap.com/v4/direction/bicycling?'))
+            results.append((result, transport.calls[1].full_url))
+        self.assertEqual(results[0], results[1])
+
+    def test_invalid_modes_never_call_upstream_even_without_key(self):
+        for mode in (None, '', 'driving', 'Walking', 'walking ', True, 1, [], {}):
+            for key in (KEY, None):
+                with self.subTest(mode=mode, key_configured=key is not None):
+                    transport = fake_transport([])
+                    result = ride_nav.plan_route('116.397,39.908', '天安门', api_key=key,
+                                                 mode=mode, http_get=transport)
+                    self.assertEqual(result, {'route_status': 'invalid_input'})
+                    self.assertFalse(transport.calls)
+
+    def test_walking_step_count_cap_rejects_instead_of_returning_partial_route(self):
+        step = self.direction()['route']['paths'][0]['steps'][0]
+        result, _ = self.plan(self.direction(steps=[step] * (ride_nav.MAX_STEPS + 1)))
+        self.assertEqual(result, {'route_status': 'route_too_complex'})
+
+    def test_walking_step_point_cap(self):
+        step = self.direction()['route']['paths'][0]['steps'][0]
+        step['polyline'] = ';'.join(['116.1,39.9'] * ride_nav.MAX_STEP_POINTS)
+        result, _ = self.plan(self.direction(steps=[step]))
+        self.assertEqual(result['route_status'], 'ok')
+        self.assertEqual(len(result['steps'][0]['path']), ride_nav.MAX_STEP_POINTS)
+        step['polyline'] += ';116.1,39.9'
+        result, _ = self.plan(self.direction(steps=[step]))
+        self.assertEqual(result, {'route_status': 'upstream_error'})
+
+    def test_walking_total_point_cap(self):
+        step = self.direction()['route']['paths'][0]['steps'][0]
+        step['polyline'] = ';'.join(['116.1,39.9'] * ride_nav.MAX_STEP_POINTS)
+        count = ride_nav.MAX_TOTAL_POINTS // ride_nav.MAX_STEP_POINTS
+        result, _ = self.plan(self.direction(steps=[step] * count))
+        self.assertEqual(result['route_status'], 'ok')
+        self.assertEqual(sum(len(step['path']) for step in result['steps']), ride_nav.MAX_TOTAL_POINTS)
+        result, _ = self.plan(self.direction(steps=[step] * (count + 1)))
+        self.assertEqual(result, {'route_status': 'route_too_complex'})
+
+    def test_walking_bad_shapes_and_numbers_are_rejected(self):
+        fixtures = [None, [], {}, {'status': '1'}, {'status': '1', 'route': []},
+                    {'status': '1', 'route': {'paths': 'bad'}},
+                    {'status': '1', 'route': {'paths': [None]}}]
+        for field in ('distance', 'duration'):
+            for value in ('-1', '1.5', 'NaN', 'Infinity', '100000001', '', '1e3', True, [], None):
+                fixtures.append(self.direction(**{field: value}))
+        for field, value in (('distance', 'bad'), ('polyline', 'bad'), ('instruction', None)):
+            payload = self.direction()
+            payload['route']['paths'][0]['steps'][0][field] = value
+            fixtures.append(payload)
+        for payload in fixtures:
+            with self.subTest(payload=payload):
+                result, _ = self.plan(payload)
+                self.assertEqual(result, {'route_status': 'upstream_error'})
+
+    def test_walking_no_route_and_numeric_error_mapping_do_not_echo_messages(self):
+        result, _ = self.plan({'status': '1', 'route': {'paths': []}})
+        self.assertEqual(result, {'route_status': 'no_route'})
+        for code, expected in (('10001', 'key_rejected'), ('10009', 'key_rejected'),
+                               ('10003', 'quota_exceeded'), ('10044', 'quota_exceeded'),
+                               ('10005', 'upstream_error'), (KEY, 'upstream_error')):
+            with self.subTest(code=code):
+                result, _ = self.plan({'status': '0', 'infocode': code, 'info': 'key=' + KEY})
+                self.assertEqual(result, {'route_status': expected})
+
+    def test_walking_redirect_and_transport_errors_do_not_echo_key(self):
+        for status, payload in ((302, {'location': 'https://evil.invalid/?key=' + KEY}),
+                                (500, {'info': KEY})):
+            with self.subTest(status=status):
+                transport = fake_transport([(200, GEOCODE_OK), (status, payload)])
+                result = ride_nav.plan_route('116.397,39.908', '天安门', api_key=KEY,
+                                             mode='walking', http_get=transport)
+                self.assertEqual(result, {'route_status': 'upstream_error'})
+                self.assertEqual(len(transport.calls), 2)
+        request = Request('https://restapi.amap.com/v3/direction/walking?key=' + KEY)
+        self.assertIsNone(ride_nav._NoRedirect().redirect_request(
+            request, None, 302, 'redirect', {}, 'https://evil.invalid/'))
+
+    def test_walking_does_not_read_key_from_environment(self):
+        from unittest.mock import patch
+        with patch.dict('os.environ', {'AMAP_API_KEY': KEY}):
+            transport = fake_transport([])
+            result = ride_nav.plan_route('116.397,39.908', '天安门', api_key=None,
+                                         mode='walking', http_get=transport)
+        self.assertEqual(result, {'route_status': 'not_configured'})
+        self.assertFalse(transport.calls)
+
 if __name__ == '__main__':
     unittest.main()
