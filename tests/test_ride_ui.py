@@ -64,6 +64,13 @@ sandbox.window={isSecureContext:true,SpeechSynthesisUtterance:sandbox.SpeechSynt
 if(options.sr){sandbox.window.SpeechRecognition=MockSR;sandbox.window.webkitSpeechRecognition=MockSR;}
 sandbox.fetch=async(url,init={})=>{
   calls.push({url,...init});
+  // Token discipline: any authenticated call bearing a literal "undefined"
+  // header fails the way the real server would — catches getToken() usages
+  // that read the missing return value instead of the global.
+  const auth=(init.headers||{})['X-Coach-Token'];
+  if(url!=='/api/coach/config' && (auth===undefined||String(auth)==='undefined')){
+    return {ok:false,status:403,json:async()=>({error_code:'token_denied'})};
+  }
   if(url==='/api/coach/config'){
     if(options.configFail)throw new Error('config offline');
     return {ok:true,status:200,json:async()=>({token:'synthetic-ui-token'})};
@@ -139,6 +146,9 @@ class RideMemoryUI(unittest.TestCase):
                          ['/api/coach/config', '/api/coach/ride/sessions',
                           '/api/coach/config', '/api/coach/ride/notes'])
         self.assertEqual(result['calls'][1]['headers']['X-Coach-Token'], 'synthetic-ui-token')
+        # Regression: every helper that awaits getToken() must use its return —
+        # a literal "undefined" header here once broke import/weather/notes live.
+        self.assertEqual(result['calls'][3]['headers']['X-Coach-Token'], 'synthetic-ui-token')
         self.assertEqual(result['spoken'], [])
         self.assertFalse(result['hidden'])
         for text in ('我记得', '11月6日', '60分钟', '130 bpm', '记录还很少，这不算趋势。'):

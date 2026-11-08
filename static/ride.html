@@ -1738,6 +1738,7 @@ function buildTrackGpx(memory,escapeXml,iso){
 async function getToken(){
   const response=await fetch('/api/coach/config',{cache:'no-store'}); if(!response.ok) throw new Error('无法获取会话令牌');
   const config=await response.json(); if(typeof config.token !== 'string' || !config.token) throw new Error('会话令牌缺失'); token=config.token;
+  return token;
 }
 // Privacy strip: coordinates never leave the phone. Uploads carry only the
 // aggregate numbers (or nothing GPS-derived, when the rider opts out). The
