@@ -235,6 +235,45 @@ class RideBrainEndpointTests(unittest.TestCase):
         self.assertEqual(facts['comparison_count'],2)
 
 
+    def v3(self,identifier,started,avg_hr,activity=None,source='ble_gatt_0x180d'):
+        item={'schema_version':'luma-ride-memory/3','id':identifier,'started_at':started,
+              'ended_at':started.replace('00:00Z','01:00Z'),'samples_hz':1,
+              'series':[{'t':0,'hr':avg_hr},{'t':60,'hr':avg_hr}],
+              'summary':{'duration_s':60,'avg_hr':avg_hr,'max_hr':avg_hr,'time_in_zone_s':None,
+                         'zone_target':None,'gaps':0,'alerts':0,'avg_cadence':None,'avg_power':None,
+                         'max_power':None,'distance_m':None,'avg_speed_mps':None,'max_speed_mps':None},
+              'coach_notes':[],'persona_version':'ride-persona/14','source':source}
+        if activity is not None:
+            item['activity']=activity
+        return item
+
+    def test_review_passes_trend_ordinal_and_simulated_exclusion(self):
+        self.save(self.v3('older','2026-11-05T08:00:00Z',138))
+        self.save(self.v3('newer','2026-11-06T08:00:00Z',135))
+        self.save(self.v3('sim','2026-11-06T09:00:00Z',140,source='simulated'))
+        self.save(self.v3('hike','2026-11-06T10:00:00Z',141,activity='hike'))
+        self.save(self.v3('future','2026-11-08T08:00:00Z',142))
+        self.save()
+        with patch.dict(os.environ,{'DASHSCOPE_API_KEY':'synthetic-key'}):
+            result=self.request('/api/coach/ride/review',{'session_id':'current'})
+        self.assertEqual(result['speech_status'],'ok')
+        facts=json.loads(json.loads(self.post.call_args.args[0].data)['messages'][1]['content'])
+        self.assertEqual(facts['recent_trend']['count'],2)
+        self.assertEqual(facts['recent_trend']['avg_hr_list'],[138,135])
+        self.assertEqual(facts['session_ordinal'],3)
+        self.assertEqual(facts['excluded_simulated'],1)
+
+    def test_review_first_ride_has_ordinal_one_and_no_trend(self):
+        self.save()
+        with patch.dict(os.environ,{'DASHSCOPE_API_KEY':'synthetic-key'}):
+            result=self.request('/api/coach/ride/review',{'session_id':'current'})
+        self.assertEqual(result['speech_status'],'ok')
+        facts=json.loads(json.loads(self.post.call_args.args[0].data)['messages'][1]['content'])
+        self.assertEqual(facts['session_ordinal'],1)
+        self.assertNotIn('recent_trend',facts)
+        self.assertNotIn('excluded_simulated',facts)
+
+
 class RideBrainUITests(unittest.TestCase):
     def run_js(self,scenario,**options):
         if not NODE:self.skipTest('Local Node required')

@@ -37,6 +37,19 @@ facts 还可能含 ascent_m（单位米，累计爬升，口语用 display 里�
 为 null 或字段缺失就完全不提，禁止估算。
 facts 里的 activity 是场景标签（ride=骑行，hike=徒步），措辞必须与场景
 一致：徒步说"走了"，不说"骑了"；爬升只在有 display.ascent_m 时可提。
+facts 可能出现 zone_share 与 pw_hr_decoupling_pct：
+zone_share 是心率区间时间占比（%），只在出现时陈述数值，禁止解读为训练效果；
+pw_hr_decoupling_pct 是前后半程功率心率比的变化百分比，只陈述数值，
+禁止说『有氧基础好/差』『效率高/低』等任何评价；两者不出现时完全不提。
+facts 可能出现 recent_trend、session_ordinal 与 excluded_simulated：
+recent_trend 是最近几次同场景活动的逐次数值（avg_hr_list 平均心率、
+duration_min_list 时长分钟，按时间从远到近），可逐次陈述如
+『近三次平均心率 138、135、132』；null 表示那次没记到；
+禁止推断趋势原因，禁止『越来越轻松』类解读。
+session_ordinal 是你陪同完成的同场景第几次活动，可自然提及『第 10 次』，
+禁止拔高成里程碑评价。
+excluded_simulated 是被剔除的合成演示次数，只说明有几次模拟被排除，
+不得把模拟当成真实活动。
 口吻要求：像朋友骑完车随口聊，一两句短句为主，最多三句；时长一律用
 display 里的分钟数（duration_min/previous_duration_min/duration_diff_min），
 心率差异用 differences 里的整数；不堆数字，挑最有话说的一两个。
@@ -53,7 +66,8 @@ _UNIT_RE = re.compile(r'\s*(bpm|公里|千米|分钟|小时|秒钟|秒|%|次|个
 _UNITS = {'分钟':'min','小时':'h','秒钟':'s','秒':'s','次':'','个':'','条':'','点':'','瓦':'w','转':'rpm','公里':'km','千米':'km','米':'m'}
 _FORBIDDEN = re.compile(r'变强|状态提升|能力提升|训练效果|更健康|心肺功能.{0,4}(提高|改善)|'
                         r'(建议|应该|务必|请).{0,12}(减速|加速|降低心率|加大强度|服药|吃药)|'
-                        r'继续保持.{0,6}(强度|心率)|燃脂效果|减脂效果|诊断|治疗')
+                        r'继续保持.{0,6}(强度|心率)|燃脂效果|减脂效果|诊断|治疗|'
+                        r'有氧基础|越来越(轻松|快|强)|进步明显|退步|疲劳积累|效率(高|低|提升)')
 
 
 def _result(status, usage=None, speech=None):
@@ -155,7 +169,40 @@ def _friendly_kmh(mps):
     return int(kmh) if kmh==kmh.to_integral() else float(kmh)
 
 
-def _facts(session, previous_summary):
+def _count_checked(value):
+    """Caller-supplied history count: a bounded positive integer, never trusted blind."""
+    if type(value) is not int or not 1<=value<=100000:
+        raise ValueError('history counts must be bounded positive integers')
+    return value
+
+
+def _decoupling_pct(series):
+    """Pw:Hr decoupling (%): front/back ratio change, or None when undefined.
+
+    Only samples carrying BOTH hr and pwr count; gaps and hr-only points are
+    ignored. The split is at the sample-count median (odd median sample joins
+    the back half); each half needs at least 10 paired samples. Ratios are
+    sums of power over sums of heart rate, never a mean of per-sample ratios.
+    Zero sums make the ratio or the change undefined -> None (honest omission).
+    """
+    paired=[point for point in series if 'hr' in point and 'pwr' in point]
+    front=paired[:len(paired)//2];back=paired[len(paired)//2:]
+    if len(front)<10 or len(back)<10:
+        return None
+    front_hr=sum(point['hr'] for point in front);back_hr=sum(point['hr'] for point in back)
+    front_pwr=sum(point['pwr'] for point in front);back_pwr=sum(point['pwr'] for point in back)
+    if front_hr==0 or back_hr==0 or front_pwr==0:
+        return None
+    with localcontext() as ctx:
+        ctx.prec=50
+        front_ratio=Decimal(front_pwr)/Decimal(front_hr)
+        back_ratio=Decimal(back_pwr)/Decimal(back_hr)
+        change=(front_ratio-back_ratio)/front_ratio*100
+        return change.quantize(Decimal('0.1'),rounding=ROUND_HALF_UP)
+
+
+def _facts(session, previous_summary, recent_summaries=None,
+            activity_ordinal=None, excluded_simulated=None):
     memory=validate_session(session)  # Detached before projecting; never send raw samples/notes/IDs.
     summary,numbers=_summary(memory['summary'])
     count=sum('hr' in point for point in memory['series'])
@@ -180,6 +227,45 @@ def _facts(session, previous_summary):
         numbers.append((climb,'m'))
     facts['activity']=memory.get('activity','ride')
     display['activity_label']='徒步' if facts['activity']=='hike' else '骑行'
+    target=summary.get('zone_target');times=summary.get('time_in_zone_s')
+    duration=summary.get('duration_s')
+    if target is not None and times is not None and duration is not None and duration>0:
+        share={}
+        for key,pct_key in (('below','below_pct'),('within','within_pct'),('above','above_pct')):
+            pct=(Decimal(str(times[key]))/Decimal(str(duration))*100).quantize(Decimal('1'),rounding=ROUND_HALF_UP)
+            share[pct_key]=int(pct)
+            numbers.append((Decimal(str(int(pct))),'%'))
+        facts['zone_share']=share
+    decoupling=_decoupling_pct(memory['series'])
+    if decoupling is not None:
+        facts['pw_hr_decoupling_pct']=float(decoupling)
+        numbers.extend([(decoupling,'%'),(abs(decoupling),'%')])
+    if recent_summaries:
+        hr_list=[];min_list=[]
+        for entry in recent_summaries[-3:]:
+            projected,_=_summary(entry)  # Shape-checked; only the listed values are registered.
+            avg_hr=projected.get('avg_hr')
+            hr_list.append(avg_hr)
+            if avg_hr is not None:
+                numbers.append((Decimal(str(avg_hr)),'bpm'))
+            duration_s=projected.get('duration_s')
+            if duration_s is None:
+                min_list.append(None)
+            else:
+                minutes=_friendly_minutes(duration_s)
+                min_list.append(minutes)
+                numbers.append((Decimal(str(minutes)),'min'))
+        count=len(hr_list)
+        facts['recent_trend']={'count':count,'avg_hr_list':hr_list,'duration_min_list':min_list}
+        numbers.append((Decimal(count),None))
+    if activity_ordinal is not None:
+        ordinal=_count_checked(activity_ordinal)
+        facts['session_ordinal']=ordinal
+        numbers.append((Decimal(ordinal),None))
+    if excluded_simulated:
+        excluded=_count_checked(excluded_simulated)
+        facts['excluded_simulated']=excluded
+        numbers.append((Decimal(excluded),None))
     if previous_summary is not None:
         previous,extra=_summary(previous_summary);numbers.extend(extra)
         facts['previous_summary']=previous;facts['comparison_count']=2
@@ -204,7 +290,10 @@ def _facts(session, previous_summary):
     return facts,numbers
 
 
-def build_ride_review(session: dict, previous_summary: dict | None = None, *,
+def build_ride_review(session: dict, previous_summary: dict | None = None,
+                      recent_summaries: list | None = None,
+                      activity_ordinal: int | None = None,
+                      excluded_simulated: int | None = None, *,
                       api_key: str | None = None, http_post=None) -> dict:
     """Generate a bounded Chinese draft, or return an honest template fallback.
 
@@ -228,7 +317,8 @@ def build_ride_review(session: dict, previous_summary: dict | None = None, *,
     if type(api_key) is not str or not 1<=len(api_key)<=4096 or any(not 33<=ord(c)<=126 for c in api_key):
         return _result('upstream_error')
     try:
-        facts,numbers=_facts(session,previous_summary)
+        facts,numbers=_facts(session,previous_summary,recent_summaries,
+                             activity_ordinal,excluded_simulated)
         if facts['source']=='simulated':
             facts['speech_rule']='本次是合成演示，speech 必须以「模拟记录：」开头'
         payload={'model':MODEL,'max_tokens':MAX_TOKENS,'response_format':{'type':'json_object'},

@@ -363,7 +363,10 @@ class App:
             except (RideMemoryError, OSError):
                 raise ActionError("storage_unavailable", "Ride storage unavailable", 503) from None
             current_time = datetime.fromisoformat(memory["started_at"].replace("Z", "+00:00"))
+            activity = memory.get("activity", "ride")
             previous, previous_time = None, None
+            history = []  # (when, summary) of non-simulated same-activity earlier sessions
+            excluded_simulated = 0
             for candidate in directory.glob("*.json"):
                 if candidate == path or candidate.is_symlink():
                     continue
@@ -374,9 +377,23 @@ class App:
                     when = datetime.fromisoformat(stored["started_at"].replace("Z", "+00:00"))
                     if stored["id"] != identifier and when < current_time and (previous_time is None or when > previous_time):
                         previous, previous_time = stored["summary"], when
+                    if stored["id"] == identifier or when >= current_time:
+                        continue
+                    if stored.get("activity", "ride") != activity:
+                        continue
+                    if stored["source"] == "simulated":
+                        excluded_simulated += 1
+                        continue
+                    history.append((when, stored["summary"]))
                 except (RideMemoryError, ActionError, OSError, ValueError):
                     continue
+            history.sort(key=lambda entry: entry[0])
+            recent = [summary for _, summary in history[-3:]]
+            ordinal = len(history) + 1
         result = build_ride_review(copy.deepcopy(memory), copy.deepcopy(previous),
+                                   recent_summaries=copy.deepcopy(recent),
+                                   activity_ordinal=ordinal,
+                                   excluded_simulated=excluded_simulated,
                                    api_key=os.environ.get("DASHSCOPE_API_KEY"), http_post=self.llm_post)
         return {"speech_status": result["llm_status"],
                 "speech": result["draft"]["speech"] if result["draft"] else None,
