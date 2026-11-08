@@ -186,6 +186,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px/1.75 var(--mono);max
 <p class="note" data-i18n="track-note">轨迹只写入本页内存和你手动下载的备份文件；上传到本服务的记录自动剥离坐标，只带距离/速度聚合数字。精度差于 30 米的定位点直接丢弃并如实留空。GPS 常开预计每小时耗电约 10%，长途建议低电量模式并带充电宝；屏幕熄灭不影响记录。授权定位后，本页会在首次定位成功时通过本服务向高德请求一次当日天气（坐标仅用于该次请求，不写入任何记录）。</p>
 <div class="row"><label class="check"><input id="track-upload-none" type="checkbox"><span data-i18n="track-upload-label">连距离/速度聚合数字也不上传</span></label></div>
 <div class="row"><label class="check"><input id="track-clip" type="checkbox" checked><span data-i18n="track-clip-label">GPX 导出时裁掉起终点各 500 米（防家庭住址泄露）</span></label></div>
+<div class="row"><button id="goto-import" type="button" class="secondary" data-i18n="goto-import">导入历史记录（GPX/TCX）</button></div>
 <p id="status" class="statusline" role="status" aria-live="polite" data-i18n="status-init">准备记录。语音需点击开始激活；请先在静止状态连接设备。</p>
 </section>
 <section id="nav-card" class="panel" aria-labelledby="nav-heading">
@@ -1749,6 +1750,7 @@ const IMPORT_ERRORS=Object.freeze({
   body_too_large:'文件超过 5 MB 上限，未导入。',
   invalid_file:'文件解析失败，未导入。'
 });
+$('goto-import').addEventListener('click',()=>{const viewReview=$('view-review');if(viewReview)viewReview.checked=true;});
 $('import-pick').addEventListener('click',()=>$('import-file').click());
 $('import-file').addEventListener('change',async event=>{
   const files=Array.from(event.target.files||[]);
@@ -1834,7 +1836,7 @@ const I18N_EN=Object.freeze({
   'save-init':'Server storage is ephemeral: restarts or redeploys may lose it. Keep a downloaded backup.',
   retry:'Retry uploading pending records', 'dl-json':'Download JSON backup', 'dl-gpx':'Download GPX backup',
   'gpx-note':'With recorded coordinates, the GPX is a real track (heart rate / cadence / power as extension values), importable into Strava, Xingzhe, or Garmin. Without coordinates it holds only the heart-rate timeline and gap markers and cannot be imported where a track is required. The two are never blended.',
-  'import-pick':'Import GPX/TCX record',
+  'import-pick':'Import GPX/TCX record', 'goto-import':'Import history (GPX/TCX)',
   'import-note':'Hand Mark GPX/TCX files exported from Garmin/Strava/Xingzhe (heart rate required; up to 20 files, 5 MB total per batch). The source is honestly labelled as an import; files without heart rate are declined — nothing repaired, nothing guessed.',
   'track-live-init':'Track: not started', 'track-h':'Ride track',
   'track-empty':'Coordinates recorded during the ride are drawn here. Real fixes only; breaks stay open, never connected.',
