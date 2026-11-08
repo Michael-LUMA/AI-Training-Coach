@@ -221,6 +221,30 @@ class RideMemoryUI(unittest.TestCase):
         self.assertNotIn('分钟', result)
         self.assertEqual(result, '2天没见。今天出门吗？')
 
+    def test_greeting_mentions_usual_start_hour_with_three_sessions(self):
+        result = self.run_js("""
+          const mk=(ageH,hour)=>{const d=new Date(Date.now()-ageH*3600e3);d.setHours(hour,0,0,0);return {id:'a'+ageH,started_at:d.toISOString(),summary:{avg_hr:130,duration_s:3600},source:'ble_gatt_0x180d'};};
+          renderGreeting([mk(50,20),mk(60,21),mk(70,22)]);
+          return $('greeting').textContent;
+        """)
+        self.assertIn('你通常21点出门。', result)
+
+    def test_greeting_silent_about_usual_with_two_sessions(self):
+        result = self.run_js("""
+          const mk=(ageH,hour)=>{const d=new Date(Date.now()-ageH*3600e3);d.setHours(hour,0,0,0);return {id:'a'+ageH,started_at:d.toISOString(),summary:{avg_hr:130,duration_s:3600},source:'ble_gatt_0x180d'};};
+          renderGreeting([mk(50,20),mk(60,20)]);
+          return $('greeting').textContent;
+        """)
+        self.assertNotIn('通常', result)
+
+    def test_greeting_usual_hour_ignores_simulated_sessions(self):
+        result = self.run_js("""
+          const mk=(ageH,hour,source)=>{const d=new Date(Date.now()-ageH*3600e3);d.setHours(hour,0,0,0);return {id:'a'+ageH,started_at:d.toISOString(),summary:{avg_hr:130,duration_s:3600},source:source};};
+          renderGreeting([mk(50,20),mk(60,9,'simulated'),mk(70,9,'simulated')]);
+          return $('greeting').textContent;
+        """)
+        self.assertNotIn('通常', result)
+
     def test_explicit_listen_and_first_start_are_user_gated(self):
         result = self.run_js("await $('start-ride').click(); return {spoken:_spoken,version:session.persona_version};", history=[metadata()], simulate=True)
         self.assertEqual(len(result['spoken']), 1)

@@ -658,3 +658,127 @@ class ChatConversationTests(unittest.TestCase):
         self.assertIn('conv-1', self.app._convs)
         stored = [path.name for path in self.app.ride_dir.glob('*')]
         self.assertEqual(stored, ['current.json'])
+
+
+class ChatProfileTests(unittest.TestCase):
+    """Usage-profile facts: validated bundle, registered numbers, honest scope."""
+
+    def profile(self):
+        return {'sessions': 5, 'usual_start_hour': 20, 'usual_duration_min': 45}
+
+    def chat(self, profile, **kwargs):
+        kwargs.setdefault('api_key', 'synthetic-key')
+        return ride_chat.build_ride_chat('我一般什么时候出门？', session=None, profile=profile, **kwargs)
+
+    def test_profile_projection_and_verified_speech(self):
+        profile = self.profile(); before = copy.deepcopy(profile)
+        post = transport('你通常20点出门，通常骑45分钟。')
+        result = self.chat(profile, http_post=post)
+        self.assertEqual(result['llm_status'], 'ok')
+        self.assertEqual(profile, before)
+        facts = facts_of(post)
+        self.assertEqual(facts['profile'], {'sessions': 5, 'usual_start_hour': 20,
+                                            'usual_duration_min': 45})
+        self.assertIn('profile', ride_chat.SYSTEM_PROMPT)
+
+    def test_unregistered_hour_rejected(self):
+        post = transport('你通常21点出门。')
+        result = self.chat(self.profile(), http_post=post)
+        self.assertEqual(result['llm_status'], 'rejected_unverifiable_number')
+        self.assertIsNone(result['draft'])
+
+    def test_null_fields_stay_unmentioned(self):
+        post = transport('你已经记录了5次。')
+        result = self.chat({'sessions': 5, 'usual_start_hour': None, 'usual_duration_min': None},
+                           http_post=post)
+        self.assertEqual(result['llm_status'], 'ok')
+
+    def test_invalid_profiles_rejected_without_upstream(self):
+        invalid = [None, False, 5, 'profile', [], {'sessions': 5},
+                   self.profile() | {'extra': 1},
+                   self.profile() | {'sessions': 2},
+                   self.profile() | {'sessions': '5'},
+                   self.profile() | {'sessions': 5.0},
+                   self.profile() | {'usual_start_hour': 24},
+                   self.profile() | {'usual_start_hour': -1},
+                   self.profile() | {'usual_start_hour': 20.5},
+                   self.profile() | {'usual_start_hour': '20'},
+                   self.profile() | {'usual_duration_min': 0},
+                   self.profile() | {'usual_duration_min': -5},
+                   self.profile() | {'usual_duration_min': '45'},
+                   self.profile() | {'usual_duration_min': 600001},
+                   self.profile() | {'usual_duration_min': float('nan')}]
+        for profile in invalid:
+            if profile is None:
+                continue  # None means "not provided", handled separately
+            with self.subTest(profile=repr(profile)):
+                post = Mock(side_effect=AssertionError('no network'))
+                result = self.chat(profile, http_post=post)
+                self.assertEqual(result['llm_status'], 'rejected_bad_schema')
+                post.assert_not_called()
+
+    def test_none_profile_leaves_no_trace(self):
+        post = transport('这个我没记到。')
+        result = self.chat(None, http_post=post)
+        self.assertEqual(result['llm_status'], 'ok')
+        self.assertNotIn('profile', facts_of(post))
+
+
+class ChatProfileServerTests(unittest.TestCase):
+    """Server computes the profile from stored real sessions only."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
+        self.post = transport('这个我没记到。')
+        self.app = coach_server.App(store=SimpleNamespace(path=Path(self.temp.name) / 'coach.sqlite3'),
+                                    llm_post=self.post)
+
+    def request(self, path, payload):
+        body = json.dumps(payload, ensure_ascii=False).encode()
+        headers = {'Host': '127.0.0.1:8794', 'Origin': 'http://127.0.0.1:8794',
+                   'Content-Type': 'application/json', 'Content-Length': str(len(body)),
+                   'X-Coach-Token': self.app.token}
+        return self.app.dispatch('POST', path, headers, body)
+
+    def save(self, identifier, started, source='ble_gatt_0x180d'):
+        from datetime import datetime, timedelta, timezone
+        begin = datetime.fromisoformat(started.replace('Z', '+00:00'))
+        end = (begin + timedelta(seconds=60)).isoformat().replace('+00:00', 'Z')
+        item = memory(identifier, started)
+        item['ended_at'] = end
+        item['source'] = source
+        return self.request('/api/coach/ride/session', item)
+
+    def ask(self, question='我一般什么时候出门？'):
+        with patch.dict(os.environ, {'DASHSCOPE_API_KEY': 'synthetic-key'}):
+            return self.request('/api/coach/ride/chat', {'question': question})
+
+    def last_facts(self):
+        return json.loads(json.loads(self.post.call_args.args[0].data)['messages'][1]['content'])
+
+    def test_profile_from_three_stored_sessions(self):
+        self.save('a', '2026-11-05T08:00:00Z')
+        self.save('b', '2026-11-06T09:00:00Z')
+        self.save('c', '2026-11-07T20:00:00Z')
+        self.assertEqual(self.ask()['speech_status'], 'ok')
+        profile = self.last_facts()['profile']
+        self.assertEqual(profile['sessions'], 3)
+        expected_hour = sorted(__import__('datetime').datetime.fromisoformat(t).astimezone().hour
+                               for t in ('2026-11-05T08:00:00+00:00', '2026-11-06T09:00:00+00:00',
+                                         '2026-11-07T20:00:00+00:00'))[1]
+        self.assertEqual(profile['usual_start_hour'], expected_hour)
+        self.assertEqual(profile['usual_duration_min'], 1)
+
+    def test_simulated_sessions_never_shape_profile(self):
+        self.save('a', '2026-11-05T08:00:00Z', source='simulated')
+        self.save('b', '2026-11-06T09:00:00Z', source='simulated')
+        self.save('c', '2026-11-07T20:00:00Z', source='simulated')
+        self.assertEqual(self.ask()['speech_status'], 'ok')
+        self.assertNotIn('profile', self.last_facts())
+
+    def test_two_real_sessions_stay_silent(self):
+        self.save('a', '2026-11-05T08:00:00Z')
+        self.save('b', '2026-11-06T09:00:00Z')
+        self.save('c', '2026-11-07T20:00:00Z', source='simulated')
+        self.assertEqual(self.ask()['speech_status'], 'ok')
+        self.assertNotIn('profile', self.last_facts())

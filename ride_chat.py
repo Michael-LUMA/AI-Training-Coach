@@ -43,6 +43,10 @@ facts 可能含 totals：sessions_count 是累计记录次数、duration_min 是
 distance_km 是累计公里（为 null 就完全不提）；totals.month 是本月
 （sessions 次数、duration_min 分钟、distance_km 公里）。总量只陈述数值，
 禁止推断训练效果，禁止『坚持得不错』类评价。
+facts 可能含 profile：sessions 是画像样本次数、usual_start_hour 是通常
+出门时刻（0-23 整点）、usual_duration_min 是通常时长分钟；至少 3 次真实
+记录才会出现；只陈述数值（如「你通常 20 点出门，通常骑 45 分钟」），
+禁止评价「规律」「自律」「健康」；为 null 的项完全不提。
 facts 可能含 recent_dialog（我与用户的最近几轮问答，旧到新）：
 用于理解「那为什么」「这次呢」等追问的指代；recent_dialog 里的数字只供
 语境参考，回答里的数字仍必须来自 facts 本体。
@@ -204,12 +208,43 @@ def _totals_facts(totals):
     return facts, numbers
 
 
+def _profile_facts(profile):
+    """Validate a complete usage-profile bundle and register its bounded numbers.
+
+    usual_start_hour is a local-clock integer 0..23 (or null); it registers as
+    a unitless number, matching 「20 点」 through the 点→unitless normalization.
+    """
+    if (type(profile) is not dict
+            or set(profile) != {'sessions', 'usual_start_hour', 'usual_duration_min'}):
+        raise ValueError('complete profile object required')
+    sessions = _count_checked(profile['sessions'])
+    if sessions < 3:
+        raise ValueError('profile needs at least three sessions')
+    numbers = [(Decimal(sessions), None)]
+    hour = profile['usual_start_hour']
+    if hour is not None:
+        if type(hour) is not int or not 0 <= hour <= 23:
+            raise ValueError('usual_start_hour must be 0..23 or null')
+        numbers.append((Decimal(hour), None))
+    minutes = profile['usual_duration_min']
+    if minutes is not None:
+        if type(minutes) not in (int, float):
+            raise ValueError('invalid usual_duration_min')
+        number = Decimal(str(minutes))
+        if not number.is_finite() or not 0 < number <= 600000:
+            raise ValueError('usual_duration_min out of range')
+        numbers.append((number, 'min'))
+    return {'sessions': sessions, 'usual_start_hour': hour,
+            'usual_duration_min': minutes}, numbers
+
+
 def build_ride_chat(question, session: dict | None = None,
                     recent_summaries: list | None = None,
                     activity_ordinal: int | None = None,
                     excluded_simulated: int | None = None, *,
                     totals: dict | None = None,
                     history: list | None = None,
+                    profile: dict | None = None,
                     api_key: str | None = None, http_post=None,
                     endpoint: str | None = None, model: str | None = None) -> dict:
     """Answer one bounded Chinese question, or return an honest template fallback.
@@ -245,6 +280,9 @@ def build_ride_chat(question, session: dict | None = None,
                                     activity_ordinal, excluded_simulated)
         if totals is not None:
             facts['totals'], extra = _totals_facts(totals)
+            numbers.extend(extra)
+        if profile is not None:
+            facts['profile'], extra = _profile_facts(profile)
             numbers.extend(extra)
         if _missing_metric_answer(question, facts):
             # 问什么没什么：诚实短路，不问模型，省一次上行也杜绝编造。

@@ -530,6 +530,19 @@ class App:
                           "distance_km": _kilometers(entries), "month_sessions": len(month_entries),
                           "month_duration_min": _minutes(month_entries),
                           "month_distance_km": _kilometers(month_entries)}
+            # Usage profile: medians over the same honest scope (real sessions
+            # only). Below three records Mark stays silent about "usual".
+            profile = None
+            if len(entries) >= 3:
+                hours = sorted(when.astimezone().hour for when, _ in entries)
+                durations = sorted(summary["duration_s"] / 60 for _, summary in entries
+                                   if type(summary.get("duration_s")) in (int, float) and summary["duration_s"] > 0)
+                median_min = durations[(len(durations) - 1) // 2] if durations else None
+                profile = {"sessions": len(entries),
+                           "usual_start_hour": hours[(len(entries) - 1) // 2],
+                           "usual_duration_min": (None if median_min is None else
+                                                  int(median_min) if median_min == int(median_min)
+                                                  else round(median_min, 1))}
         # Two lanes, one door: personal-record questions try the private lane
         # first; everything else tries the grounded knowledge library. The
         # other lane is consulted once when the preferred one cannot answer.
@@ -566,7 +579,7 @@ class App:
                     recent_summaries=copy.deepcopy(recent),
                     activity_ordinal=ordinal if ordinal else None,
                     excluded_simulated=excluded_simulated, totals=totals, history=dialog,
-                    http_post=self.llm_post, **kw),
+                    profile=profile, http_post=self.llm_post, **kw),
                 question=question)
 
         def knowledge():
