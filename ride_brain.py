@@ -11,7 +11,7 @@ import json
 import math
 import re
 from collections.abc import Mapping
-from decimal import Decimal, InvalidOperation, localcontext
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP, localcontext
 from urllib.error import HTTPError, URLError
 from urllib.request import Request
 
@@ -33,6 +33,10 @@ facts 可能含 avg_power/max_power（单位 W，口语说"瓦"）与 avg_cadenc
 facts 还可能含 distance_m（单位米）与 avg_speed_mps/max_speed_mps（单位
 米/秒）；口语一律用 display 里的 distance_km（公里）与 avg_speed_kmh/
 max_speed_kmh（公里/小时）；为 null 或字段缺失就完全不提，禁止估算。
+facts 还可能含 ascent_m（单位米，累计爬升，口语用 display 里的整数）；
+为 null 或字段缺失就完全不提，禁止估算。
+facts 里的 activity 是场景标签（ride=骑行，hike=徒步），措辞必须与场景
+一致：徒步说"走了"，不说"骑了"；爬升只在有 display.ascent_m 时可提。
 口吻要求：像朋友骑完车随口聊，一两句短句为主，最多三句；时长一律用
 display 里的分钟数（duration_min/previous_duration_min/duration_diff_min），
 心率差异用 differences 里的整数；不堆数字，挑最有话说的一两个。
@@ -109,7 +113,7 @@ def _summary(value):
         raise ValueError('summary object required')
     units={'duration_s':'s','avg_hr':'bpm','max_hr':'bpm','gaps':None,'alerts':None,
            'avg_cadence':'rpm','avg_power':'w','max_power':'w',
-           'distance_m':'m','avg_speed_mps':'m/s','max_speed_mps':'m/s'}
+           'distance_m':'m','avg_speed_mps':'m/s','max_speed_mps':'m/s','ascent_m':'m'}
     nested={'time_in_zone_s':({'below','within','above'},'s'),
             'zone_target':({'lower','upper'},'bpm')}
     result={};numbers=[]
@@ -170,6 +174,12 @@ def _facts(session, previous_summary):
         if summary.get('max_speed_mps') is not None:
             display['max_speed_kmh']=_friendly_kmh(summary['max_speed_mps'])
             numbers.append((Decimal(str(display['max_speed_kmh'])),'km/h'))
+    if summary.get('ascent_m') is not None:
+        climb=Decimal(str(summary['ascent_m'])).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+        display['ascent_m']=int(climb)
+        numbers.append((climb,'m'))
+    facts['activity']=memory.get('activity','ride')
+    display['activity_label']='徒步' if facts['activity']=='hike' else '骑行'
     if previous_summary is not None:
         previous,extra=_summary(previous_summary);numbers.extend(extra)
         facts['previous_summary']=previous;facts['comparison_count']=2

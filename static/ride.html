@@ -179,6 +179,8 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px/1.75 var(--mono);max
 <p id="demo-notice" class="warn" hidden></p>
 <p id="demo-target" class="note" hidden></p>
 <button id="demo-start" type="button" hidden>看 Mark 演示</button>
+<div class="row"><label><span data-i18n="activity-label">场景</span><select id="activity-select"><option value="ride" selected data-i18n="activity-ride">骑行</option><option value="hike" data-i18n="activity-hike">徒步</option></select></label></div>
+<p class="note" data-i18n="activity-note">场景只改变 Mark 的措辞和记录里的场景标签，数据契约与隐私规则完全一致；徒步导航与坡度播报在开发中。</p>
 <div class="row"><label><span data-i18n="lower-label">自定义下限（bpm，可留空）</span><input id="lower" type="number" min="0" max="65535" step="1" inputmode="numeric" placeholder="由你填写" data-i18n-ph="bounds-ph"></label><label><span data-i18n="upper-label">自定义上限（bpm，可留空）</span><input id="upper" type="number" min="0" max="65535" step="1" inputmode="numeric" placeholder="由你填写" data-i18n-ph="bounds-ph"></label></div>
 <p class="note" data-i18n="bounds-note">上下限须同时填写或同时留空；仅为你设定的提醒阈值，不是医学安全范围。不根据年龄、LTHR 或演示值猜测训练区间。</p>
 <div class="row"><label class="check"><input id="crash-detect" type="checkbox"><span data-i18n="crash-label">跌倒检测（实验）</span></label></div>
@@ -333,7 +335,7 @@ function duckAudio(on){
 // One pending request at a time; stale requests are released after hide/end.
 function warnWakeLock(){
   if(wakeWarningShown)return;
-  wakeWarningShown=true;state($('status').textContent+' · '+PERSONA.wakelock_unavailable);
+  wakeWarningShown=true;state($('status').textContent+' · '+activePersona.wakelock_unavailable);
 }
 async function requestScreenLock(){
   if(!active || document.visibilityState==='hidden' || screenLock || wakePending)return;
@@ -381,7 +383,7 @@ function coachCanSpeak(now=performance.now()){
 }
 function remindFuel(){
   if(!active || !fuelStepS || elapsedSeconds()<nextFuelSeconds || !coachCanSpeak())return;
-  noteAndSpeak(nextFuelSeconds===fuelStepS ? PERSONA.fuel(Math.round(fuelStepS/60)) : PERSONA.fuel_again,'fuel');
+  noteAndSpeak(nextFuelSeconds===fuelStepS ? activePersona.fuel(Math.round(fuelStepS/60)) : activePersona.fuel_again,'fuel');
   nextFuelSeconds+=fuelStepS;
 }
 // Time-based milestones (Oakley-style): every 30 minutes Mark reports the ride
@@ -391,20 +393,20 @@ function currentAvgHr(){
   return hrs.length ? hrs.reduce((a,b)=>a+b,0)/hrs.length : null;
 }
 function buildMilestoneText(minutes){
-  let text=PERSONA.milestone(minutes);
+  let text=activePersona.milestone(minutes);
   const avg=currentAvgHr();
   if(avg===null)return text;
-  text+=PERSONA.milestone_avg(memoryValue(avg));
-  if(target)text+=avg<target.lower ? PERSONA.milestone_below : avg>target.upper ? PERSONA.milestone_above : PERSONA.milestone_within;
+  text+=activePersona.milestone_avg(memoryValue(avg));
+  if(target)text+=avg<target.lower ? activePersona.milestone_below : avg>target.upper ? activePersona.milestone_above : activePersona.milestone_within;
   else text=text.slice(0,-1)+'。';
   if(memoryNumber(previousRideAvgHr)){
     const delta=avg-previousRideAvgHr, tolerance=previousRideAvgHr*.03;
-    text+=Math.abs(delta)<=tolerance+Number.EPSILON*Math.max(1,avg,previousRideAvgHr)*4 ? PERSONA.milestone_compare_flat : PERSONA.milestone_compare(delta<0?'低':'高',memoryValue(Math.abs(delta)));
+    text+=Math.abs(delta)<=tolerance+Number.EPSILON*Math.max(1,avg,previousRideAvgHr)*4 ? activePersona.milestone_compare_flat : activePersona.milestone_compare(delta<0?'低':'高',memoryValue(Math.abs(delta)));
   }
   const pwrs=session.series.filter(p=>'pwr' in p).map(p=>p.pwr);
-  if(pwrs.length)text+=PERSONA.milestone_power(memoryValue(pwrs.reduce((a,b)=>a+b,0)/pwrs.length));
+  if(pwrs.length)text+=activePersona.milestone_power(memoryValue(pwrs.reduce((a,b)=>a+b,0)/pwrs.length));
   const cads=session.series.filter(p=>'cad' in p).map(p=>p.cad);
-  if(cads.length)text+=PERSONA.milestone_cadence(memoryValue(cads.reduce((a,b)=>a+b,0)/cads.length));
+  if(cads.length)text+=activePersona.milestone_cadence(memoryValue(cads.reduce((a,b)=>a+b,0)/cads.length));
   return text;
 }
 function remindMilestone(){
@@ -441,7 +443,7 @@ function startFallAlert(){
   $('fall-card').hidden=false;$('fall-countdown').textContent=String(fallLeft);
   $('fall-message').textContent='如果你没事，点「我没事」或继续骑。';
   crashLog('冲击后'+CRASH.WATCH_MS/1000+'秒无运动，开始'+CRASH.COUNTDOWN_S+'秒确认倒计时。');
-  speak(PERSONA.fall_alert,'fall');
+  speak(activePersona.fall_alert,'fall');
   clearInterval(fallTimer);
   fallTimer=setInterval(()=>{
     if(crashState!=='alert'){clearInterval(fallTimer);return;}
@@ -453,15 +455,15 @@ function triggerFallAlarm(){
   crashState='alarm';
   $('fall-message').textContent='已发出警报。若这是误报，请点「我没事」。';
   crashLog('倒计时无响应，进入警报状态。');
-  speak(PERSONA.fall_alarm,'fall');
-  fallTimer=setInterval(()=>{if(crashState!=='alarm'){clearInterval(fallTimer);return;}speak(PERSONA.fall_alarm,'fall');},15000);
+  speak(activePersona.fall_alarm,'fall');
+  fallTimer=setInterval(()=>{if(crashState!=='alarm'){clearInterval(fallTimer);return;}speak(activePersona.fall_alarm,'fall');},15000);
 }
 function cancelFallAlert(note){
   if(crashState!=='alert' && crashState!=='alarm')return;
   crashState='idle';clearInterval(fallTimer);
   $('fall-card').hidden=true;
   crashLog(note || '用户点按确认没事，警报取消。');
-  speak(PERSONA.fall_cancel,'fall');
+  speak(activePersona.fall_cancel,'fall');
 }
 function onDeviceMotion(event){
   const a=event && event.accelerationIncludingGravity;
@@ -548,25 +550,32 @@ function onTrackFix(position){
   if(!coords || typeof coords.latitude!=='number' || typeof coords.longitude!=='number')return;
   if(!Number.isFinite(coords.latitude) || !Number.isFinite(coords.longitude))return;
   const acc=typeof coords.accuracy==='number' && Number.isFinite(coords.accuracy) ? coords.accuracy : Infinity;
-  lastFix={lat:coords.latitude,lng:coords.longitude,acc,mono:performance.now()};
+  const alt=typeof coords.altitude==='number' && Number.isFinite(coords.altitude) ? coords.altitude : null;
+  lastFix={lat:coords.latitude,lng:coords.longitude,alt,acc,mono:performance.now()};
   drawTrackLive();
 }
 function trackAttach(point){
   if($('track-enabled').checked===false || !lastFix)return;
   if(performance.now()-lastFix.mono>TRACK_STALE_MS || lastFix.acc>TRACK_MAX_ACCURACY_M)return;
   point.lat=lastFix.lat;point.lng=lastFix.lng;
+  if(typeof lastFix.alt==='number' && Number.isFinite(lastFix.alt))point.alt=Math.round(lastFix.alt*10)/10;
 }
 function trackStats(series){
   const pts=series.filter(p=>'lat' in p && 'lng' in p);
   if(!pts.length)return null;
-  let distance=0,maxSpeed=0;
+  let distance=0,maxSpeed=0,ascent=0,altPairs=0;
   for(let i=1;i<pts.length;i++){
     const d=haversineM(pts[i-1].lng,pts[i-1].lat,pts[i].lng,pts[i].lat);
     distance+=d;
     const dt=pts[i].t-pts[i-1].t;
     if(dt>0)maxSpeed=Math.max(maxSpeed,d/dt);
+    if(typeof pts[i-1].alt==='number' && typeof pts[i].alt==='number'){
+      altPairs++;
+      const dalt=pts[i].alt-pts[i-1].alt;
+      if(dalt>0)ascent+=dalt;
+    }
   }
-  return {distance,maxSpeed};
+  return {distance,maxSpeed,ascent:altPairs?ascent:null};
 }
 function drawTrackLive(){
   const el=$('track-live');
@@ -582,7 +591,7 @@ function drawTrackMap(memory){
   const stats=$('track-stats');
   const pts=memory && Array.isArray(memory.series) ? memory.series.filter(p=>'lat' in p && 'lng' in p) : [];
   const s=memory && memory.summary;
-  if(stats)stats.textContent=(pts.length>=2 && s && s.distance_m!=null)?I18N_TEXT.trackStatsLine(s.distance_m,s.avg_speed_mps,s.max_speed_mps,pts.length):'';
+  if(stats)stats.textContent=(pts.length>=2 && s && s.distance_m!=null)?I18N_TEXT.trackStatsLine(s.distance_m,s.avg_speed_mps,s.max_speed_mps,pts.length,s.ascent_m):'';
   const line=$('track-line');
   if(!line || typeof line.setAttribute!=='function')return;
   const start=$('track-start'), end=$('track-end'), empty=$('track-map-empty');
@@ -615,10 +624,16 @@ const I18N_TEXT={
   trackLive:(stale,acc,dist)=>currentLang()==='en'
     ? 'Track: '+(stale?'fix lost, holding last position':'recording')+' · accuracy '+(Number.isFinite(acc)?Math.round(acc)+' m':'—')+' · '+(dist/1000).toFixed(2)+' km'
     : '轨迹：'+(stale?'定位中断，保留最后位置':'记录中')+' · 精度 '+(Number.isFinite(acc)?Math.round(acc)+' 米':'—')+' · '+(dist/1000).toFixed(2)+' 公里',
-  trackStatsLine:(d,avg,max,n)=>currentLang()==='en'
-    ? 'GPS track '+(d/1000).toFixed(2)+' km · avg '+(avg*3.6).toFixed(1)+' km/h · max '+(max*3.6).toFixed(1)+' km/h · '+n+' recorded fixes'
-    : 'GPS 轨迹 '+(d/1000).toFixed(2)+' 公里 · 平均 '+(avg*3.6).toFixed(1)+' km/h · 最高 '+(max*3.6).toFixed(1)+' km/h · '+n+' 个记录点'
+  trackStatsLine:(d,avg,max,n,ascent)=>currentLang()==='en'
+    ? 'GPS track '+(d/1000).toFixed(2)+' km · avg '+(avg*3.6).toFixed(1)+' km/h · max '+(max*3.6).toFixed(1)+' km/h'+(typeof ascent==='number'?' · climbed '+Math.round(ascent)+' m':'')+' · '+n+' recorded fixes'
+    : 'GPS 轨迹 '+(d/1000).toFixed(2)+' 公里 · 平均 '+(avg*3.6).toFixed(1)+' km/h · 最高 '+(max*3.6).toFixed(1)+' km/h'+(typeof ascent==='number'?' · 累计爬升 '+Math.round(ascent)+' 米':'')+' · '+n+' 个记录点'
 };
+const HIKE_PERSONA=Object.freeze({...PERSONA,version:'hike-persona/1',
+  milestone:(minutes)=>'走了'+minutes+'分钟了。',
+  fuel:(minutes)=>'走了'+minutes+'分钟了，喝口水、补点吃的。'});
+let activePersona=PERSONA;
+function currentActivity(){const el=$('activity-select');return el && el.value==='hike' ? 'hike' : 'ride';}
+function applyActivity(){activePersona=currentActivity()==='hike' ? HIKE_PERSONA : PERSONA;}
 let navRoute=null, navWatch=null, navVoice=true, navPlanning=false;
 let navOffRoute=false, navOffRouteSnooze=0;
 function navStatus(text){$('nav-status').textContent=text;}
@@ -644,33 +659,33 @@ function clearNav(){
 async function planNav(){
   if(navPlanning)return;
   const destination=$('nav-destination').value.trim();
-  if(!destination){navStatus(PERSONA.nav_invalid);return;}
-  if(!navigator.geolocation || typeof navigator.geolocation.getCurrentPosition!=='function'){navStatus(PERSONA.nav_geo_unsupported);return;}
-  navPlanning=true;$('nav-plan').disabled=true;navStatus(PERSONA.nav_planning);
+  if(!destination){navStatus(activePersona.nav_invalid);return;}
+  if(!navigator.geolocation || typeof navigator.geolocation.getCurrentPosition!=='function'){navStatus(activePersona.nav_geo_unsupported);return;}
+  navPlanning=true;$('nav-plan').disabled=true;navStatus(activePersona.nav_planning);
   try{
     const position=await new Promise((resolve,reject)=>navigator.geolocation.getCurrentPosition(resolve,reject,{enableHighAccuracy:true,timeout:15000,maximumAge:60000}));
     const coords=position && position.coords;
-    if(!coords || typeof coords.longitude!=='number' || typeof coords.latitude!=='number'){navStatus(PERSONA.nav_geo_failed);return;}
+    if(!coords || typeof coords.longitude!=='number' || typeof coords.latitude!=='number'){navStatus(activePersona.nav_geo_failed);return;}
     const converted=wgs84ToGcj02(coords.longitude,coords.latitude);
     if(!token)await getToken();
     const response=await fetch('/api/coach/ride/route',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify({origin:converted[0].toFixed(6)+','+converted[1].toFixed(6),destination_address:destination})});
     const result=await response.json().catch(()=>null);
-    if(!response.ok || !result || typeof result.route_status!=='string'){navStatus(PERSONA.nav_upstream);return;}
-    if(result.route_status!=='ok'){navStatus(PERSONA['nav_'+result.route_status] || PERSONA.nav_upstream);return;}
-    if(!Array.isArray(result.steps) || !result.steps.length || typeof result.distance_m!=='number' || typeof result.duration_s!=='number'){navStatus(PERSONA.nav_upstream);return;}
+    if(!response.ok || !result || typeof result.route_status!=='string'){navStatus(activePersona.nav_upstream);return;}
+    if(result.route_status!=='ok'){navStatus(PERSONA['nav_'+result.route_status] || activePersona.nav_upstream);return;}
+    if(!Array.isArray(result.steps) || !result.steps.length || typeof result.distance_m!=='number' || typeof result.duration_s!=='number'){navStatus(activePersona.nav_upstream);return;}
     const steps=result.steps.map(raw=>{
       const path=Array.isArray(raw && raw.path) ? raw.path.map(p=>[Number(p && p[0]),Number(p && p[1])]) : [];
       return {instruction:String(raw && raw.instruction || ''),road:String(raw && raw.road || ''),distance_m:Number(raw && raw.distance_m)||0,end_lng:Number(raw && raw.end_lng),end_lat:Number(raw && raw.end_lat),announced:false,path};
     });
     const badStep=step=>!step.instruction || !Number.isFinite(step.end_lng) || !Number.isFinite(step.end_lat) ||
       !step.path.length || step.path.some(p=>!Number.isFinite(p[0]) || !Number.isFinite(p[1]));
-    if(steps.some(badStep)){navStatus(PERSONA.nav_upstream);return;}
+    if(steps.some(badStep)){navStatus(activePersona.nav_upstream);return;}
     stopNavWatch();
     navRoute={destination,distance_m:result.distance_m,duration_s:result.duration_s,steps,index:0};
-    navStatus(PERSONA.nav_planned((navRoute.distance_m/1000).toFixed(1),Math.max(1,Math.round(navRoute.duration_s/60))));
+    navStatus(activePersona.nav_planned((navRoute.distance_m/1000).toFixed(1),Math.max(1,Math.round(navRoute.duration_s/60))));
     $('nav-clear').hidden=false;renderNavSteps();startNavWatch();
   }catch(error){
-    navStatus(error && error.code===1 ? PERSONA.nav_geo_denied : error && typeof error.code==='number' ? PERSONA.nav_geo_failed : PERSONA.nav_upstream);
+    navStatus(error && error.code===1 ? activePersona.nav_geo_denied : error && typeof error.code==='number' ? activePersona.nav_geo_failed : activePersona.nav_upstream);
   }finally{navPlanning=false;$('nav-plan').disabled=false;}
 }
 function onNavPosition(position){
@@ -681,12 +696,12 @@ function onNavPosition(position){
   let step=navRoute.steps[navRoute.index];
   if(!step)return;
   const dist=Math.round(haversineM(converted[0],converted[1],step.end_lng,step.end_lat));
-  navStatus(PERSONA.nav_next(step.instruction,dist));
+  navStatus(activePersona.nav_next(step.instruction,dist));
   // Turn guidance is time-critical: announce immediately, not after the chat gap.
   if(active && navVoice && dist<=NAV_TURN_M && !step.announced){
     step.announced=true;navRoute.index+=1;
     noteAndSpeak(step.instruction,'nav');
-    if(navRoute.index>=navRoute.steps.length){noteAndSpeak(PERSONA.nav_arrival,'nav');stopNavWatch();return;}
+    if(navRoute.index>=navRoute.steps.length){noteAndSpeak(activePersona.nav_arrival,'nav');stopNavWatch();return;}
     renderNavSteps();
   }
   if(!active)return;
@@ -699,18 +714,18 @@ function onNavPosition(position){
   const distNext=nextStep ? distToPathM(converted[0],converted[1],nextStep.path) : Infinity;
   if(nextStep && distNext<=NAV_ON_ROUTE_M && distCurrent>NAV_ON_ROUTE_M){
     navRoute.index+=1;renderNavSteps();
-    if(navOffRoute){navOffRoute=false;if(navVoice)noteAndSpeak(PERSONA.nav_back,'nav');}
+    if(navOffRoute){navOffRoute=false;if(navVoice)noteAndSpeak(activePersona.nav_back,'nav');}
     return;
   }
   if(Math.min(distCurrent,distNext)>NAV_OFF_ROUTE_M){
     if(performance.now()>=navOffRouteSnooze){
       navOffRoute=true;navOffRouteSnooze=performance.now()+NAV_OFF_ROUTE_SNOOZE_MS;
-      navStatus(PERSONA.nav_offroute);
-      if(navVoice)noteAndSpeak(PERSONA.nav_offroute,'nav');
+      navStatus(activePersona.nav_offroute);
+      if(navVoice)noteAndSpeak(activePersona.nav_offroute,'nav');
     }
   }else if(navOffRoute && Math.min(distCurrent,distNext)<=NAV_ON_ROUTE_M){
     navOffRoute=false;
-    if(navVoice)noteAndSpeak(PERSONA.nav_back,'nav');
+    if(navVoice)noteAndSpeak(activePersona.nav_back,'nav');
   }
 }
 // Metadata only; no raw series request and no inference from missing fields.
@@ -718,7 +733,7 @@ function memoryNumber(value){return typeof value === 'number' && Number.isFinite
 function memoryValue(value){return Number(value.toFixed(2)).toString();}
 function memoryTime(memory){return typeof memory.started_at === 'string' ? Date.parse(memory.started_at) : NaN;}
 function historyByTime(memories){return memories.filter(m=>m && typeof m.id==='string' && Number.isFinite(memoryTime(m))).slice().sort((a,b)=>memoryTime(b)-memoryTime(a));}
-function sourceNotice(memories){return memories.some(m=>m.source==='simulated') ? PERSONA.simulated : '';}
+function sourceNotice(memories){return memories.some(m=>m.source==='simulated') ? activePersona.simulated : '';}
 async function fetchMemories(){
   const response=await fetch('/api/coach/ride/sessions',{cache:'no-store',headers:{'X-Coach-Token':token}});
   if(!response.ok)throw new Error('memory_unavailable');
@@ -731,17 +746,17 @@ function recallMemory(memory){
   if(Number.isFinite(date.getTime()))parts.push('是'+(date.getMonth()+1)+'月'+date.getDate()+'日');
   if(memoryNumber(summary.duration_s))parts.push('记录了'+memoryValue(summary.duration_s/60)+'分钟');
   if(memoryNumber(summary.avg_hr))parts.push('样本平均心率'+memoryValue(summary.avg_hr)+' bpm');
-  return PERSONA.recall(parts);
+  return activePersona.recall(parts);
 }
 function weeklyMinutes(seconds){return Math.round(seconds/60*10)/10;}
 function weeklyTemplate(week, previous, source){
-  if(!week.count)return PERSONA.weekly_no_rides;
-  let text=PERSONA.weekly_current(week.count,weeklyMinutes(week.total_duration_s));
+  if(!week.count)return activePersona.weekly_no_rides;
+  let text=activePersona.weekly_current(week.count,weeklyMinutes(week.total_duration_s));
   if(previous && previous.count){
     const duration=week.total_duration_s-previous.total_duration_s;
-    text+=PERSONA.weekly_comparison(week.count-previous.count,duration,weeklyMinutes(Math.abs(duration)));
+    text+=activePersona.weekly_comparison(week.count-previous.count,duration,weeklyMinutes(Math.abs(duration)));
   }
-  return (source==='simulated' ? PERSONA.weekly_simulated : '')+text;
+  return (source==='simulated' ? activePersona.weekly_simulated : '')+text;
 }
 function renderWeekly(history,now=new Date()){
   weeklyRequest+=1;
@@ -756,11 +771,11 @@ function renderWeekly(history,now=new Date()){
   const week=aggregate(selected.filter(m=>memoryTime(m)>=monday.getTime()));
   const prev=aggregate(selected.filter(m=>memoryTime(m)<monday.getTime()));
   weeklyFacts={week,previous_week:prev.count ? prev : null,source:simulated ? 'simulated' : 'ble_gatt_0x180d'};
-  $('ride-weekly-heading').textContent=PERSONA.weekly_title;
-  $('ride-weekly-listen').textContent=PERSONA.weekly_listen;
+  $('ride-weekly-heading').textContent=activePersona.weekly_title;
+  $('ride-weekly-listen').textContent=activePersona.weekly_listen;
   $('ride-weekly-listen').disabled=history.length===0;
-  $('ride-weekly-summary').textContent=history.length ? weeklyTemplate(week,weeklyFacts.previous_week,weeklyFacts.source) : PERSONA.weekly_empty;
-  $('ride-weekly-scope').textContent=PERSONA.weekly_scope;
+  $('ride-weekly-summary').textContent=history.length ? weeklyTemplate(week,weeklyFacts.previous_week,weeklyFacts.source) : activePersona.weekly_empty;
+  $('ride-weekly-scope').textContent=activePersona.weekly_scope;
   $('ride-weekly-speech').textContent='';
   return weeklyFacts;
 }
@@ -768,7 +783,7 @@ async function listenWeekly(){
   if(!weeklyFacts || $('ride-weekly-listen').disabled)return;
   const request=++weeklyRequest, snapshot=weeklyFacts, start=weeklyWeekStart;
   $('ride-weekly-listen').disabled=true;
-  $('ride-weekly-speech').textContent=PERSONA.weekly_loading;
+  $('ride-weekly-speech').textContent=activePersona.weekly_loading;
   let text=weeklyTemplate(snapshot.week,snapshot.previous_week,snapshot.source);
   try{
     const response=await fetch('/api/coach/ride/weekly',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify({week_start:start})});
@@ -785,14 +800,14 @@ async function loadRecall(){
   try {
     const memories=await fetchMemories();
     renderWeekly(memories);
-    if(!memories.length){console.debug(PERSONA.recall_no_history);return;}
+    if(!memories.length){console.debug(activePersona.recall_no_history);return;}
     const latestAvg=memories[0].summary && memories[0].summary.avg_hr;
     previousRideAvgHr=memoryNumber(latestAvg) ? latestAvg : null;
     recallText=recallMemory(memories[0]);
     const notice=sourceNotice([memories[0]]);
     $('memory-recall').textContent=recallText;$('memory-source').textContent=notice;$('memory-source').hidden=!notice;$('memory-card').hidden=false;
     // Rendering never speaks: autoplay is reserved for explicit button handlers.
-  }catch(_){$('ride-weekly-summary').textContent=PERSONA.weekly_unavailable;$('ride-weekly-listen').disabled=true;console.debug('Mark memory unavailable; no history invented.');}
+  }catch(_){$('ride-weekly-summary').textContent=activePersona.weekly_unavailable;$('ride-weekly-listen').disabled=true;console.debug('Mark memory unavailable; no history invented.');}
 }
 function speakRecall(){
   if(!recallText)return false;
@@ -814,22 +829,22 @@ async function requestRideSpeech(memory){
     const result=await response.json();
     if(request!==brainRequest || active || !lastSession || lastSession.id!==memory.id)return;
     if(result.speech_status!=='ok' || result.fallback!==null || typeof result.speech!=='string' || !result.speech.trim() || result.speech.length>300)return;
-    brainSpeech=(memory.source==='simulated' ? PERSONA.simulated+'。' : '')+result.speech;
-    $('brain-heading').textContent=PERSONA.thinking;$('brain-speech').textContent=brainSpeech;$('brain-card').hidden=false;
+    brainSpeech=(memory.source==='simulated' ? activePersona.simulated+'。' : '')+result.speech;
+    $('brain-heading').textContent=activePersona.thinking;$('brain-speech').textContent=brainSpeech;$('brain-card').hidden=false;
   }catch(_){ /* Quiet, honest fallback: existing template is never removed. */ }
 }
 function compareMetric(label,current,previous,unit){
   // better/worse are required contract keys, not training-quality judgements.
   const delta=current-previous, tolerance=previous*.03;
-  if(Math.abs(delta)<=tolerance+Number.EPSILON*Math.max(1,current,previous)*4)return PERSONA.compare_flat(label,memoryValue(current),memoryValue(previous),unit);
+  if(Math.abs(delta)<=tolerance+Number.EPSILON*Math.max(1,current,previous)*4)return activePersona.compare_flat(label,memoryValue(current),memoryValue(previous),unit);
   const amount=memoryValue(Math.abs(delta));
-  return (delta<0 ? PERSONA.compare_better : PERSONA.compare_worse)(label,amount,unit);
+  return (delta<0 ? activePersona.compare_better : activePersona.compare_worse)(label,amount,unit);
 }
 function compareMemories(current,previous){
   const a=current.summary || {}, b=previous && previous.summary || {};
-  if(!previous)return PERSONA.no_compare('我还没有更早的记录');
-  if(!['avg_hr','duration_s'].every(k=>memoryNumber(a[k]) && memoryNumber(b[k])))return PERSONA.no_compare();
-  return compareMetric('样本平均心率',a.avg_hr,b.avg_hr,' bpm')+compareMetric('时长',a.duration_s/60,b.duration_s/60,'分钟')+PERSONA.compare_caution;
+  if(!previous)return activePersona.no_compare('我还没有更早的记录');
+  if(!['avg_hr','duration_s'].every(k=>memoryNumber(a[k]) && memoryNumber(b[k])))return activePersona.no_compare();
+  return compareMetric('样本平均心率',a.avg_hr,b.avg_hr,' bpm')+compareMetric('时长',a.duration_s/60,b.duration_s/60,'分钟')+activePersona.compare_caution;
 }
 async function refreshComparison(memory){
   const request=++comparisonRequest;
@@ -843,7 +858,7 @@ async function refreshComparison(memory){
     $('compare-source').textContent=notice;$('compare-source').hidden=!notice;
   }catch(_){
     if(request!==comparisonRequest || active || !lastSession || lastSession.id!==memory.id)return;
-    $('memory-compare').textContent=PERSONA.no_compare('历史记录暂时无法读取');$('memory-compare').hidden=false;
+    $('memory-compare').textContent=activePersona.no_compare('历史记录暂时无法读取');$('memory-compare').hidden=false;
     const notice=sourceNotice([memory]);$('compare-source').textContent=notice;$('compare-source').hidden=!notice;
   }
 }
@@ -929,7 +944,7 @@ function markGap(){
   if (!addPoint({t:elapsedSeconds(), gap:true})) return;
   gapOpen = true; previous = null; lastSignal = null; resetOutside();
   $('heart-rate').textContent = '—'; $('heart-rate').classList.add('idle'); $('connection').textContent = '信号缺失 · gap'; $('connection').classList.add('offline');
-  $('zone-state').textContent = '读数不可用，不判断区间'; noteAndSpeak(PERSONA.disconnected);
+  $('zone-state').textContent = '读数不可用，不判断区间'; noteAndSpeak(activePersona.disconnected);
 }
 function receiveHR(hr, now = performance.now()){
   if (!active || !Number.isInteger(hr) || hr < 0 || hr > 65535) return;
@@ -992,7 +1007,7 @@ function drawAuxLive(){
   const parts = [];
   if (latestCad) parts.push('踏频 ' + latestCad.value + ' rpm');
   if (latestPwr) parts.push('功率 ' + latestPwr.value + ' W');
-  $('aux-live').textContent = parts.length ? parts.join(' · ') : PERSONA.aux_none;
+  $('aux-live').textContent = parts.length ? parts.join(' · ') : activePersona.aux_none;
 }
 function onCadence(event){
   try {
@@ -1051,9 +1066,10 @@ function onHeartRate(event){try {receiveHR(parseHeartRate(event.target.value));}
 function begin(options={}){
   brainRequest+=1;brainSpeech='';$('brain-card').hidden=true;
   comparisonRequest+=1;$('memory-compare').hidden=true;$('compare-source').hidden=true;
+  applyActivity();
   target = options.target === undefined ? readTarget() : options.target; startedMs = Date.now(); startedMono = performance.now();
   const random = new Uint32Array(4); crypto.getRandomValues(random);
-  session = {schema_version:'luma-ride-memory/3', id:'ride-' + [...random].map(n=>n.toString(16).padStart(8,'0')).join(''), started_at:new Date(startedMs).toISOString(), ended_at:null, samples_hz:1, series:[], summary:null, coach_notes:[], persona_version:PERSONA.version, source:SIMULATED ? 'simulated' : 'ble_gatt_0x180d'};
+  session = {schema_version:'luma-ride-memory/3', id:'ride-' + [...random].map(n=>n.toString(16).padStart(8,'0')).join(''), started_at:new Date(startedMs).toISOString(), ended_at:null, samples_hz:1, series:[], summary:null, coach_notes:[], persona_version:activePersona.version, source:SIMULATED ? 'simulated' : 'ble_gatt_0x180d', activity:currentActivity()};
   latestCad = null; latestPwr = null; crankPrev = null; drawAuxLive();
   lastFix=null; startTrackWatch(); drawTrackLive(); drawTrackMap(null);
   const viewLive=$('view-live');if(viewLive)viewLive.checked=true;
@@ -1064,7 +1080,7 @@ function begin(options={}){
   nextFuelSeconds=fuelStepS||Infinity;nextMilestoneSeconds=milestoneStepS||Infinity;lastCoachSpeech=-Infinity;
   crashState='idle';clearInterval(fallTimer);$('fall-card').hidden=true;
   active = true; void requestScreenLock(); startNavWatch(); previous = null; lastSignal = null; gapOpen = false; outsideSince = null; outsideKind = null; lastAlert = -Infinity; alerts = 0; totals = {below:0, within:0, above:0};
-  $('lower').disabled = $('upper').disabled = true; $('milestone-interval').disabled = $('fuel-interval').disabled = true; $('start-ride').disabled = true; $('end-ride').disabled = false; $('timeline').textContent = ''; $('heart-rate').textContent = '—'; $('heart-rate').classList.add('idle'); $('summary').textContent = '记录中，结束后总结。'; drawProfile();
+  $('lower').disabled = $('upper').disabled = true; $('milestone-interval').disabled = $('fuel-interval').disabled = true; $('activity-select').disabled = true; $('start-ride').disabled = true; $('end-ride').disabled = false; $('timeline').textContent = ''; $('heart-rate').textContent = '—'; $('heart-rate').classList.add('idle'); $('summary').textContent = '记录中，结束后总结。'; drawProfile();
   timer = setInterval(()=>{if (!active) return; remindFuel(); remindMilestone(); const s=Math.floor(elapsedSeconds()); $('elapsed').textContent = String(Math.floor(s/60)).padStart(2,'0') + ':' + String(s%60).padStart(2,'0'); if (lastSignal !== null && performance.now()-lastSignal > STALE_MS) markGap();}, 500);
 }
 async function connectBLE(){
@@ -1083,7 +1099,7 @@ async function startRide(){
   try {
     readTarget(); connecting=true; $('start-ride').disabled=true;$('demo-start').disabled=true;
     // Warm up browser speech in a user gesture, without inventing a recorded alert.
-    if(recallSpoken || !speakRecall())speak(PERSONA.start);
+    if(recallSpoken || !speakRecall())speak(activePersona.start);
     if (SIMULATED && !DEMO) {
       begin(); state('SIMULATED：仅演示；所有记录永久带 simulated 来源。');
       const generate = ()=>{const seconds=elapsedSeconds(), midpoint=target ? (target.lower+target.upper)/2 : 130; const amplitude=target ? Math.min(4,(target.upper-target.lower)/4) : 4;
@@ -1126,7 +1142,7 @@ function tickDemo(){
   demoFeedAux(demoElapsed);
   // Simulated loop track: fictional ellipse, source stays 'simulated' end to end.
   const angle=2*Math.PI*(demoElapsed/DEMO_DURATION_S);
-  lastFix={lat:39.9921+0.008*Math.cos(angle),lng:116.3974+0.012*Math.sin(angle),acc:5,mono:performance.now()};
+  lastFix={lat:39.9921+0.008*Math.cos(angle),lng:116.3974+0.012*Math.sin(angle),alt:55+35*Math.sin(angle*4),acc:5,mono:performance.now()};
   receiveHR(demoHeartRate(demoElapsed));
   const minutes=Math.floor(demoElapsed/60), seconds=demoElapsed%60;
   $('elapsed').textContent=String(minutes).padStart(2,'0')+':'+String(seconds).padStart(2,'0')+' · SIMULATED / 30×';
@@ -1146,7 +1162,7 @@ function startDemo(){
     $('demo-target').textContent=(configured ? '演示使用你填写的范围：' : '演示专用虚构阈值：')+bounds.lower+'–'+bounds.upper+' bpm；不是个人训练区间，真实 BLE 仍只使用输入框原值。';
     $('demo-target').hidden=false;
     state('SIMULATED · 前台播放通常90秒，后台挂起可能延长；剧本时间用于记录，越区等待和冷却仍按实际播放时间。');
-    speak(PERSONA.simulated+'。开始演示记录。');
+    speak(activePersona.simulated+'。开始演示记录。');
     demoFeedAux(0);
     receiveHR(demoHeartRate(0));
     simulator=setInterval(tickDemo,1000);
@@ -1168,12 +1184,13 @@ function buildMemory(){
     max_power:pwrs.length ? Math.max(...pwrs) : null,
     distance_m:track ? track.distance : null,
     avg_speed_mps:track && duration>0 ? track.distance/duration : null,
-    max_speed_mps:track ? track.maxSpeed : null};
+    max_speed_mps:track ? track.maxSpeed : null,
+    ascent_m:track ? track.ascent : null};
   return session;
 }
 function summarize(memory){
   const s=memory.summary, count=memory.series.filter(p=>'hr' in p).length;
-  if (s.duration_s < 10 || count < 2) return PERSONA.short;
+  if (s.duration_s < 10 || count < 2) return activePersona.short;
   let text=(memory.source === 'simulated' ? '模拟记录：' : '本次记录：') + Math.round(s.duration_s) + '秒，样本平均心率' + s.avg_hr.toFixed(1) + '，最高' + s.max_hr + '，信号缺口' + s.gaps + '次，阈值提醒' + s.alerts + '次。';
   if(s.time_in_zone_s){const z=s.time_in_zone_s, observed=z.below+z.within+z.above;
     text+=observed > 0 ? '在可归类的'+observed.toFixed(1)+'秒中，低于、范围内、高于自定义阈值的占比分别为'+[z.below,z.within,z.above].map(n=>(n/observed*100).toFixed(0)+'%').join('、')+'；未观测时间不计入。' : '没有足够连续读数计算区间占比。';
@@ -1181,6 +1198,7 @@ function summarize(memory){
   if(s.avg_power!=null)text+='样本平均功率'+s.avg_power.toFixed(1)+' W，最大'+s.max_power+' W。';
   if(s.avg_cadence!=null)text+='样本平均踏频'+s.avg_cadence.toFixed(1)+' rpm。';
   if(s.distance_m!=null)text+='GPS 轨迹距离'+(s.distance_m/1000).toFixed(2)+' 公里，平均速度'+(s.avg_speed_mps*3.6).toFixed(1)+' km/h，最高'+(s.max_speed_mps*3.6).toFixed(1)+' km/h；只统计记录到的坐标点，丢点与断线不计入。';
+  if(typeof s.ascent_m==='number')text+='累计爬升'+Math.round(s.ascent_m)+' 米，来自记录到的海拔读数。';
   return text;
 }
 function retain(memory){
@@ -1260,7 +1278,7 @@ function buildTrackGpx(memory,escapeXml,iso){
     if('cad' in p)ext+='<gpxtpx:cad>'+p.cad+'</gpxtpx:cad>';
     ext='<gpxtpx:TrackPointExtension>'+ext+'</gpxtpx:TrackPointExtension>';
     if('pwr' in p)ext+='<gpxp:power>'+p.pwr+'</gpxp:power>';
-    lines.push('<trkpt lat="'+fmt(p.lat)+'" lon="'+fmt(p.lng)+'"><time>'+iso(p.t)+'</time><extensions>'+ext+'</extensions></trkpt>');
+    lines.push('<trkpt lat="'+fmt(p.lat)+'" lon="'+fmt(p.lng)+'">'+('alt' in p?'<ele>'+p.alt+'</ele>':'')+'<time>'+iso(p.t)+'</time><extensions>'+ext+'</extensions></trkpt>');
   }
   if(inSegment)lines.push('</trkseg>');
   if(!count)throw new Error('没有带坐标的采样，不生成空轨迹 GPX');
@@ -1277,11 +1295,11 @@ async function getToken(){
 function stripForUpload(memory){
   const copy=JSON.parse(JSON.stringify(memory));
   if(Array.isArray(copy.series))copy.series=copy.series.map(p=>{
-    if(!('lat' in p) && !('lng' in p))return p;
-    const {lat,lng,...rest}=p; return rest;
+    if(!('lat' in p) && !('lng' in p) && !('alt' in p))return p;
+    const {lat,lng,alt,...rest}=p; return rest;
   });
   if($('track-upload-none').checked===true && copy.summary && typeof copy.summary==='object'){
-    copy.summary={...copy.summary,distance_m:null,avg_speed_mps:null,max_speed_mps:null};
+    copy.summary={...copy.summary,distance_m:null,avg_speed_mps:null,max_speed_mps:null,ascent_m:null};
   }
   return copy;
 }
@@ -1305,7 +1323,7 @@ function finishRide(reason=''){
   if(memoryNumber(memory.summary.avg_hr))previousRideAvgHr=memory.summary.avg_hr;
   drawTrackMap(memory);drawTrackLive();
   const viewReview=$('view-review');if(viewReview)viewReview.checked=true;
-  $('end-ride').disabled=true;$('reconnect').disabled=true;$('start-ride').disabled=false;$('lower').disabled=$('upper').disabled=false;$('milestone-interval').disabled=$('fuel-interval').disabled=false;
+  $('end-ride').disabled=true;$('reconnect').disabled=true;$('start-ride').disabled=false;$('lower').disabled=$('upper').disabled=false;$('milestone-interval').disabled=$('fuel-interval').disabled=false;$('activity-select').disabled=false;
   const text=summarize(memory);$('summary').textContent=text;if(memory.coach_notes.length<200)memory.coach_notes.push(text);speak(text,'summary',speechKind==='fuel');
   lastSession=memory;$('download-session').disabled=false;$('download-gpx').disabled=false;$('connection').textContent='记录已结束';state(reason || '记录结束。平均值为实际样本算术平均，不推断训练效果。');
   const retained=retain(memory); void upload(memory,retained);
@@ -1317,6 +1335,9 @@ $('nav-voice').addEventListener('click',()=>{navVoice=$('nav-voice').checked!==f
 $('track-enabled').addEventListener('change',()=>{trackPrefsSave();if(active){if($('track-enabled').checked===false){stopTrackWatch();lastFix=null;}else startTrackWatch();}drawTrackLive();});
 $('track-upload-none').addEventListener('change',trackPrefsSave);
 $('track-clip').addEventListener('change',trackPrefsSave);
+$('activity-select').addEventListener('change',()=>{applyActivity();try{localStorage.setItem('luma.activity',currentActivity());}catch(_){}});
+try{const savedActivity=localStorage.getItem('luma.activity');if(savedActivity==='hike')$('activity-select').value='hike';}catch(_){}
+applyActivity();
 trackPrefsLoad();drawTrackLive();
 window.addEventListener('devicemotion', onDeviceMotion);
 document.addEventListener('pointerdown',()=>{if(crashState==='alert' || crashState==='alarm')cancelFallAlert('触碰屏幕，确认有意识，警报取消。');});
@@ -1360,8 +1381,8 @@ $('download-gpx').addEventListener('click',()=>{
 window.addEventListener('beforeunload',event=>{if(active){event.preventDefault();event.returnValue='';}});
 $('simulated-banner').hidden=!SIMULATED;
 if(DEMO){
-  $('demo-notice').textContent=PERSONA.demo_notice;$('demo-notice').hidden=false;
-  $('demo-start').textContent=PERSONA.demo_start;$('demo-start').hidden=false;
+  $('demo-notice').textContent=activePersona.demo_notice;$('demo-notice').hidden=false;
+  $('demo-start').textContent=activePersona.demo_start;$('demo-start').hidden=false;
   $('demo-target').textContent='未填范围时仅演示使用虚构100–140 bpm阈值；不填入真实记录，不代表你的训练区间。';$('demo-target').hidden=false;
   $('compatibility').textContent+=' 演示无需 BLE；“连接心率带并开始”仍用于独立真实记录。不支持 BLE 时仅演示可用。';
   $('simulated-banner').textContent='SIMULATED · 演示入口：剧本数据是假的，真实 BLE 记录必须另行连接';
@@ -1379,6 +1400,8 @@ const I18N_EN=Object.freeze({
   brand:'MARK · Ride',
   'scene-ride':'Ride', 'scene-hike':'Hike', 'scene-office':'Work', 'scene-soon':'soon',
   'view-live':'Ride', 'view-review':'Review',
+  'activity-label':'Scene', 'activity-ride':'Ride', 'activity-hike':'Hike',
+  'activity-note':'The scene only changes Mark’s wording and the activity label in the record; the data contract and privacy rules are identical. Hiking navigation and grade callouts are in development.',
   eyebrow:'AI sports companion · one mind, many bodies',
   h1a:'Record the moment.', h1b:'No calls made for you.',
   lede:"I'm Mark. Direct heart-rate-strap connection, on-device voice, your own threshold alerts. No target zone, no inference, no zone alerts.",

@@ -256,21 +256,22 @@ class RideMemoryV3Tests(unittest.TestCase):
         value = {"schema_version": "luma-ride-memory/3", "id": "synthetic-ride_gps01",
                  "started_at": "2026-11-07T08:00:00Z", "ended_at": "2026-11-07T08:01:40Z",
                  "samples_hz": 1,
-                 "series": [{"t": 10, "hr": 120, "lat": 40.0, "lng": 116.0},
-                            {"t": 20, "hr": 122, "lat": 40.0005, "lng": 116.0005},
+                 "series": [{"t": 10, "hr": 120, "lat": 40.0, "lng": 116.0, "alt": 100.0},
+                            {"t": 20, "hr": 122, "lat": 40.0005, "lng": 116.0005, "alt": 112.0},
                             {"t": 30, "gap": True},
-                            {"t": 40, "hr": 124, "lat": 40.001, "lng": 116.001}],
+                            {"t": 40, "hr": 124, "lat": 40.001, "lng": 116.001, "alt": 107.0}],
                  "summary": None,
                  "coach_notes": [], "persona_version": "ride-persona/14",
                  "source": "ble_gatt_0x180d"}
-        track = [(10.0, 40.0, 116.0), (20.0, 40.0005, 116.0005), (40.0, 40.001, 116.001)]
-        from ride_memory import _track_stats
+        track = [(10.0, 40.0, 116.0, 100.0), (20.0, 40.0005, 116.0005, 112.0),
+                 (40.0, 40.001, 116.001, 107.0)]
+        from ride_memory import _track_stats, _ascent_m
         distance, max_speed = _track_stats(track)
         value["summary"] = {"duration_s": 100, "avg_hr": 122, "max_hr": 124,
                             "time_in_zone_s": None, "zone_target": None, "gaps": 1, "alerts": 0,
                             "avg_cadence": None, "avg_power": None, "max_power": None,
                             "distance_m": distance, "avg_speed_mps": distance / 100,
-                            "max_speed_mps": max_speed}
+                            "max_speed_mps": max_speed, "ascent_m": _ascent_m(track)}
         return value
 
     def test_v3_valid_roundtrip_and_older_versions_untouched(self):
@@ -303,13 +304,13 @@ class RideMemoryV3Tests(unittest.TestCase):
     def test_v3_stripped_upload_needs_internal_consistency(self):
         value = self.v3()
         for point in value['series']:
-            point.pop('lat', None); point.pop('lng', None)
+            point.pop('lat', None); point.pop('lng', None); point.pop('alt', None)
         self.assertEqual(validate_session(value), value)  # aggregates survive stripping
         for updates in ({'avg_speed_mps': 0.01}, {'max_speed_mps': 0.001},
                         {'max_speed_mps': 71}, {'distance_m': -1}):
             bad = self.v3()
             for point in bad['series']:
-                point.pop('lat', None); point.pop('lng', None)
+                point.pop('lat', None); point.pop('lng', None); point.pop('alt', None)
             bad['summary'].update(updates)
             with self.subTest(updates=updates): self.reject(bad)
 
@@ -319,11 +320,57 @@ class RideMemoryV3Tests(unittest.TestCase):
         self.reject(value)  # recorded coordinates require aggregates
         bare = self.v3()
         for point in bare['series']:
-            point.pop('lat', None); point.pop('lng', None)
+            point.pop('lat', None); point.pop('lng', None); point.pop('alt', None)
         bare['summary'].update(distance_m=None, avg_speed_mps=None, max_speed_mps=None)
         self.assertEqual(validate_session(bare), bare)  # tracking disabled ride is honest
         bare['summary']['distance_m'] = 5  # one present, two null
         self.reject(bare)
+
+    def test_v3_alt_requires_coords_and_plausible_range(self):
+        for bad in (-501, 9001, float('nan'), float('inf'), '100'):
+            value = self.v3(); value['series'][0]['alt'] = bad
+            with self.subTest(bad=bad): self.reject(value)
+        value = self.v3(); del value['series'][0]['lat']; del value['series'][0]['lng']
+        self.reject(value)  # alt without the coordinate pair
+        value = self.v3(); value['series'][2]['alt'] = 50.0  # gaps never carry alt
+        self.reject(value)
+
+    def test_v3_ascent_cross_validated_against_track(self):
+        value = self.v3(); value['summary']['ascent_m'] = 999.0
+        self.reject(value)  # must equal the recomputed climb
+        value = self.v3(); del value['summary']['ascent_m']
+        self.reject(value)  # recorded altitude pairs require ascent_m
+        value = self.v3(); value['summary']['ascent_m'] = None
+        self.reject(value)  # null is not a climb value when alt was recorded
+        noalt = self.v3()
+        for point in noalt['series']:
+            point.pop('alt', None)
+        noalt['summary']['ascent_m'] = None
+        self.assertEqual(validate_session(noalt), noalt)  # no alt data, no climb claim
+        noalt['summary']['ascent_m'] = 12.0
+        self.reject(noalt)  # climb without altitude data is fabricated
+        stripped = self.v3()
+        for point in stripped['series']:
+            point.pop('lat', None); point.pop('lng', None); point.pop('alt', None)
+        self.assertEqual(validate_session(stripped), stripped)  # stripped keeps the number
+        stripped['summary']['ascent_m'] = None
+        self.assertEqual(validate_session(stripped), stripped)  # opt-out nulls it honestly
+        stripped['summary']['ascent_m'] = -3
+        self.reject(stripped)
+
+    def test_v3_activity_label_optional_and_bounded(self):
+        value = self.v3(); value['activity'] = 'hike'
+        self.assertEqual(validate_session(value), value)
+        for bad in ('run', '', 1, None):
+            value = self.v3(); value['activity'] = bad
+            with self.subTest(bad=bad): self.reject(value)
+        v2 = self.v3(); v2['schema_version'] = 'luma-ride-memory/2'
+        for point in v2['series']:
+            point.pop('lat', None); point.pop('lng', None); point.pop('alt', None)
+        del v2['summary']['distance_m']; del v2['summary']['avg_speed_mps']
+        del v2['summary']['max_speed_mps']; del v2['summary']['ascent_m']
+        v2['activity'] = 'hike'
+        self.reject(v2)  # activity is a v3 extension
 
 
 if __name__ == '__main__':

@@ -889,6 +889,63 @@ class RideMemoryUI(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertIn(text, self.html)
 
+    def test_activity_scene_copy_strings(self):
+        for text in ('activity-select', 'activity-ride', 'activity-hike', 'hike-persona/1',
+                     'HIKE_PERSONA', 'luma.activity', '走了', '场景只改变 Mark 的措辞'):
+            with self.subTest(text=text):
+                self.assertIn(text, self.html)
+
+    def test_demo_records_altitude_ascent_and_activity_label(self):
+        result = self.run_js("""
+          $('demo-start').click();
+          await _advance(90000);
+          const uploadCall=_calls.find(c=>c.url==='/api/coach/ride/session');
+          return {uploaded:JSON.parse(uploadCall.body),local:lastSession,
+                  gpx:buildRideGpx(lastSession),trackStats:$('track-stats').textContent,
+                  summaryText:$('summary').textContent};
+        """,demo=True)
+        from ride_memory import validate_session
+        item = validate_session(result['local'])
+        self.assertEqual(item['activity'], 'ride')  # default scene label
+        self.assertEqual(item['persona_version'], 'ride-persona/14')
+        self.assertGreater(item['summary']['ascent_m'], 100)  # synthetic hill loop climbed
+        alts = [p['alt'] for p in item['series'] if 'alt' in p]
+        self.assertGreater(len(alts), 80)
+        self.assertIn('<ele>', result['gpx'])  # altitude rides along in the backup
+        self.assertIn('累计爬升', result['trackStats'])
+        self.assertIn('累计爬升', result['summaryText'])
+        for point in result['uploaded']['series']:
+            self.assertNotIn('alt', point)  # stripped upload keeps nothing positional
+
+    def test_upload_opt_out_also_nulls_ascent(self):
+        result = self.run_js("""
+          $('track-upload-none').checked=true;
+          $('demo-start').click();
+          await _advance(90000);
+          const uploadCall=_calls.find(c=>c.url==='/api/coach/ride/session');
+          return JSON.parse(uploadCall.body);
+        """,demo=True)
+        from ride_memory import validate_session
+        item = validate_session(result)
+        self.assertIsNone(item['summary']['ascent_m'])
+
+    def test_hike_scene_switches_persona_and_activity_label(self):
+        result = self.run_js("""
+          $('activity-select').value='hike';
+          $('activity-select').listeners.change();
+          $('demo-start').click();
+          await _advance(90000);
+          const uploadCall=_calls.find(c=>c.url==='/api/coach/ride/session');
+          return {uploaded:JSON.parse(uploadCall.body),stored:_storage.get('luma.activity'),
+                  milestone:typeof activePersona.milestone==='function' ? activePersona.milestone(30) : ''};
+        """,demo=True)
+        from ride_memory import validate_session
+        item = validate_session(result['uploaded'])
+        self.assertEqual(item['activity'], 'hike')
+        self.assertEqual(item['persona_version'], 'hike-persona/1')
+        self.assertEqual(result['stored'], 'hike')  # scene choice persists
+        self.assertTrue(result['milestone'].startswith('走了30分钟'))  # hike wording
+
     def test_connect_aux_flow_with_fake_power_meter(self):
         result = self.run_js("""
           const cadChar={addEventListener(){},removeEventListener(){},async startNotifications(){}};

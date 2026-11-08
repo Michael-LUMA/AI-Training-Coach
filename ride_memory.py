@@ -49,6 +49,19 @@ v3 additions (luma-ride-memory/3, everything above unchanged except):
   0 <= avg_speed_mps <= max_speed_mps <= 70 (a generous physical ceiling,
   not a performance claim). A v2 summary inside a v3 file is rejected.
 
+v3 optional extensions (records without them remain valid v3):
+* HR series points with coordinates may also carry alt (finite meters,
+  -500..9000, GPS altitude as recorded). alt never appears without lat/lng.
+* summary may add ascent_m: cumulative climb, the sum of positive altitude
+  deltas between consecutive track points that both carry alt (a point
+  without alt breaks the pair, never bridged). When the track holds at
+  least one such pair, ascent_m is required and must equal the recomputed
+  value; when the track has coordinates but no alt pair, ascent_m must be
+  absent or null. On privacy-stripped uploads (no track) ascent_m is kept
+  as a nonnegative number or opted out to null.
+* session may add activity: "ride" or "hike" (default ride when absent).
+  It is a declared scene label, never inferred from speed or terrain.
+
 No HTTP, BLE, TTS, filesystem writes, model calls, diagnosis or prescriptions.
 """
 from __future__ import annotations
@@ -69,6 +82,9 @@ MAX_NOTE_CHARS = 2000
 EARTH_RADIUS_M = 6371000.0  # Matches the recording client's haversine constant.
 MAX_PLAUSIBLE_SPEED_MPS = 70.0  # Generous physical ceiling, never a claim.
 SOURCES = frozenset({"ble_gatt_0x180d", "simulated"})
+ACTIVITIES = frozenset({"ride", "hike"})
+MIN_ALT_M = -500.0
+MAX_ALT_M = 9000.0
 _FIELDS = frozenset({"schema_version", "id", "started_at", "ended_at", "samples_hz",
                      "series", "summary", "coach_notes", "persona_version", "source"})
 _SUMMARY = frozenset({"duration_s", "avg_hr", "max_hr", "time_in_zone_s", "zone_target",
@@ -157,17 +173,34 @@ def _haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     return 2 * EARTH_RADIUS_M * math.asin(min(1.0, math.sqrt(a)))
 
 
-def _track_stats(track: list[tuple[float, float, float]]) -> tuple[float, float]:
+def _track_stats(track: list[tuple]) -> tuple[float, float]:
     """Distance and max per-segment speed recomputed from recorded coordinates."""
     distance = 0.0
     max_speed = 0.0
-    for (t1, lat1, lng1), (t2, lat2, lng2) in zip(track, track[1:]):
+    for (t1, lat1, lng1, _a1), (t2, lat2, lng2, _a2) in zip(track, track[1:]):
         segment = _haversine_m(lat1, lng1, lat2, lng2)
         distance += segment
         dt = t2 - t1
         if dt > 0:
             max_speed = max(max_speed, segment / dt)
     return distance, max_speed
+
+
+def _ascent_m(track: list[tuple]) -> float | None:
+    """Cumulative climb: sum of positive deltas between consecutive track
+    points that BOTH carry alt (identical to the recording client's rule;
+    a point without alt breaks the pair, never bridged). Returns None when
+    no such pair exists — no altitude data, no climb claim."""
+    ascent = 0.0
+    pairs = 0
+    for (_t1, _la1, _ln1, a1), (_t2, _la2, _ln2, a2) in zip(track, track[1:]):
+        if a1 is None or a2 is None:
+            continue
+        pairs += 1
+        delta = a2 - a1
+        if delta > 0:
+            ascent += delta
+    return ascent if pairs else None
 
 
 def validate_session(session: dict[str, Any]) -> dict[str, Any]:
@@ -189,7 +222,12 @@ def validate_session(session: dict[str, Any]) -> dict[str, Any]:
         ...
         RideMemoryError: session fields do not match v1
     """
-    _fields(session, _FIELDS, "session")
+    _require(type(session) is dict and set(session) - {"activity"} == _FIELDS,
+             "session fields do not match v1")
+    if "activity" in session:
+        _require(session["schema_version"] == SCHEMA_VERSION_V3
+                 and session["activity"] in ACTIVITIES,
+                 "activity must be a declared v3 scene label")
     _require(type(session["schema_version"]) is str and session["schema_version"] in SCHEMA_VERSIONS,
              "Unsupported schema_version")
     v2 = session["schema_version"] in (SCHEMA_VERSION_V2, SCHEMA_VERSION_V3)
@@ -208,7 +246,11 @@ def validate_session(session: dict[str, Any]) -> dict[str, Any]:
     _require(type(series) is list and len(series) <= MAX_SERIES,
              "series must be a bounded list", "series_too_large" if type(series) is list else "invalid_schema")
     summary = session["summary"]
-    _fields(summary, _SUMMARY_V3 if v3 else (_SUMMARY_V2 if v2 else _SUMMARY), "summary")
+    if v3:
+        _require(type(summary) is dict and set(summary) - {"ascent_m"} == _SUMMARY_V3,
+                 "summary fields do not match v1")
+    else:
+        _fields(summary, _SUMMARY_V2 if v2 else _SUMMARY, "summary")
     duration = _number(summary["duration_s"], "duration_s")
     _require(math.isclose(duration, elapsed, rel_tol=0, abs_tol=1e-6),
              "duration_s must match the recorded timestamps")
@@ -220,7 +262,7 @@ def validate_session(session: dict[str, Any]) -> dict[str, Any]:
     gaps = 0
     for point in series:
         if type(point) is dict:
-            allowed = {"t", "hr", "gap", "cad", "pwr", "lat", "lng"} if v3 else (
+            allowed = {"t", "hr", "gap", "cad", "pwr", "lat", "lng", "alt"} if v3 else (
                 {"t", "hr", "gap", "cad", "pwr"} if v2 else {"t", "hr", "gap"})
             shape_ok = not (set(point) - allowed) and "t" in point and (("hr" in point) != ("gap" in point))
         else:
@@ -257,7 +299,17 @@ def validate_session(session: dict[str, Any]) -> dict[str, Any]:
                          "series.lng must be a finite number")
                 _require(-90.0 <= lat <= 90.0, "series.lat must be within -90..90")
                 _require(-180.0 <= lng <= 180.0, "series.lng must be within -180..180")
-                track.append((t, float(lat), float(lng)))
+                alt = None
+                if "alt" in point:
+                    alt = point["alt"]
+                    _require(type(alt) in (int, float) and math.isfinite(alt),
+                             "series.alt must be a finite number")
+                    _require(MIN_ALT_M <= alt <= MAX_ALT_M,
+                             "series.alt must be within -500..9000 meters")
+                    alt = float(alt)
+                track.append((t, float(lat), float(lng), alt))
+            else:
+                _require("alt" not in point, "alt requires lat/lng coordinates")
     _count(summary["gaps"], "gaps")
     _count(summary["alerts"], "alerts")
     _require(summary["gaps"] == gaps, "gaps must count explicit series markers")
@@ -287,6 +339,18 @@ def validate_session(session: dict[str, Any]) -> dict[str, Any]:
             _require(avg_speed <= max_speed, "avg_speed_mps cannot exceed max_speed_mps")
         else:
             _require(not track, "Recorded coordinates require distance/speed aggregates")
+        expected_ascent = _ascent_m(track)
+        if expected_ascent is not None:
+            _require(summary.get("ascent_m") is not None,
+                     "Recorded altitude requires ascent_m")
+            _require(math.isclose(_number(summary["ascent_m"], "ascent_m"), expected_ascent,
+                                  rel_tol=1e-9, abs_tol=1e-6),
+                     "ascent_m must equal the recorded track climb")
+        elif track:
+            _require(summary.get("ascent_m") is None,
+                     "No altitude data forbids an ascent claim")
+        elif summary.get("ascent_m") is not None:
+            _number(summary["ascent_m"], "ascent_m")  # Stripped upload: bounded check only.
     target, times = summary["zone_target"], summary["time_in_zone_s"]
     if target is None:
         _require(times is None, "No zone_target requires null time_in_zone_s")

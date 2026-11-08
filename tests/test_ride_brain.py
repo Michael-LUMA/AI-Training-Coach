@@ -90,6 +90,34 @@ class RideBrainTests(unittest.TestCase):
         self.assertEqual(facts['differences'],{'avg_hr':-4.0,'duration_s':-60.0})
         self.assertEqual(previous['avg_hr'],124)
 
+    def test_ascent_and_activity_facts_projected_and_verified(self):
+        from ride_memory import _track_stats, _ascent_m
+        started='2026-11-07T08:00:00Z'
+        series=[{'t':10,'hr':120,'lat':40.0,'lng':116.0,'alt':100.0},
+                {'t':20,'hr':122,'lat':40.0005,'lng':116.0005,'alt':150.0},
+                {'t':40,'hr':124,'lat':40.001,'lng':116.001,'alt':120.0}]
+        track=[(10.0,40.0,116.0,100.0),(20.0,40.0005,116.0005,150.0),(40.0,40.001,116.001,120.0)]
+        distance,max_speed=_track_stats(track)
+        def hike_memory():
+            return {'schema_version':'luma-ride-memory/3','id':'hike01','started_at':started,
+                    'ended_at':started.replace('08:00:00','08:00:40'),'samples_hz':1,'series':series,
+                    'summary':{'duration_s':40,'avg_hr':122,'max_hr':124,'time_in_zone_s':None,
+                               'zone_target':None,'gaps':0,'alerts':0,'avg_cadence':None,
+                               'avg_power':None,'max_power':None,'distance_m':distance,
+                               'avg_speed_mps':distance/40,'max_speed_mps':max_speed,
+                               'ascent_m':_ascent_m(track)},
+                    'coach_notes':[],'persona_version':'hike-persona/1',
+                    'source':'ble_gatt_0x180d','activity':'hike'}
+        post=transport('走了四十秒，累计爬升50米，平均心率122。')
+        result=brain.build_ride_review(hike_memory(),api_key='synthetic-key',http_post=post)
+        self.assertEqual(result['llm_status'],'ok')
+        facts=json.loads(json.loads(post.call_args.args[0].data)['messages'][1]['content'])
+        self.assertEqual(facts['activity'],'hike')
+        self.assertEqual(facts['display']['ascent_m'],50)
+        rejected=brain.build_ride_review(hike_memory(),api_key='synthetic-key',
+                                         http_post=transport('累计爬升80米。'))
+        self.assertEqual(rejected['llm_status'],'rejected_unverifiable_number')
+
     def test_invalid_inputs_fail_closed_before_transport(self):
         post=Mock(side_effect=AssertionError('no network'))
         invalid=memory();invalid['summary']['avg_hr']=999
