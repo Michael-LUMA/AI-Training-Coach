@@ -188,7 +188,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px/1.75 var(--mono);max
 <h2 id="nav-heading" data-i18n="nav-h">骑行导航（实验 · 高德）</h2>
 <p class="note" data-i18n="nav-note">开始前输入目的地，Mark 规划骑行路线，接近转向时语音提醒。位置只用于本次规划与途中比对，不写入骑行记录；坐标经本服务转发给高德。偏航不会自动重算路线，走错了请停下重新规划。</p>
 <div class="row"><label><span data-i18n="nav-dest">目的地（地址或地名）</span><input id="nav-destination" type="text" maxlength="100" placeholder="例如：奥林匹克森林公园南园" data-i18n-ph="nav-ph"></label></div>
-<div class="row"><button id="nav-plan" type="button" class="secondary" data-i18n="nav-plan">规划骑行路线</button><button id="nav-clear" type="button" class="secondary" hidden data-i18n="nav-clear">清除路线</button></div>
+<div class="row"><button id="nav-plan" type="button" class="secondary" data-i18n="nav-plan">规划骑行路线</button><button id="nav-mic" type="button" class="secondary" data-i18n="nav-mic">说目的地</button><button id="nav-clear" type="button" class="secondary" hidden data-i18n="nav-clear">清除路线</button></div>
 <p id="nav-status" class="note" role="status" aria-live="polite"></p>
 <pre id="nav-steps" aria-label="路线步骤"></pre>
 <div class="row"><label class="check"><input id="nav-voice" type="checkbox" checked><span data-i18n="nav-voice">接近转向时语音提醒（约 120 米前）</span></label></div>
@@ -233,7 +233,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px/1.75 var(--mono);max
 'use strict';
 // Device adapter only: ride_memory.py owns the reusable versioned memory contract.
 const PERSONA = Object.freeze({
-  version:'ride-persona/16', name:'Mark', above:'心率超过你设的上限了。', below:'心率低于你设的下限了。', disconnected:'心率信号断了，我看不到读数。', short:'记录太短，我还总结不了。',
+  version:'ride-persona/17', name:'Mark', above:'心率超过你设的上限了。', below:'心率低于你设的下限了。', disconnected:'心率信号断了，我看不到读数。', short:'记录太短，我还总结不了。',
   recall:parts=>'我记得上次'+parts.join('，')+'。记录还很少，这不算趋势。',
   recall_no_history:'我还没有可回放的历史记录。',
   compare_better:(label,amount,unit)=>'我看到'+label+'比上次'+(unit==='分钟' ? '少' : '低')+amount+unit+'。',
@@ -285,7 +285,8 @@ const PERSONA = Object.freeze({
   nav_back:'回到路线上了。',
   chat_title:'问 Mark', chat_placeholder:'问问这次记录…', chat_send:'问',
   chat_fallback:'这个我现在答不上来，等我记到更多数据再聊。',
-  chat_mic:'说', chat_listening:'在听…', chat_listen:'听回答'
+  chat_mic:'说', chat_listening:'在听…', chat_listen:'听回答',
+  nav_mic:'说目的地'
 });
 const SERVICE = 0x180D, CHARACTERISTIC = 0x2A37;
 const CSC_SERVICE = 0x1816, CSC_MEASUREMENT = 0x2A5B, POWER_SERVICE = 0x1818, POWER_MEASUREMENT = 0x2A63;
@@ -853,35 +854,37 @@ async function askMark(){
 // Ears of the assistant: one tap to talk, transcript lands in the box and sends.
 // SpeechRecognition is a progressive enhancement — no support, no button.
 const SpeechEngine=window.SpeechRecognition||window.webkitSpeechRecognition;
-let recognition=null;
-if(!SpeechEngine)$('chat-mic').hidden=true;
-function toggleMic(){
+if(!SpeechEngine){$('chat-mic').hidden=true;$('nav-mic').hidden=true;}
+function listenInto(input,button,label,onFinal){
   if(!SpeechEngine)return;
-  if(recognition){try{recognition.stop();}catch(_){/* double-stop is harmless */}return;}
-  recognition=new SpeechEngine();
-  recognition.lang='zh-CN';recognition.interimResults=true;recognition.maxAlternatives=1;
+  if(button._rec){try{button._rec.stop();}catch(_){/* double-stop is harmless */}return;}
+  const rec=new SpeechEngine();button._rec=rec;
+  rec.lang='zh-CN';rec.interimResults=true;rec.maxAlternatives=1;
   let finalText='';
-  recognition.onresult=(event)=>{
+  rec.onresult=(event)=>{
     try{
       for(let i=event.resultIndex||0;i<event.results.length;i++){
         const item=event.results[i];
         if(!item||!item[0]||typeof item[0].transcript!=='string')continue;
         if(item.isFinal)finalText+=item[0].transcript;
       }
-      if(finalText)$('chat-input').value=finalText;
+      if(finalText)input.value=finalText;
     }catch(_){/* malformed engine events leave the box as-is */}
   };
-  recognition.onend=()=>{
-    recognition=null;$('chat-mic').textContent=activePersona.chat_mic;
-    if(finalText){$('chat-input').value=finalText;askMark();}
+  rec.onend=()=>{
+    if(button._rec===rec)button._rec=null;
+    button.textContent=label;
+    if(finalText){input.value=finalText;if(onFinal)onFinal(finalText);}
   };
-  recognition.onerror=()=>{
-    if(!recognition)return;
-    recognition=null;$('chat-mic').textContent=activePersona.chat_mic;
+  rec.onerror=()=>{
+    if(button._rec!==rec)return;
+    button._rec=null;button.textContent=label;
   };
-  try{recognition.start();$('chat-mic').textContent=activePersona.chat_listening;}
-  catch(_){recognition=null;}
+  try{rec.start();button.textContent=activePersona.chat_listening;}
+  catch(_){if(button._rec===rec)button._rec=null;}
 }
+function toggleMic(){listenInto($('chat-input'),$('chat-mic'),activePersona.chat_mic,()=>askMark());}
+function toggleNavMic(){listenInto($('nav-destination'),$('nav-mic'),activePersona.nav_mic,()=>planNav());}
 function compareMetric(label,current,previous,unit){
   // better/worse are required contract keys, not training-quality judgements.
   const delta=current-previous, tolerance=previous*.03;
@@ -1115,7 +1118,7 @@ function onHeartRate(event){try {receiveHR(parseHeartRate(event.target.value));}
 function begin(options={}){
   brainRequest+=1;brainSpeech='';$('brain-card').hidden=true;
   chatRequest+=1;$('chat-card').hidden=true;$('chat-answer').textContent='';$('chat-listen').hidden=true;
-  if(recognition){try{recognition.abort();}catch(_){/* not started */}recognition=null;$('chat-mic').textContent=activePersona.chat_mic;}
+  for(const mic of [$('chat-mic'),$('nav-mic')]){if(mic._rec){try{mic._rec.abort();}catch(_){/* not started */}mic._rec=null;}mic.textContent=mic.id==='nav-mic'?activePersona.nav_mic:activePersona.chat_mic;}
   comparisonRequest+=1;$('memory-compare').hidden=true;$('compare-source').hidden=true;
   applyActivity();
   target = options.target === undefined ? readTarget() : options.target; startedMs = Date.now(); startedMono = performance.now();
@@ -1384,6 +1387,7 @@ $('chat-send').addEventListener('click',askMark);
 $('chat-mic').addEventListener('click',toggleMic);
 $('chat-listen').addEventListener('click',()=>{const text=$('chat-answer').textContent;if(text)speak(text);});
 $('nav-plan').addEventListener('click',planNav);
+$('nav-mic').addEventListener('click',toggleNavMic);
 $('nav-clear').addEventListener('click',clearNav);
 $('nav-voice').addEventListener('click',()=>{navVoice=$('nav-voice').checked!==false;});
 $('track-enabled').addEventListener('change',()=>{trackPrefsSave();if(active){if($('track-enabled').checked===false){stopTrackWatch();lastFix=null;}else startTrackWatch();}drawTrackLive();});
@@ -1480,7 +1484,7 @@ const I18N_EN=Object.freeze({
   'nav-h':'Ride navigation (experimental · AMap)',
   'nav-note':'Enter a destination before you start; Mark plans a cycling route and speaks up near turns. Location is used only for this plan and en-route checks, never written into the ride record; coordinates are relayed to AMap by this service. Going off-course does not trigger rerouting — stop somewhere safe and replan.',
   'nav-dest':'Destination (address or place name)', 'nav-ph':'e.g. Olympic Forest Park South Gate',
-  'nav-plan':'Plan route', 'nav-clear':'Clear route', 'nav-voice':'Voice reminder near turns (about 120 m ahead)',
+  'nav-plan':'Plan route', 'nav-clear':'Clear route', 'nav-mic':'Say it', 'nav-voice':'Voice reminder near turns (about 120 m ahead)',
   'memory-h':"Mark's memory", listen:'Hear Mark', listen2:'Hear Mark',
   'summary-h':'One line after the ride', 'summary-init':'Generated from the record after you finish. Whatever has no data stays missing.',
   'brain-h':'Mark thought it over',

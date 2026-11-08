@@ -464,7 +464,7 @@ class RideWeeklyBrowserTests(unittest.TestCase):
         self.assertEqual(result['text'], '这周骑了1次，一共60分钟。')
 
     def test_new_weekly_card_strings_version_and_existing_ids_retained(self):
-        for text in ('ride-persona/16', "name:'Mark'", '本周', '听 Mark 说这星期', '还没有记录',
+        for text in ('ride-persona/17', "name:'Mark'", '本周', '听 Mark 说这星期', '还没有记录',
                      'id="ride-weekly"', 'id="memory-card"', 'id="demo-start"', 'id="end-ride"',
                      '/api/coach/ride/weekly', 'weekly_no_rides:', 'weekly_current:', 'weekly_comparison:'):
             self.assertIn(text, self.html)
