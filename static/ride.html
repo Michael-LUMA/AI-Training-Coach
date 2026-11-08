@@ -173,7 +173,8 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px/1.75 var(--mono);max
 <div class="row"><label><span data-i18n="activity-label">场景</span><select id="activity-select"><option value="ride" selected data-i18n="activity-ride">骑行</option><option value="hike" data-i18n="activity-hike">徒步</option><option value="run" data-i18n="activity-run">跑步</option></select></label></div>
 <p class="note" data-i18n="activity-note">场景只改变 Mark 的措辞和记录里的场景标签，数据契约与隐私规则完全一致；骑行与徒步支持语音导航，跑步导航规划中按步行路线。</p>
 <div class="row"><label><span data-i18n="lower-label">自定义下限（bpm，可留空）</span><input id="lower" type="number" min="0" max="65535" step="1" inputmode="numeric" placeholder="由你填写" data-i18n-ph="bounds-ph"></label><label><span data-i18n="upper-label">自定义上限（bpm，可留空）</span><input id="upper" type="number" min="0" max="65535" step="1" inputmode="numeric" placeholder="由你填写" data-i18n-ph="bounds-ph"></label></div>
-<p class="note" data-i18n="bounds-note">上下限须同时填写或同时留空；仅为你设定的提醒阈值，不是医学安全范围。不根据年龄、LTHR 或演示值猜测训练区间。</p>
+<div class="row"><label><span data-i18n="goal-min-label">时长目标（分钟，可留空）</span><input id="goal-min" type="number" min="1" max="1440" step="1" inputmode="numeric" placeholder="由你填写" data-i18n-ph="bounds-ph"></label><label><span data-i18n="goal-km-label">距离目标（公里，可留空）</span><input id="goal-km" type="number" min="0" max="2000" step="0.1" inputmode="decimal" placeholder="由你填写" data-i18n-ph="bounds-ph"></label></div>
+<p class="note" data-i18n="bounds-note">上下限须同时填写或同时留空；仅为你设定的提醒阈值，不是医学安全范围。不根据年龄、LTHR 或演示值猜测训练区间。时长/距离目标可留空：只在过半和接近完成时各播报一次，完成与否骑后按真实记录结算；距离目标需要开启轨迹记录，目标本身只留在本浏览器。</p>
 <div class="row"><label class="check"><input id="crash-detect" type="checkbox"><span data-i18n="crash-label">跌倒检测（实验）</span></label></div>
 <p class="note" data-i18n="crash-note">开启后，骑行中侦测到疑似摔倒会先问你，30 秒无响应就在本机发出警报音。手机需放在身上（骑行服口袋）才有效，放车把包或背包里会不准；屏幕熄灭时手机可能停发传感器数据，检测会失效。网页版不能自动发短信或打电话——它可能漏报或误报，不是可靠的安全设备。</p>
 <div class="row"><label><span data-i18n="milestone-label">里程碑播报</span><select id="milestone-interval"><option value="900" data-i18n="opt-15">每 15 分钟</option><option value="1800" selected data-i18n="opt-30d">每 30 分钟（默认）</option><option value="2700" data-i18n="opt-45">每 45 分钟</option><option value="3600" data-i18n="opt-60">每 60 分钟</option><option value="0" data-i18n="opt-off">关闭</option></select></label><label><span data-i18n="fuel-label">补给提醒</span><select id="fuel-interval"><option value="1800" data-i18n="opt-30">每 30 分钟</option><option value="2700" selected data-i18n="opt-45d">每 45 分钟（默认）</option><option value="3600" data-i18n="opt-60b">每 60 分钟</option><option value="0" data-i18n="opt-offb">关闭</option></select></label></div>
@@ -253,6 +254,12 @@ const PERSONA = Object.freeze({
   wakelock_unavailable:'此浏览器可能熄屏断连，请保持屏幕常亮',
   fuel:(minutes)=>'骑了'+minutes+'分钟了，喝口水、补点吃的。',
   fuel_again:'又到补给的点了，别忘了喝。',
+  goal_time_half:(rest)=>'时间过半，还剩'+rest+'分钟到目标。',
+  goal_time_near:(rest)=>'快完成了，还剩'+rest+'分钟。',
+  goal_dist_half:(rest)=>'路程过半，还剩'+rest+'公里。',
+  goal_dist_near:(rest)=>'快完成了，还剩'+rest+'公里。',
+  goal_summary_time:(target,actual)=>actual>=target ? '时间目标'+target+'分钟，实际'+actual+'分钟，完成。' : '时间目标'+target+'分钟，实际'+actual+'分钟，差'+(target-actual)+'分钟，未完成。',
+  goal_summary_dist:(target,actual)=>actual===null ? '距离目标'+target+'公里，但这次没有记录到轨迹，无法核对。' : (actual>=target ? '距离目标'+target+'公里，实际'+actual+'公里，完成。' : '距离目标'+target+'公里，实际'+actual+'公里，差'+(Math.round((target-actual)*10)/10)+'公里，未完成。'),
   milestone:(minutes)=>'骑了'+minutes+'分钟了。',
   milestone_avg:(avg)=>'平均心率'+avg+'，',
   milestone_within:'在区间内。', milestone_above:'高于上限。', milestone_below:'低于下限。',
@@ -311,6 +318,7 @@ let timer = null, simulator = null, lastSession = null, target = null;
 // Page-scoped conversation id for short follow-up memory (max 3 turns, server RAM only,
 // 30 min idle self-destruct, never persisted). A refresh starts a fresh conversation.
 const CONV_ID = (window.crypto && crypto.randomUUID) ? 'conv-' + crypto.randomUUID() : 'conv-' + Math.random().toString(36).slice(2, 12) + Date.now().toString(36);
+let goal = null, goalState = null;
 let totals = {below:0, within:0, above:0};
 let recallText = '', recallSpoken = false, comparisonRequest = 0;
 let brainSpeech = '', brainRequest = 0, chatRequest = 0;
@@ -370,8 +378,8 @@ function cancelSpeech(){if ('speechSynthesis' in window) window.speechSynthesis.
 // arrival preempts the current utterance (the preempted one is dropped —
 // fall alerts flush the whole queue). Everything else waits in a small
 // TTL-bounded deduplicated queue and is drained on utterance end.
-const VOICE_RANK={fall:0,nav:1,zone:2,live_urgent:2,qa:3,summary:3,other:4,fuel:4,milestone:4,live:4};
-const VOICE_TTL_MS={nav:20000,zone:30000,live_urgent:30000,qa:90000,summary:90000,other:60000,fuel:60000,milestone:60000,live:30000};
+const VOICE_RANK={fall:0,nav:1,zone:2,live_urgent:2,qa:3,summary:3,other:4,fuel:4,milestone:4,live:4,goal:4};
+const VOICE_TTL_MS={nav:20000,zone:30000,live_urgent:30000,qa:90000,summary:90000,other:60000,fuel:60000,milestone:60000,live:30000,goal:60000};
 const VOICE_QUEUE_MAX=4;
 let voiceQueue=[],voiceSeq=0;
 function voiceRank(kind){return Object.prototype.hasOwnProperty.call(VOICE_RANK,kind)?VOICE_RANK[kind]:4;}
@@ -1033,6 +1041,41 @@ function readTarget(){
   if (!a || !b || !Number.isFinite(lower) || !Number.isFinite(upper) || lower < 0 || upper > 65535 || lower > upper) throw new Error('请填写有序的非负上下限，或同时留空。');
   return {lower, upper};
 }
+// Ride goal (duration minutes and/or distance km), both optional. Restrained by
+// design: one announcement at halfway, one near completion; the outcome is only
+// settled against the real record after the ride. Never uploaded — the goal is
+// a preference, not a fact about the ride.
+function readGoal(){
+  const a = $('goal-min').value.trim(), b = $('goal-km').value.trim();
+  if (!a && !b) return null;
+  const minutes = a ? Number(a) : null, km = b ? Number(b) : null;
+  if (a && (!Number.isFinite(minutes) || !Number.isInteger(minutes) || minutes < 1 || minutes > 1440)) throw new Error('时长目标填 1-1440 的整数分钟，或留空。');
+  if (b && (!Number.isFinite(km) || km <= 0 || km > 2000)) throw new Error('距离目标填 0-2000 之间的公里数，或留空。');
+  return {minutes, km};
+}
+let goalDistCheckedAt = -Infinity;
+function checkGoalProgress(){
+  if (!active || !goal || !goalState) return;
+  // Check speakability before setting one-shot flags: a milestone due while the
+  // coach is mid-sentence waits for the next tick instead of being lost.
+  if (!coachCanSpeak()) return;
+  const parts = [];
+  if (goal.minutes && !goalState.time.near){
+    const targetS = goal.minutes * 60, elapsed = elapsedSeconds(), rest = Math.max(1, Math.ceil((targetS - elapsed) / 60));
+    if (!goalState.time.half && elapsed >= targetS * 0.5){goalState.time.half = true; parts.push(activePersona.goal_time_half(rest));}
+    else if (elapsed >= targetS * 0.9){goalState.time.near = true; parts.push(activePersona.goal_time_near(rest));}
+  }
+  if (goal.km && !goalState.dist.near && performance.now() - goalDistCheckedAt >= 5000){
+    goalDistCheckedAt = performance.now();
+    const track = trackStats(session.series);
+    if (track){
+      const targetKm = goal.km, doneKm = track.distance / 1000, rest = Math.max(0.1, Math.round((targetKm - doneKm) * 10) / 10);
+      if (!goalState.dist.half && doneKm >= targetKm * 0.5){goalState.dist.half = true; parts.push(activePersona.goal_dist_half(rest));}
+      else if (doneKm >= targetKm * 0.9){goalState.dist.near = true; parts.push(activePersona.goal_dist_near(rest));}
+    }
+  }
+  if (parts.length && coachCanSpeak()) noteAndSpeak(parts.join(''), 'goal');
+}
 // Speech cadence prefs: whitelisted choices only, persisted in this browser.
 function saveSpeechPrefs(){
   const milestone=parseInt($('milestone-interval').value,10), fuel=parseInt($('fuel-interval').value,10);
@@ -1234,6 +1277,9 @@ function begin(options={}){
   comparisonRequest+=1;$('memory-compare').hidden=true;$('compare-source').hidden=true;
   applyActivity();
   target = options.target === undefined ? readTarget() : options.target; startedMs = Date.now(); startedMono = performance.now();
+  goal = options.goal === undefined ? readGoal() : options.goal;
+  goalState = goal ? {time:{half:false,near:false},dist:{half:false,near:false}} : null;
+  goalDistCheckedAt = -Infinity;
   const random = new Uint32Array(4); crypto.getRandomValues(random);
   session = {schema_version:'luma-ride-memory/3', id:'ride-' + [...random].map(n=>n.toString(16).padStart(8,'0')).join(''), started_at:new Date(startedMs).toISOString(), ended_at:null, samples_hz:1, series:[], summary:null, coach_notes:[], persona_version:activePersona.version, source:SIMULATED ? 'simulated' : 'ble_gatt_0x180d', activity:currentActivity()};
   latestCad = null; latestPwr = null; crankPrev = null; drawAuxLive();
@@ -1246,8 +1292,8 @@ function begin(options={}){
   nextFuelSeconds=fuelStepS||Infinity;nextMilestoneSeconds=milestoneStepS||Infinity;lastCoachSpeech=-Infinity;
   crashState='idle';clearInterval(fallTimer);$('fall-card').hidden=true;
   active = true; void requestScreenLock(); startNavWatch(); liveResetSession(); previous = null; lastSignal = null; gapOpen = false; outsideSince = null; outsideKind = null; lastAlert = -Infinity; alerts = 0; totals = {below:0, within:0, above:0};
-  $('lower').disabled = $('upper').disabled = true; $('milestone-interval').disabled = $('fuel-interval').disabled = true; $('activity-select').disabled = true; $('start-ride').disabled = true; $('end-ride').disabled = false; $('timeline').textContent = ''; $('heart-rate').textContent = '—'; $('heart-rate').classList.add('idle'); $('summary').textContent = '记录中，结束后总结。'; drawProfile();
-  timer = setInterval(()=>{if (!active) return; remindFuel(); remindMilestone(); const s=Math.floor(elapsedSeconds()); $('elapsed').textContent = String(Math.floor(s/60)).padStart(2,'0') + ':' + String(s%60).padStart(2,'0'); if (lastSignal !== null && performance.now()-lastSignal > STALE_MS) markGap();}, 500);
+  $('lower').disabled = $('upper').disabled = true; $('goal-min').disabled = $('goal-km').disabled = true; $('milestone-interval').disabled = $('fuel-interval').disabled = true; $('activity-select').disabled = true; $('start-ride').disabled = true; $('end-ride').disabled = false; $('timeline').textContent = ''; $('heart-rate').textContent = '—'; $('heart-rate').classList.add('idle'); $('summary').textContent = '记录中，结束后总结。'; drawProfile();
+  timer = setInterval(()=>{if (!active) return; remindFuel(); remindMilestone(); checkGoalProgress(); const s=Math.floor(elapsedSeconds()); $('elapsed').textContent = String(Math.floor(s/60)).padStart(2,'0') + ':' + String(s%60).padStart(2,'0'); if (lastSignal !== null && performance.now()-lastSignal > STALE_MS) markGap();}, 500);
 }
 async function connectBLE(){
   if (!window.isSecureContext || !navigator.bluetooth) throw new Error('此浏览器不能连接 BLE：请使用 HTTPS 下的 Android Chrome；iOS Safari 不支持 Web Bluetooth。');
@@ -1263,7 +1309,7 @@ async function connectBLE(){
 async function startRide(){
   if (active || connecting) return;
   try {
-    readTarget(); connecting=true; $('start-ride').disabled=true;$('demo-start').disabled=true;
+    readTarget(); readGoal(); connecting=true; $('start-ride').disabled=true;$('demo-start').disabled=true;
     // Warm up browser speech in a user gesture, without inventing a recorded alert.
     if(recallSpoken || !speakRecall())speak(activePersona.start);
     if (SIMULATED && !DEMO) {
@@ -1354,10 +1400,12 @@ function buildMemory(){
     ascent_m:track ? track.ascent : null};
   return session;
 }
-function summarize(memory){
+function summarize(memory, goalRef=null){
   const s=memory.summary, count=memory.series.filter(p=>'hr' in p).length;
   if (s.duration_s < 10 || count < 2) return activePersona.short;
   let text=(memory.source === 'simulated' ? '模拟记录：' : '本次记录：') + Math.round(s.duration_s) + '秒，样本平均心率' + s.avg_hr.toFixed(1) + '，最高' + s.max_hr + '，信号缺口' + s.gaps + '次，阈值提醒' + s.alerts + '次。';
+  if(goalRef && goalRef.minutes)text+=activePersona.goal_summary_time(goalRef.minutes, Math.floor(s.duration_s/60));
+  if(goalRef && goalRef.km)text+=activePersona.goal_summary_dist(goalRef.km, s.distance_m===null ? null : Math.round(s.distance_m/100)/10);
   if(s.time_in_zone_s){const z=s.time_in_zone_s, observed=z.below+z.within+z.above;
     text+=observed > 0 ? '在可归类的'+observed.toFixed(1)+'秒中，低于、范围内、高于自定义阈值的占比分别为'+[z.below,z.within,z.above].map(n=>(n/observed*100).toFixed(0)+'%').join('、')+'；未观测时间不计入。' : '没有足够连续读数计算区间占比。';
   } else text+='未设置区间，不计算区间占比。';
@@ -1489,8 +1537,8 @@ function finishRide(reason=''){
   if(memoryNumber(memory.summary.avg_hr))previousRideAvgHr=memory.summary.avg_hr;
   drawTrackMap(memory);drawTrackLive();
   const viewReview=$('view-review');if(viewReview)viewReview.checked=true;
-  $('end-ride').disabled=true;$('reconnect').disabled=true;$('start-ride').disabled=false;$('lower').disabled=$('upper').disabled=false;$('milestone-interval').disabled=$('fuel-interval').disabled=false;$('activity-select').disabled=false;
-  const text=summarize(memory);$('summary').textContent=text;if(memory.coach_notes.length<200)memory.coach_notes.push(text);speak(text,'summary',speechKind==='fuel');
+  $('end-ride').disabled=true;$('reconnect').disabled=true;$('start-ride').disabled=false;$('lower').disabled=$('upper').disabled=false;$('goal-min').disabled=$('goal-km').disabled=false;$('milestone-interval').disabled=$('fuel-interval').disabled=false;$('activity-select').disabled=false;
+  const text=summarize(memory,goal);$('summary').textContent=text;if(memory.coach_notes.length<200)memory.coach_notes.push(text);speak(text,'summary',speechKind==='fuel');
   lastSession=memory;$('chat-card').hidden=false;$('download-session').disabled=false;$('download-gpx').disabled=false;$('connection').textContent='记录已结束';state(reason || '记录结束。平均值为实际样本算术平均，不推断训练效果。');
   const retained=retain(memory); void upload(memory,retained);
 }
@@ -1586,7 +1634,8 @@ const I18N_EN=Object.freeze({
   'timeline-h':'Raw timeline', 'timeline-note':'Only the latest 60 real samples. Gaps are marked, never interpolated or backfilled. More than 5 seconds without a reading also marks a signal gap.',
   'setup-h':'Set up recording',
   'lower-label':'Custom lower bound (bpm, optional)', 'upper-label':'Custom upper bound (bpm, optional)', 'bounds-ph':'Your call',
-  'bounds-note':'Fill both bounds or leave both empty. These are your alert thresholds, not a medical safety range. Training zones are never guessed from age, LTHR, or demo values.',
+  'goal-min-label':'Duration goal (minutes, optional)', 'goal-km-label':'Distance goal (km, optional)',
+  'bounds-note':'Fill both bounds or leave both empty. These are your alert thresholds, not a medical safety range. Training zones are never guessed from age, LTHR, or demo values. Goals are optional too: Mark speaks once at halfway and once near completion, and settles the outcome against the real record afterwards. Distance goals need track recording; goals themselves stay in this browser.',
   'crash-label':'Fall detection (experimental)',
   'crash-note':'When enabled, a suspected fall during a ride asks you first; 30 seconds without response triggers a local alarm tone. The phone must be on your body (jersey pocket); in a bar bag or backpack it misfires, and a sleeping screen may stop sensor delivery. A web page cannot text or call anyone — it can miss falls and raise false alarms. It is not a reliable safety device.',
   'milestone-label':'Milestone callouts', 'fuel-label':'Fuel reminders',

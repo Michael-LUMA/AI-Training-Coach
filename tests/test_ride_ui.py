@@ -1609,3 +1609,98 @@ class VoiceSchedulerUI(RideMemoryUI):
                          ['三十分钟里程碑', '前方左转', '疑似摔倒，你还好吗', '喝点水', '该吃能量胶了'])
         self.assertNotIn('心率偏高', result['order'])  # flushed by the fall alert
         self.assertEqual(result['dup'], 0)
+
+
+class GoalLoopUI(RideMemoryUI):
+    """Pre-ride goal loop: restrained progress calls + honest post-ride settlement."""
+
+    def test_time_goal_half_and_near_then_summary_settles(self):
+        result = self.run_js("""
+          const feed=async(ms)=>{for(let t=0;t<ms;t+=4000){receiveHR(120+Math.round(t/4000)%2);await _advance(4000);}};
+          begin({goal:{minutes:2}});
+          receiveHR(120);receiveHR(122);
+          await feed(56000);
+          const quiet=_spoken.slice();
+          await feed(8000);
+          const half=_spoken.slice();
+          await feed(48000);
+          const near=_spoken.slice();
+          finishRide('done');
+          await _flush();
+          return {quiet:quiet,half:half,near:near,summary:$('summary').textContent};
+        """)
+        self.assertEqual(result['quiet'], [])
+        self.assertEqual(result['half'], ['时间过半，还剩1分钟到目标。'])
+        self.assertEqual(result['near'], ['时间过半，还剩1分钟到目标。', '快完成了，还剩1分钟。'])
+        self.assertIn('时间目标2分钟，实际1分钟，差1分钟，未完成。', result['summary'])
+
+    def test_no_goal_stays_silent_and_summary_has_no_goal_line(self):
+        result = self.run_js("""
+          const feed=async(ms)=>{for(let t=0;t<ms;t+=4000){receiveHR(120+Math.round(t/4000)%2);await _advance(4000);}};
+          begin({goal:null});
+          receiveHR(120);receiveHR(122);
+          await feed(128000);
+          finishRide('done');
+          await _flush();
+          return {spoken:_spoken.slice(),summary:$('summary').textContent};
+        """, chat={'speech_status':'ok','speech':'好。','fallback':None,'usage':None})
+        for line in result['spoken']:
+            self.assertNotIn('目标', line)
+        self.assertNotIn('目标', result['summary'])
+
+    def test_completed_goal_is_settled_as_done(self):
+        result = self.run_js("""
+          const feed=async(ms)=>{for(let t=0;t<ms;t+=4000){receiveHR(120+Math.round(t/4000)%2);await _advance(4000);}};
+          begin({goal:{minutes:1}});
+          receiveHR(120);receiveHR(122);
+          await feed(68000);
+          finishRide('done');
+          await _flush();
+          return $('summary').textContent;
+        """)
+        self.assertIn('时间目标1分钟，实际1分钟，完成。', result)
+
+    def test_distance_goal_progress_and_settlement(self):
+        result = self.run_js("""
+          const hop=async(lng,ms)=>{for(let t=0;t<ms;t+=4000){_geoEmit(lng,39.0);receiveHR(120);await _advance(4000);}};
+          begin({goal:{km:1}});
+          _geoEmit(116.0,39.0);receiveHR(120);
+          await hop(116.0,4000);
+          _geoEmit(116.01,39.0);receiveHR(121);
+          await hop(116.01,4000);
+          const half=_spoken.slice();
+          _geoEmit(116.02,39.0);receiveHR(122);
+          await hop(116.02,24000);
+          const near=_spoken.slice();
+          finishRide('done');
+          await _flush();
+          return {half:half,near:near,summary:$('summary').textContent};
+        """)
+        self.assertTrue(any('路程过半' in line for line in result['half']), result['half'])
+        self.assertTrue(any('快完成了' in line for line in result['near']), result['near'])
+        self.assertIn('距离目标1公里，实际', result['summary'])
+        self.assertIn('完成。', result['summary'])
+
+    def test_invalid_goal_blocks_start_with_honest_error(self):
+        result = self.run_js("""
+          $('goal-min').value='0';
+          await $('start-ride').click();
+          await _flush();
+          return {active:active,state:$('status')?$('status').textContent:'' ,spoken:_spoken.slice()};
+        """, simulate=1)
+        self.assertFalse(result['active'])
+        self.assertEqual(result['spoken'], [])
+
+    def test_goal_inputs_round_trip_and_empty_means_none(self):
+        result = self.run_js("""
+          $('goal-min').value='45';$('goal-km').value='20';
+          const both=readGoal();
+          $('goal-min').value='';$('goal-km').value='';
+          const none=readGoal();
+          $('goal-km').value='abc';
+          let bad=null;try{readGoal();}catch(e){bad=e.message;}
+          return {both:both,none:none,bad:bad};
+        """)
+        self.assertEqual(result['both'], {'minutes': 45, 'km': 20})
+        self.assertIsNone(result['none'])
+        self.assertIsNotNone(result['bad'])
