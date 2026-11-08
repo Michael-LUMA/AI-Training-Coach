@@ -285,6 +285,8 @@ const PERSONA = Object.freeze({
   fall_cancel:'收到，你没事就好。',
   fall_alarm:'警报，检测到摔倒，骑手没有回应。请旁边的人立刻查看骑手。',
   weekly_title:'本周', weekly_listen:'听 Mark 说这星期', weekly_empty:'还没有记录',
+  brief_goal_time:(m)=>'今天目标'+m+'分钟。',
+  brief_goal_dist:(k)=>'今天目标'+k+'公里。',
   weekly_no_rides:'这周还没骑车，随时开骑我都在。',
   weekly_current:(count,minutes)=>'这周骑了'+count+'次，一共'+minutes+'分钟。',
   weekly_comparison:(count,duration,minutes)=>'比上周'+(count>=0 ? '多' : '少')+Math.abs(count)+'次，时长'+(duration>=0 ? '多' : '少')+minutes+'分钟。',
@@ -341,7 +343,7 @@ let timer = null, simulator = null, lastSession = null, target = null;
 const CONV_ID = (window.crypto && crypto.randomUUID) ? 'conv-' + crypto.randomUUID() : 'conv-' + Math.random().toString(36).slice(2, 12) + Date.now().toString(36);
 let goal = null, goalState = null;
 let totals = {below:0, within:0, above:0};
-let recallText = '', recallSpoken = false, comparisonRequest = 0;
+let recallText = '', recallSpoken = false, comparisonRequest = 0, lastMemories = [];
 let brainSpeech = '', brainRequest = 0, chatRequest = 0;
 let weeklyFacts = null, weeklyWeekStart = '', weeklyRequest = 0;
 let demoPlaying = false, demoElapsed = 0, demoStep = 0, demoProfile = [];
@@ -924,6 +926,7 @@ function renderGreeting(memories){
 async function loadRecall(){
   try {
     const memories=await fetchMemories();
+    lastMemories=memories;
     renderWeekly(memories);
     renderGreeting(memories);
     if(!memories.length){console.debug(activePersona.recall_no_history);return;}
@@ -941,6 +944,22 @@ function speakRecall(){
   const spoken=speak((notice ? notice+'。' : '')+recallText);
   if(spoken)recallSpoken=true;
   return spoken;
+}
+// Pre-ride briefing: short factual opener from local history (days away,
+// this-week count, today's goal). Facts only — no diagnosis, no advice.
+function buildPreRideBrief(memories, goalRef){
+  const real=(memories||[]).filter(m=>m && m.source!=='simulated');
+  if(!real.length)return '';
+  const parts=[];
+  const days=Math.floor((Date.now()-memoryTime(real[0]))/86400e3);
+  if(days>=7)parts.push(activePersona.greeting_long(days));
+  else if(days>=1)parts.push(activePersona.greeting_days(days));
+  const monday=new Date();monday.setHours(0,0,0,0);monday.setDate(monday.getDate()-(monday.getDay()+6)%7);
+  const weekCount=real.filter(m=>memoryTime(m)>=monday.getTime()).length;
+  if(weekCount)parts.push(activePersona.greeting_week(weekCount));
+  if(goalRef && goalRef.minutes)parts.push(activePersona.brief_goal_time(goalRef.minutes));
+  else if(goalRef && goalRef.km)parts.push(activePersona.brief_goal_dist(goalRef.km));
+  return parts.join('');
 }
 // Only explicit Listen buttons consume this queue; cloud completion never speaks.
 function speakMark(){
@@ -1407,7 +1426,8 @@ async function startRide(){
   try {
     readTarget(); readGoal(); connecting=true; $('start-ride').disabled=true;$('demo-start').disabled=true;
     // Warm up browser speech in a user gesture, without inventing a recorded alert.
-    if(recallSpoken || !speakRecall())speak(activePersona.start);
+    // First start plays the recall; later starts get the factual pre-ride brief.
+    if(recallSpoken || !speakRecall())speak(buildPreRideBrief(lastMemories,readGoal())+activePersona.start);
     if (SIMULATED && !DEMO) {
       begin(); state('SIMULATED：仅演示；所有记录永久带 simulated 来源。');
       const generate = ()=>{const seconds=elapsedSeconds(), midpoint=target ? (target.lower+target.upper)/2 : 130; const amplitude=target ? Math.min(4,(target.upper-target.lower)/4) : 4;

@@ -336,7 +336,53 @@ class RideMemoryUI(unittest.TestCase):
         result = self.run_js("$('memory-listen').click(); await $('start-ride').click(); return _spoken;", history=[metadata()], simulate=True)
         self.assertEqual(len(result), 2)
         self.assertIn('我记得', result[0])
-        self.assertEqual(result[1], '开始记录。')
+        # Second start gets the factual pre-ride brief before the start line;
+        # the fixed 2026-11-06 fixture is days in the past, so it opens with
+        # the days-away fact.
+        self.assertTrue(result[1].endswith('开始记录。'), result[1])
+        self.assertIn('天没见', result[1])
+
+    def test_pre_ride_brief_includes_week_count_and_goal(self):
+        result = self.run_js("""
+          $('goal-min').value='40';
+          const brief=buildPreRideBrief(lastMemories,readGoal());
+          const monday=new Date();monday.setHours(0,0,0,0);monday.setDate(monday.getDate()-(monday.getDay()+6)%7);
+          const inWeek=lastMemories.filter(m=>m.source!=='simulated'&&new Date(m.started_at).getTime()>=monday.getTime()).length;
+          return {brief:brief,inWeek:inWeek};
+        """, history=[metadata()])
+        self.assertIn('天没见', result['brief'])
+        self.assertIn('今天目标40分钟。', result['brief'])
+        if result['inWeek']:
+            self.assertIn('本周你已记录' + str(result['inWeek']) + '次。', result['brief'])
+        else:
+            self.assertNotIn('本周', result['brief'])
+
+    def test_pre_ride_brief_distance_goal_and_no_goal(self):
+        result = self.run_js("""
+          $('goal-min').value='';$('goal-km').value='15';
+          const dist=buildPreRideBrief(lastMemories,readGoal());
+          $('goal-km').value='';
+          const none=buildPreRideBrief(lastMemories,readGoal());
+          return {dist:dist,none:none};
+        """, history=[metadata()])
+        self.assertIn('今天目标15公里。', result['dist'])
+        self.assertNotIn('分钟', result['dist'])
+        self.assertNotIn('目标', result['none'])
+
+    def test_pre_ride_brief_silent_without_real_history(self):
+        result = self.run_js("""
+          return {empty:buildPreRideBrief([],{minutes:40}),
+                  sim:buildPreRideBrief([{id:'s',started_at:new Date(Date.now()-50*3600e3).toISOString(),summary:{avg_hr:130,duration_s:3600},source:'simulated'}],{minutes:40})};
+        """)
+        self.assertEqual(result['empty'], '')
+        self.assertEqual(result['sim'], '')
+
+    def test_pre_ride_brief_omits_absence_under_one_day(self):
+        result = self.run_js("""
+          return buildPreRideBrief([{id:'a',started_at:new Date(Date.now()-15*3600e3).toISOString(),summary:{avg_hr:130,duration_s:3600},source:'ble_gatt_0x180d'}],null);
+        """)
+        self.assertNotIn('没见', result)
+        self.assertNotIn('我还在', result)
 
     def test_fetch_failures_never_invent_history_or_speech(self):
         for options in ({'listFail': True}, {'configFail': True}):
