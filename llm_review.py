@@ -206,7 +206,8 @@ def _verified_text(text: str, numbers: list) -> bool:
 
 
 def build_llm_review(review: dict, *, api_key: str | None,
-                     http_post: Callable[..., tuple[int, Mapping[str, str], bytes]] | None = None) -> dict:
+                     http_post: Callable[..., tuple[int, Mapping[str, str], bytes]] | None = None,
+                     endpoint: str | None = None, model: str | None = None) -> dict:
     """Build one checked English draft, or an explicit rule-draft fallback.
 
     Args:
@@ -245,11 +246,11 @@ def build_llm_review(review: dict, *, api_key: str | None,
         if len(encoded.encode("utf-8")) > MAX_FACTS_BYTES:
             return _result("rejected_bad_schema")
         refs, numbers = _evidence(facts)
-        payload = {"model": MODEL, "max_tokens": MAX_TOKENS,
+        payload = {"model": model or MODEL, "max_tokens": MAX_TOKENS,
                    "response_format": {"type": "json_object"},
                    "messages": [{"role": "system", "content": SYSTEM_PROMPT},
                                 {"role": "user", "content": encoded}]}
-        request = Request(ENDPOINT, data=json.dumps(payload, allow_nan=False).encode("utf-8"),
+        request = Request(endpoint or ENDPOINT, data=json.dumps(payload, allow_nan=False).encode("utf-8"),
                           headers={"Authorization": "Bearer " + api_key,
                                    "Content-Type": "application/json", "Accept": "application/json"},
                           method="POST")

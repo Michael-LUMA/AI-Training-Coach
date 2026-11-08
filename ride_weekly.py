@@ -155,7 +155,8 @@ def _registered_numbers(facts):
 
 
 def build_ride_weekly(week_sessions: list[dict], prev_week_sessions: list[dict], *,
-                      api_key: str | None = None, http_post=None) -> dict:
+                      api_key: str | None = None, http_post=None,
+                      endpoint: str | None = None, model: str | None = None) -> dict:
     """Generate a verified Chinese weekly draft, or an explicit template fallback.
 
     Args:
@@ -184,10 +185,10 @@ def build_ride_weekly(week_sessions: list[dict], prev_week_sessions: list[dict],
         return _result('upstream_error')
     if facts['source'] == 'simulated':
         facts['speech_rule'] = '必须以「模拟记录：」开头'
-    payload = {'model': MODEL, 'max_tokens': MAX_TOKENS, 'response_format': {'type': 'json_object'},
+    payload = {'model': model or MODEL, 'max_tokens': MAX_TOKENS, 'response_format': {'type': 'json_object'},
                'messages': [{'role': 'system', 'content': SYSTEM_PROMPT},
                             {'role': 'user', 'content': json.dumps(facts, ensure_ascii=False, allow_nan=False)}]}
-    request = Request(ENDPOINT, data=json.dumps(payload, ensure_ascii=False, allow_nan=False).encode('utf-8'),
+    request = Request(endpoint or ENDPOINT, data=json.dumps(payload, ensure_ascii=False, allow_nan=False).encode('utf-8'),
                       headers={'Authorization': 'Bearer ' + api_key, 'Content-Type': 'application/json', 'Accept': 'application/json'}, method='POST')
     try:
         response = (_http_post if http_post is None else http_post)(request, timeout=TIMEOUT_S)

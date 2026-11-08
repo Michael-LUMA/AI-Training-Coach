@@ -299,7 +299,8 @@ def build_ride_review(session: dict, previous_summary: dict | None = None,
                       recent_summaries: list | None = None,
                       activity_ordinal: int | None = None,
                       excluded_simulated: int | None = None, *,
-                      api_key: str | None = None, http_post=None) -> dict:
+                      api_key: str | None = None, http_post=None,
+                      endpoint: str | None = None, model: str | None = None) -> dict:
     """Generate a bounded Chinese draft, or return an honest template fallback.
 
     Args:
@@ -326,10 +327,10 @@ def build_ride_review(session: dict, previous_summary: dict | None = None,
                              activity_ordinal,excluded_simulated)
         if facts['source']=='simulated':
             facts['speech_rule']='本次是合成演示，speech 必须以「模拟记录：」开头'
-        payload={'model':MODEL,'max_tokens':MAX_TOKENS,'response_format':{'type':'json_object'},
+        payload={'model':model or MODEL,'max_tokens':MAX_TOKENS,'response_format':{'type':'json_object'},
                  'messages':[{'role':'system','content':SYSTEM_PROMPT},
                              {'role':'user','content':json.dumps(facts,ensure_ascii=False,allow_nan=False)}]}
-        request=Request(ENDPOINT,data=json.dumps(payload,ensure_ascii=False,allow_nan=False).encode('utf-8'),
+        request=Request(endpoint or ENDPOINT,data=json.dumps(payload,ensure_ascii=False,allow_nan=False).encode('utf-8'),
                         headers={'Authorization':'Bearer '+api_key,'Content-Type':'application/json','Accept':'application/json'},method='POST')
     except (RideMemoryError,ValueError,TypeError,OverflowError,UnicodeError,RecursionError):
         return _result('rejected_bad_schema')

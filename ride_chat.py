@@ -210,7 +210,8 @@ def build_ride_chat(question, session: dict | None = None,
                     excluded_simulated: int | None = None, *,
                     totals: dict | None = None,
                     history: list | None = None,
-                    api_key: str | None = None, http_post=None) -> dict:
+                    api_key: str | None = None, http_post=None,
+                    endpoint: str | None = None, model: str | None = None) -> dict:
     """Answer one bounded Chinese question, or return an honest template fallback.
 
     Args:
@@ -253,11 +254,11 @@ def build_ride_chat(question, session: dict | None = None,
         if history is not None:
             facts['recent_dialog'] = _check_history(history)
         facts['question'] = question
-        payload = {'model': MODEL, 'max_tokens': MAX_TOKENS,
+        payload = {'model': model or MODEL, 'max_tokens': MAX_TOKENS,
                    'response_format': {'type': 'json_object'},
                    'messages': [{'role': 'system', 'content': SYSTEM_PROMPT},
                                 {'role': 'user', 'content': json.dumps(facts, ensure_ascii=False, allow_nan=False)}]}
-        request = Request(ENDPOINT,
+        request = Request(endpoint or ENDPOINT,
                           data=json.dumps(payload, ensure_ascii=False, allow_nan=False).encode('utf-8'),
                           headers={'Authorization': 'Bearer ' + api_key,
                                    'Content-Type': 'application/json',

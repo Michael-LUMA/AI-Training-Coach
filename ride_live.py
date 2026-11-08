@@ -406,7 +406,8 @@ def _response(status, speech, usage=None, *, urgent=False):
             'fallback': None if status == 'ok' else 'template', 'urgent': urgent}
 
 
-def build_live_speech(events, live_facts, *, api_key=None, http_post=None) -> dict:
+def build_live_speech(events, live_facts, *, api_key=None, http_post=None,
+                     endpoint=None, model=None) -> dict:
     """\u4e8b\u4ef6 \u2192 \u4e00\u53e5 \u226480 \u5b57\u7684\u8033\u8fb9\u64ad\u62a5\uff0c\u6570\u5b57\u8fc7\u6838\u9a8c\u94fe\u3002
 
     http_post follows llm_review's (status, headers, bytes) transport contract.
@@ -430,13 +431,13 @@ def build_live_speech(events, live_facts, *, api_key=None, http_post=None) -> di
         with localcontext() as ctx:
             ctx.prec = 100
             numbers = _numbers(events, facts)
-        payload = {'model': MODEL, 'max_tokens': MAX_TOKENS,
+        payload = {'model': model or MODEL, 'max_tokens': MAX_TOKENS,
                    'response_format': {'type': 'json_object'},
                    'messages': [{'role': 'system', 'content': SYSTEM_PROMPT},
                                 {'role': 'user', 'content': json.dumps(
                                     {'events': events, 'live_facts': facts},
                                     ensure_ascii=False, allow_nan=False)}]}
-        request = Request(ENDPOINT,
+        request = Request(endpoint or ENDPOINT,
                           data=json.dumps(payload, ensure_ascii=False, allow_nan=False).encode('utf-8'),
                           headers={'Authorization': 'Bearer ' + api_key,
                                    'Content-Type': 'application/json',
@@ -549,7 +550,8 @@ def _live_answer_payload(question, facts, history):
     return body
 
 
-def build_live_answer(question, live_facts, *, history=None, api_key=None, http_post=None) -> dict:
+def build_live_answer(question, live_facts, *, history=None, api_key=None, http_post=None,
+                     endpoint=None, model=None) -> dict:
     """Answer from current telemetry; invalid inputs raise before any upstream call."""
     question = _check_question(question)
     facts = _live_answer_facts(live_facts)
@@ -574,13 +576,13 @@ def build_live_answer(question, live_facts, *, history=None, api_key=None, http_
         with localcontext() as ctx:
             ctx.prec = 100
             numbers = _numbers([], facts)
-        payload = {'model': MODEL, 'max_tokens': MAX_TOKENS,
+        payload = {'model': model or MODEL, 'max_tokens': MAX_TOKENS,
                    'response_format': {'type': 'json_object'},
                    'messages': [{'role': 'system', 'content': LIVE_SYSTEM_PROMPT},
                                 {'role': 'user', 'content': json.dumps(
                                     _live_answer_payload(question, facts, history),
                                     ensure_ascii=False, allow_nan=False)}]}
-        request = Request(ENDPOINT,
+        request = Request(endpoint or ENDPOINT,
                           data=json.dumps(payload, ensure_ascii=False, allow_nan=False).encode('utf-8'),
                           headers={'Authorization': 'Bearer ' + api_key,
                                    'Content-Type': 'application/json',

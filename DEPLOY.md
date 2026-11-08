@@ -20,6 +20,12 @@
 | `LUMA_COACH_PUBLIC_ORIGIN` | for public deploy | unset | Bare origin of the public URL, e.g. `https://ai-ride-coach.onrender.com`. Retargets the Host/Origin allowlist from loopback to this hostname; malformed values fail startup |
 | `DASHSCOPE_API_KEY` | no | unset | Qwen key for Mark's post-ride brain drafts; unset returns `not_configured` and the template speaks instead |
 | `AMAP_API_KEY` | no | unset | AMap **Web-service** key for the bicycling route proxy; unset returns `not_configured` and ride recording is unaffected |
+| `LLM_BACKUP_BASE_URL` | no | unset | Generic OpenAI-compatible backup provider: full **https** chat/completions URL. All four backup vars must be set and valid or the backup stays out of the plan |
+| `LLM_BACKUP_API_KEY` | no | unset | Backup provider bearer key |
+| `LLM_BACKUP_MODEL_FAST` | no | unset | Backup model name for fast lanes (live/review/weekly/small talk) |
+| `LLM_BACKUP_MODEL_SMART` | no | unset | Backup model name for smart lanes (personal/knowledge Q&A) |
+
+Model routing: every lane tries DashScope first (fast lanes `qwen-flash`, smart lanes `qwen-plus`; short small talk in the personal lane drops to flash). On `upstream_error`/`error_upstream` only, the call fails over once to the backup provider; verification rejections never fail over. Unset backup vars keep single-provider behavior exactly as before.
 
 Without any encryption backend (non-Windows + no master key) the service **refuses to store keys** (fail closed).
 

@@ -40,6 +40,7 @@ from ride_gpx import GPXError
 from ride_review import ReviewError
 from ride_memory import validate_session, RideMemoryError
 from ride_brain import build_ride_review
+import llm_router
 from ride_chat import build_ride_chat
 from ride_knowledge import build_knowledge_answer, load_cards
 from ride_live import LIVE_TEMPLATE, LiveSession, build_live_answer, build_live_speech
@@ -373,8 +374,9 @@ class App:
         result = {"review": review, "warnings": warnings, "verified": False}
         if path == "/api/coach/review-l2":
             # Explicit opt-in only; never store the provider key or retry a draft.
-            result["llm"] = build_llm_review(
-                copy.deepcopy(review), api_key=os.environ.get("DASHSCOPE_API_KEY"), http_post=self.llm_post)
+            result["llm"] = llm_router.run(
+                'review_l2',
+                lambda **kw: build_llm_review(copy.deepcopy(review), http_post=self.llm_post, **kw))
         return result
 
     def _review_ride(self, payload):
@@ -424,11 +426,13 @@ class App:
             history.sort(key=lambda entry: entry[0])
             recent = [summary for _, summary in history[-3:]]
             ordinal = len(history) + 1
-        result = build_ride_review(copy.deepcopy(memory), copy.deepcopy(previous),
-                                   recent_summaries=copy.deepcopy(recent),
-                                   activity_ordinal=ordinal,
-                                   excluded_simulated=excluded_simulated,
-                                   api_key=os.environ.get("DASHSCOPE_API_KEY"), http_post=self.llm_post)
+        result = llm_router.run(
+            'review',
+            lambda **kw: build_ride_review(copy.deepcopy(memory), copy.deepcopy(previous),
+                                           recent_summaries=copy.deepcopy(recent),
+                                           activity_ordinal=ordinal,
+                                           excluded_simulated=excluded_simulated,
+                                           http_post=self.llm_post, **kw))
         return {"speech_status": result["llm_status"],
                 "speech": result["draft"]["speech"] if result["draft"] else None,
                 "fallback": result["fallback"], "usage": result["usage"]}
@@ -530,7 +534,6 @@ class App:
         # first; everything else tries the grounded knowledge library. The
         # other lane is consulted once when the preferred one cannot answer.
         question = payload["question"]
-        key = os.environ.get("DASHSCOPE_API_KEY")
         if live_id is not None and any(marker in question for marker in _LIVE_MARKERS):
             # Snapshot and freshness belong to one validated telemetry update.
             # Never substitute historical records for unavailable current facts.
@@ -545,8 +548,10 @@ class App:
             if live_facts is None:
                 return {"speech_status": "ok", "speech": LIVE_TEMPLATE,
                         "fallback": "template", "usage": None, "lane": "live"}
-            live = build_live_answer(question, live_facts, history=dialog, api_key=key,
-                                     http_post=self.llm_post)
+            live = llm_router.run(
+                'live_answer',
+                lambda **kw: build_live_answer(question, live_facts, history=dialog,
+                                               http_post=self.llm_post, **kw))
             result = {"speech_status": live["llm_status"], "speech": live["speech"],
                       "fallback": live["fallback"], "usage": live["usage"], "lane": "live"}
             self._dialog_record(conv_id, question_for_record, result)
@@ -554,17 +559,22 @@ class App:
         prefer_personal = any(marker in question for marker in _PERSONAL_MARKERS)
 
         def personal():
-            return "personal", build_ride_chat(
-                question, session=copy.deepcopy(memory) if memory is not None else None,
-                recent_summaries=copy.deepcopy(recent),
-                activity_ordinal=ordinal if ordinal else None,
-                excluded_simulated=excluded_simulated, totals=totals, history=dialog,
-                api_key=key, http_post=self.llm_post)
+            return "personal", llm_router.run(
+                'personal',
+                lambda **kw: build_ride_chat(
+                    question, session=copy.deepcopy(memory) if memory is not None else None,
+                    recent_summaries=copy.deepcopy(recent),
+                    activity_ordinal=ordinal if ordinal else None,
+                    excluded_simulated=excluded_simulated, totals=totals, history=dialog,
+                    http_post=self.llm_post, **kw),
+                question=question)
 
         def knowledge():
-            return "knowledge", build_knowledge_answer(
-                question, self.knowledge_cards, history=dialog,
-                api_key=key, http_post=self.llm_post)
+            return "knowledge", llm_router.run(
+                'knowledge',
+                lambda **kw: build_knowledge_answer(
+                    question, self.knowledge_cards, history=dialog,
+                    http_post=self.llm_post, **kw))
 
         first, second = (personal, knowledge) if prefer_personal else (knowledge, personal)
         lane, result = first()
@@ -649,9 +659,10 @@ class App:
         urgent = any(event.get("type") in _LIVE_URGENT_TYPES for event in events)
         if not events or (not urgent and last_call is not None and now - last_call < _LIVE_SILENCE_S):
             return {"calls": []}
-        result = build_live_speech(events, speech_facts,
-                                   api_key=os.environ.get("DASHSCOPE_API_KEY"),
-                                   http_post=self.llm_post)
+        result = llm_router.run(
+            'live',
+            lambda **kw: build_live_speech(events, speech_facts,
+                                           http_post=self.llm_post, **kw))
         speech = result["speech"]
         if type(speech) is not str or not speech.strip():
             return {"calls": []}
@@ -702,8 +713,10 @@ class App:
             current, previous = split_week_sessions(stored, start)
             facts = aggregate_ride_weeks(current, previous)
         # Provider receives detached validated records, never the locked files.
-        result = build_ride_weekly(current, previous,
-                                  api_key=os.environ.get("DASHSCOPE_API_KEY"), http_post=self.llm_post)
+        result = llm_router.run(
+            'weekly',
+            lambda **kw: build_ride_weekly(current, previous,
+                                           http_post=self.llm_post, **kw))
         speech = (result["draft"]["speech"] if result["llm_status"] == "ok" else
                   weekly_template({**facts["week"], "source": facts["source"]}, facts["previous_week"]))
         def public_week(week):

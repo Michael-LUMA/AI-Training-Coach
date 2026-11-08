@@ -129,7 +129,8 @@ def _has_source(speech, cards):
                for group in permutations(sources, size))
 
 
-def build_knowledge_answer(question, cards, *, history=None, api_key=None, http_post=None):
+def build_knowledge_answer(question, cards, *, history=None, api_key=None, http_post=None,
+                           endpoint=None, model=None):
     """Retrieve locally, send only matched cards, and discard rejected drafts."""
     try:
         question = _check_question(question)
@@ -148,11 +149,11 @@ def build_knowledge_answer(question, cards, *, history=None, api_key=None, http_
         facts = {'question': question, 'cards': matched}
         if history is not None:
             facts['recent_dialog'] = _check_history(history)
-        payload = {'model': MODEL, 'max_tokens': MAX_TOKENS,
+        payload = {'model': model or MODEL, 'max_tokens': MAX_TOKENS,
                    'response_format': {'type': 'json_object'},
                    'messages': [{'role': 'system', 'content': SYSTEM_PROMPT},
                                 {'role': 'user', 'content': json.dumps(facts, ensure_ascii=False, allow_nan=False)}]}
-        request = Request(ENDPOINT,
+        request = Request(endpoint or ENDPOINT,
                           data=json.dumps(payload, ensure_ascii=False, allow_nan=False).encode('utf-8'),
                           headers={'Authorization': 'Bearer ' + api_key,
                                    'Content-Type': 'application/json',
