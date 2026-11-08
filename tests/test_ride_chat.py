@@ -782,3 +782,86 @@ class ChatProfileServerTests(unittest.TestCase):
         self.save('c', '2026-11-07T20:00:00Z', source='simulated')
         self.assertEqual(self.ask()['speech_status'], 'ok')
         self.assertNotIn('profile', self.last_facts())
+
+    def test_week_counts_only_current_week(self):
+        from datetime import datetime, timedelta, timezone
+        now = datetime.now(timezone.utc)
+        recent = now.isoformat().replace('+00:00', 'Z')
+        old = (now - timedelta(days=14)).isoformat().replace('+00:00', 'Z')
+        self.save('this-week', recent)
+        self.save('two-weeks-ago', old)
+        self.assertEqual(self.ask()['speech_status'], 'ok')
+        facts = self.last_facts()
+        self.assertEqual(facts['week']['sessions'], 1)
+        self.assertEqual(facts['week']['duration_min'], 1)
+        self.assertIsNone(facts['week']['distance_km'])
+
+    def test_week_present_from_first_session(self):
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+        self.save('only', now)
+        self.assertEqual(self.ask()['speech_status'], 'ok')
+        self.assertEqual(self.last_facts()['week']['sessions'], 1)
+
+
+class ChatWeekTests(unittest.TestCase):
+    """Current-week aggregate facts: validated bundle, registered numbers."""
+
+    def week(self):
+        return {'sessions': 3, 'duration_min': 90, 'distance_km': 30.5}
+
+    def chat(self, week, **kwargs):
+        kwargs.setdefault('api_key', 'synthetic-key')
+        return ride_chat.build_ride_chat('我这周骑了多少？', session=None, week=week, **kwargs)
+
+    def test_week_projection_and_verified_speech(self):
+        week = self.week(); before = copy.deepcopy(week)
+        post = transport('你本周记录了3次，一共90分钟、30.5公里。')
+        result = self.chat(week, http_post=post)
+        self.assertEqual(result['llm_status'], 'ok')
+        self.assertEqual(week, before)
+        self.assertEqual(facts_of(post)['week'], self.week())
+        self.assertIn('week', ride_chat.SYSTEM_PROMPT)
+
+    def test_unregistered_week_number_rejected(self):
+        post = transport('你本周骑了4次。')
+        result = self.chat(self.week(), http_post=post)
+        self.assertEqual(result['llm_status'], 'rejected_unverifiable_number')
+
+    def test_null_distance_stays_unmentioned(self):
+        post = transport('你本周记录了3次，一共90分钟。')
+        result = self.chat({'sessions': 3, 'duration_min': 90, 'distance_km': None},
+                           http_post=post)
+        self.assertEqual(result['llm_status'], 'ok')
+
+    def test_invalid_week_rejected_without_upstream(self):
+        invalid = [False, 3, 'week', [], {'sessions': 3},
+                   self.week() | {'extra': 1},
+                   self.week() | {'sessions': -1},
+                   self.week() | {'sessions': 3.0},
+                   self.week() | {'sessions': '3'},
+                   self.week() | {'duration_min': -1},
+                   self.week() | {'duration_min': '90'},
+                   self.week() | {'duration_min': 600001},
+                   self.week() | {'distance_km': '30'},
+                   self.week() | {'distance_km': -1},
+                   self.week() | {'distance_km': 200001}]
+        for week in invalid:
+            with self.subTest(week=repr(week)):
+                post = Mock(side_effect=AssertionError('no network'))
+                result = self.chat(week, http_post=post)
+                self.assertEqual(result['llm_status'], 'rejected_bad_schema')
+                post.assert_not_called()
+
+    def test_zero_session_week_is_valid(self):
+        post = transport('你本周还没有记录。')
+        result = self.chat({'sessions': 0, 'duration_min': 0, 'distance_km': None},
+                           http_post=post)
+        self.assertEqual(result['llm_status'], 'ok')
+        self.assertEqual(facts_of(post)['week']['sessions'], 0)
+
+    def test_none_week_leaves_no_trace(self):
+        post = transport('这个我没记到。')
+        result = self.chat(None, http_post=post)
+        self.assertEqual(result['llm_status'], 'ok')
+        self.assertNotIn('week', facts_of(post))

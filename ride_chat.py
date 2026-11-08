@@ -47,6 +47,10 @@ facts 可能含 profile：sessions 是画像样本次数、usual_start_hour 是�
 出门时刻（0-23 整点）、usual_duration_min 是通常时长分钟；至少 3 次真实
 记录才会出现；只陈述数值（如「你通常 20 点出门，通常骑 45 分钟」），
 禁止评价「规律」「自律」「健康」；为 null 的项完全不提。
+facts 可能含 week：本周（周一起算）sessions 次数、duration_min 分钟、
+distance_km 公里（为 null 就完全不提）。week 可与 profile 对照陈述
+（如「本周已骑 3 次，通常一共 5 次的样本」），只陈述数值，
+禁止评价「更努力」「超额」「落后」。
 facts 可能含 recent_dialog（我与用户的最近几轮问答，旧到新）：
 用于理解「那为什么」「这次呢」等追问的指代；recent_dialog 里的数字只供
 语境参考，回答里的数字仍必须来自 facts 本体。
@@ -208,6 +212,32 @@ def _totals_facts(totals):
     return facts, numbers
 
 
+def _week_facts(week):
+    """Validate a current-week aggregate bundle and register its numbers."""
+    if type(week) is not dict or set(week) != {'sessions', 'duration_min', 'distance_km'}:
+        raise ValueError('complete week object required')
+    sessions = week['sessions']
+    if type(sessions) is not int or not 0 <= sessions <= 100000:
+        raise ValueError('week sessions must be a bounded non-negative integer')
+    numbers = [(Decimal(sessions), None)]
+    minutes = week['duration_min']
+    if type(minutes) not in (int, float):
+        raise ValueError('invalid week duration_min')
+    number = Decimal(str(minutes))
+    if not number.is_finite() or not 0 <= number <= 600000:
+        raise ValueError('week duration_min out of range')
+    numbers.append((number, 'min'))
+    distance = week['distance_km']
+    if distance is not None:
+        if type(distance) not in (int, float):
+            raise ValueError('invalid week distance_km')
+        value = Decimal(str(distance))
+        if not value.is_finite() or not 0 <= value <= 200000:
+            raise ValueError('week distance_km out of range')
+        numbers.append((value, 'km'))
+    return {'sessions': sessions, 'duration_min': minutes, 'distance_km': distance}, numbers
+
+
 def _profile_facts(profile):
     """Validate a complete usage-profile bundle and register its bounded numbers.
 
@@ -245,6 +275,7 @@ def build_ride_chat(question, session: dict | None = None,
                     totals: dict | None = None,
                     history: list | None = None,
                     profile: dict | None = None,
+                    week: dict | None = None,
                     api_key: str | None = None, http_post=None,
                     endpoint: str | None = None, model: str | None = None) -> dict:
     """Answer one bounded Chinese question, or return an honest template fallback.
@@ -283,6 +314,9 @@ def build_ride_chat(question, session: dict | None = None,
             numbers.extend(extra)
         if profile is not None:
             facts['profile'], extra = _profile_facts(profile)
+            numbers.extend(extra)
+        if week is not None:
+            facts['week'], extra = _week_facts(week)
             numbers.extend(extra)
         if _missing_metric_answer(question, facts):
             # 问什么没什么：诚实短路，不问模型，省一次上行也杜绝编造。

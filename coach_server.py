@@ -510,6 +510,7 @@ class App:
             if memory is not None and memory["source"] != "simulated":
                 entries.append((datetime.fromisoformat(memory["started_at"].replace("Z", "+00:00")), memory["summary"]))
             totals = None
+            week = None
             if entries:
                 month_start = self.today().replace(day=1)
 
@@ -530,6 +531,11 @@ class App:
                           "distance_km": _kilometers(entries), "month_sessions": len(month_entries),
                           "month_duration_min": _minutes(month_entries),
                           "month_distance_km": _kilometers(month_entries)}
+                monday = self.today() - timedelta(days=self.today().weekday())
+                week_entries = [entry for entry in entries
+                                if entry[0].astimezone().date() >= monday]
+                week = {"sessions": len(week_entries), "duration_min": _minutes(week_entries),
+                        "distance_km": _kilometers(week_entries) if week_entries else None}
             # Usage profile: medians over the same honest scope (real sessions
             # only). Below three records Mark stays silent about "usual".
             profile = None
@@ -579,7 +585,7 @@ class App:
                     recent_summaries=copy.deepcopy(recent),
                     activity_ordinal=ordinal if ordinal else None,
                     excluded_simulated=excluded_simulated, totals=totals, history=dialog,
-                    profile=profile, http_post=self.llm_post, **kw),
+                    profile=profile, week=week, http_post=self.llm_post, **kw),
                 question=question)
 
         def knowledge():
