@@ -60,7 +60,7 @@ const sandbox={URLSearchParams,Date,DataView,Uint32Array,Uint8Array,Uint16Array,
   _bleCalls:()=>bleCalls,_flush:()=>new Promise(resolve=>setImmediate(resolve)),
   _advance:async(ms)=>{const end=clock.now+ms;while(true){let nextId=null,next=null;for(const [id,item] of intervals){if(item.next<=end && (!next || item.next<next.next)){nextId=id;next=item;}}if(!next)break;clock.now=next.next;next.next+=next.ms;next.fn();await Promise.resolve();}clock.now=end;await new Promise(resolve=>setImmediate(resolve));}};
 sandbox.window={isSecureContext:true,SpeechSynthesisUtterance:sandbox.SpeechSynthesisUtterance,
-  speechSynthesis:{cancel(){},speak:utterance=>spoken.push(utterance.text)},addEventListener(){}};
+  speechSynthesis:{cancel(){},speak:utterance=>{spoken.push(utterance.text);Promise.resolve().then(()=>{if(utterance.onend)utterance.onend();});}},addEventListener(){}};
 if(options.sr){sandbox.window.SpeechRecognition=MockSR;sandbox.window.webkitSpeechRecognition=MockSR;}
 sandbox.fetch=async(url,init={})=>{
   calls.push({url,...init});
@@ -1516,3 +1516,96 @@ class ChatCardUI(RideMemoryUI):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class VoiceSchedulerUI(RideMemoryUI):
+    """One voice at a time: ranked preemption, bounded TTL queue, dedupe."""
+
+    def test_equal_priority_queues_and_drains_in_arrival_order(self):
+        result = self.run_js("""
+          speak('三十分钟里程碑','milestone');
+          speak('喝点水','fuel');
+          const queued=_spoken.slice();
+          await _flush();
+          return {queued:queued,final:_spoken.slice(),left:voiceQueue.length};
+        """)
+        self.assertEqual(result['queued'], ['三十分钟里程碑'])
+        self.assertEqual(result['final'], ['三十分钟里程碑', '喝点水'])
+        self.assertEqual(result['left'], 0)
+
+    def test_higher_priority_preempts_lower_never_reverse(self):
+        result = self.run_js("""
+          speak('三十分钟里程碑','milestone');
+          speak('前方左转','nav');
+          const navPreempted=_spoken.slice();
+          speak('心率偏高','zone');
+          const zoneQueued=_spoken.slice();
+          await _flush();
+          return {navPreempted:navPreempted,zoneQueued:zoneQueued,final:_spoken.slice()};
+        """)
+        self.assertEqual(result['navPreempted'], ['三十分钟里程碑', '前方左转'])
+        self.assertEqual(result['zoneQueued'], ['三十分钟里程碑', '前方左转'])
+        self.assertEqual(result['final'], ['三十分钟里程碑', '前方左转', '心率偏高'])
+
+    def test_zone_preempts_routine_but_not_nav(self):
+        result = self.run_js("""
+          speak('前方左转','nav');
+          speak('心率偏高','zone');
+          const held=_spoken.slice();
+          await _flush();
+          return {held:held,final:_spoken.slice()};
+        """)
+        self.assertEqual(result['held'], ['前方左转'])
+        self.assertEqual(result['final'], ['前方左转', '心率偏高'])
+
+    def test_fall_alert_flushes_everything_immediately(self):
+        result = self.run_js("""
+          speak('前方左转','nav');
+          speak('喝点水','fuel');
+          speak('疑似摔倒，你还好吗','fall');
+          const atFall={spoken:_spoken.slice(),queued:voiceQueue.length};
+          await _flush();
+          return {atFall:atFall,final:_spoken.slice()};
+        """)
+        self.assertEqual(result['atFall'], {'spoken': ['前方左转', '疑似摔倒，你还好吗'], 'queued': 0})
+        self.assertEqual(result['final'], ['前方左转', '疑似摔倒，你还好吗'])
+
+    def test_stale_queue_items_expire(self):
+        result = self.run_js("""
+          speak('三十分钟里程碑','milestone');
+          speak('喝点水','fuel');
+          await _advance(61000);
+          speechKind=null;voiceDrain();
+          return {spoken:_spoken.slice(),left:voiceQueue.length};
+        """)
+        self.assertEqual(result['spoken'], ['三十分钟里程碑'])
+        self.assertEqual(result['left'], 0)
+
+    def test_duplicates_deduped_and_queue_bounded(self):
+        result = self.run_js("""
+          speak('前方左转','nav');
+          speak('喝点水','fuel');speak('喝点水','fuel');
+          const dedup=voiceQueue.length;
+          for(let i=0;i<8;i++)speak('问题'+i,'qa');
+          return {dedup:dedup,capped:voiceQueue.length};
+        """)
+        self.assertEqual(result['dedup'], 1)
+        self.assertEqual(result['capped'], 4)
+
+    def test_no_simultaneous_voices_across_collision_storm(self):
+        result = self.run_js("""
+          speak('三十分钟里程碑','milestone');
+          speak('前方左转','nav');
+          speak('心率偏高','zone');
+          speak('疑似摔倒，你还好吗','fall');
+          speak('喝点水','fuel');
+          speak('该吃能量胶了','fuel');
+          await _flush();
+          const seen=new Set();let dup=0;
+          for(const t of _spoken){if(seen.has(t))dup++;seen.add(t);}
+          return {order:_spoken.slice(),dup:dup};
+        """)
+        self.assertEqual(result['order'],
+                         ['三十分钟里程碑', '前方左转', '疑似摔倒，你还好吗', '喝点水', '该吃能量胶了'])
+        self.assertNotIn('心率偏高', result['order'])  # flushed by the fall alert
+        self.assertEqual(result['dup'], 0)

@@ -177,7 +177,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px/1.75 var(--mono);max
 <div class="row"><label class="check"><input id="crash-detect" type="checkbox"><span data-i18n="crash-label">跌倒检测（实验）</span></label></div>
 <p class="note" data-i18n="crash-note">开启后，骑行中侦测到疑似摔倒会先问你，30 秒无响应就在本机发出警报音。手机需放在身上（骑行服口袋）才有效，放车把包或背包里会不准；屏幕熄灭时手机可能停发传感器数据，检测会失效。网页版不能自动发短信或打电话——它可能漏报或误报，不是可靠的安全设备。</p>
 <div class="row"><label><span data-i18n="milestone-label">里程碑播报</span><select id="milestone-interval"><option value="900" data-i18n="opt-15">每 15 分钟</option><option value="1800" selected data-i18n="opt-30d">每 30 分钟（默认）</option><option value="2700" data-i18n="opt-45">每 45 分钟</option><option value="3600" data-i18n="opt-60">每 60 分钟</option><option value="0" data-i18n="opt-off">关闭</option></select></label><label><span data-i18n="fuel-label">补给提醒</span><select id="fuel-interval"><option value="1800" data-i18n="opt-30">每 30 分钟</option><option value="2700" selected data-i18n="opt-45d">每 45 分钟（默认）</option><option value="3600" data-i18n="opt-60b">每 60 分钟</option><option value="0" data-i18n="opt-offb">关闭</option></select></label></div>
-<p class="note" data-i18n="cadence-note">里程碑：Mark 定时播报当前心率/功率/踏频并与上次对比；补给：定时提醒喝水吃东西。设置保存在本浏览器，下次打开自动带上；关闭只影响这两类播报，越区和安全提醒不受影响。</p>
+<p class="note" data-i18n="cadence-note">里程碑：Mark 定时播报当前心率/功率/踏频并与上次对比；补给：定时提醒喝水吃东西。设置保存在本浏览器，下次打开自动带上；关闭只影响这两类播报，越区和安全提醒不受影响。多个声音同时出现时，重要的先说（摔倒警报＞导航转向＞心率越限＞你的提问＞日常播报），其余排队或过期丢弃——同一时间只会有一个声音。</p>
 <div class="row actions"><button id="start-ride" type="button" data-i18n="start">连接心率带并开始</button><button id="end-ride" type="button" class="secondary" disabled data-i18n="end">结束骑行</button><button id="reconnect" type="button" class="secondary" disabled data-i18n="reconnect">重新连接</button></div>
 <div class="row"><button id="connect-aux" type="button" class="secondary" data-i18n="aux">加连功率计/踏频计（可选）</button></div>
 <p class="note" data-i18n="aux-note">可选第二步：连接功率计或踏频计（CSC/Cycling Power 标准协议）。只连接心率带也能正常记录，功率和踏频会如实留空。</p>
@@ -366,14 +366,45 @@ document.addEventListener('visibilitychange',()=>{
   else if(active)void requestScreenLock();
 });
 function cancelSpeech(){if ('speechSynthesis' in window) window.speechSynthesis.cancel();speechKind=null;}
+// Voice scheduler: one voice at a time. Lower rank wins; a higher-priority
+// arrival preempts the current utterance (the preempted one is dropped —
+// fall alerts flush the whole queue). Everything else waits in a small
+// TTL-bounded deduplicated queue and is drained on utterance end.
+const VOICE_RANK={fall:0,nav:1,zone:2,live_urgent:2,qa:3,summary:3,other:4,fuel:4,milestone:4,live:4};
+const VOICE_TTL_MS={nav:20000,zone:30000,live_urgent:30000,qa:90000,summary:90000,other:60000,fuel:60000,milestone:60000,live:30000};
+const VOICE_QUEUE_MAX=4;
+let voiceQueue=[],voiceSeq=0;
+function voiceRank(kind){return Object.prototype.hasOwnProperty.call(VOICE_RANK,kind)?VOICE_RANK[kind]:4;}
+function voiceTtl(kind){return Object.prototype.hasOwnProperty.call(VOICE_TTL_MS,kind)?VOICE_TTL_MS[kind]:60000;}
+function voiceSpeakNow(text,kind){
+  cancelSpeech();
+  const seq=++voiceSeq;
+  const utterance=new SpeechSynthesisUtterance(text);utterance.lang='zh-CN';utterance.rate = 1.0;
+  speechKind=kind;duckAudio(true);
+  utterance.onend=utterance.onerror=()=>{if(seq!==voiceSeq)return;speechKind=null;duckAudio(false);voiceDrain();};
+  window.speechSynthesis.speak(utterance);
+}
+function voiceDrain(){
+  if(speechKind!==null)return;
+  const now=performance.now();
+  while(voiceQueue.length){
+    const item=voiceQueue.shift();
+    if(now-item.at<=voiceTtl(item.kind)){voiceSpeakNow(item.text,item.kind);return;}
+  }
+}
 function speak(text, kind='other', enqueue=false){
   if (!('speechSynthesis' in window) || !('SpeechSynthesisUtterance' in window)) return false;
   try {
-    if(!enqueue)cancelSpeech();
-    const utterance = new SpeechSynthesisUtterance(text); utterance.lang = 'zh-CN'; utterance.rate = 1.0;
-    speechKind=kind;duckAudio(true);
-    utterance.onend=utterance.onerror=()=>{if(speechKind===kind)speechKind=null;duckAudio(false);};
-    window.speechSynthesis.speak(utterance); return true;
+    const now=performance.now(),rank=voiceRank(kind);
+    voiceQueue=voiceQueue.filter(item=>now-item.at<=voiceTtl(item.kind));
+    if(rank===0){voiceQueue=[];voiceSpeakNow(text,kind);return true;}
+    if(speechKind===null || rank<voiceRank(speechKind)){voiceSpeakNow(text,kind);return true;}
+    if(!voiceQueue.some(item=>item.kind===kind&&item.text===text)){
+      voiceQueue.push({text:text,kind:kind,at:now});
+      voiceQueue.sort((a,b)=>voiceRank(a.kind)-voiceRank(b.kind)||a.at-b.at);
+      if(voiceQueue.length>VOICE_QUEUE_MAX)voiceQueue.length=VOICE_QUEUE_MAX;
+    }
+    return true;
   }catch (_) {state('系统语音不可用；文字记录仍可继续。');duckAudio(false); return false;}
 }
 function noteAndSpeak(text,kind='other'){
@@ -924,7 +955,10 @@ async function liveBeat(){
     liveOkAt=performance.now();
     const calls=data.calls;
     for(const call of calls){
-      if(call&&typeof call.speech==='string'&&call.speech&&(coachCanSpeak()||call.urgent===true))noteAndSpeak(call.speech,'live');
+      if(call&&typeof call.speech==='string'&&call.speech){
+        if(call.urgent===true)noteAndSpeak(call.speech,'live_urgent');
+        else if(coachCanSpeak())noteAndSpeak(call.speech,'live');
+      }
     }
   }catch(_){if(liveId===requestLiveId)liveOkAt=-Infinity;/* local reminders remain available */}
   finally{liveBusy=false;}
@@ -1558,7 +1592,7 @@ const I18N_EN=Object.freeze({
   'milestone-label':'Milestone callouts', 'fuel-label':'Fuel reminders',
   'opt-15':'Every 15 min', 'opt-30d':'Every 30 min (default)', 'opt-45':'Every 45 min', 'opt-60':'Every 60 min', 'opt-off':'Off',
   'opt-30':'Every 30 min', 'opt-45d':'Every 45 min (default)', 'opt-60b':'Every 60 min', 'opt-offb':'Off',
-  'cadence-note':'Milestones: Mark periodically reports current HR/power/cadence and compares with your last ride. Fuel: periodic drink-and-eat reminders. Settings persist in this browser. Turning these off never silences zone or safety alerts.',
+  'cadence-note':'Milestones: Mark periodically reports current HR/power/cadence and compares with your last ride. Fuel: periodic drink-and-eat reminders. Settings persist in this browser. Turning these off never silences zone or safety alerts. When several voices compete, the important one speaks first (fall alarm > navigation turn > heart-rate alert > your question > routine updates); the rest queue or expire — only one voice at a time.',
   start:'Connect strap & start', end:'End ride', reconnect:'Reconnect',
   aux:'Also connect power/cadence (optional)',
   'aux-note':'Optional second step: connect a power or cadence meter (standard CSC / Cycling Power). Recording works with the strap alone; power and cadence honestly stay blank.',
