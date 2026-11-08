@@ -57,6 +57,14 @@ a{color:inherit;text-underline-offset:3px}
 .lang:hover{border-color:var(--accent);color:var(--accent)}
 #simulated-banner{position:sticky;top:0;z-index:6;background:linear-gradient(90deg,var(--route),var(--contour));color:#1A0B06;padding:10px 24px;text-align:center;font-weight:700;letter-spacing:.06em;font-size:14px}
 .sheet{max-width:1240px;margin:0 auto;padding:44px 28px 72px}
+/* 视图切换：纯 CSS 分段控件（骑行/复盘），零脚本依赖 */
+.viewradio{position:absolute;width:0;height:0;opacity:0;pointer-events:none}
+.view{display:none}
+#view-live:checked~.view-live,#view-review:checked~.view-review{display:block}
+.viewtabs{display:inline-flex;gap:4px;padding:4px;margin:0 0 26px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.02)}
+.viewtab{padding:8px 26px;border-radius:999px;font:600 13px/1.4 var(--mono);letter-spacing:.14em;color:var(--faint);cursor:pointer;transition:.15s;user-select:none}
+.viewtab:hover{color:var(--ink)}
+#view-live:checked~.viewtabs label[for=view-live],#view-review:checked~.viewtabs label[for=view-review]{background:var(--grad);color:#04211B;font-weight:700;box-shadow:0 4px 16px -6px rgba(87,230,201,.5)}
 /* 报头：编辑级大字号 + 呼吸灯眉行 */
 .masthead{padding-bottom:30px;margin-bottom:30px;border-bottom:1px solid var(--line)}
 .eyebrow{display:flex;align-items:center;gap:10px;font:600 12px/1 var(--mono);letter-spacing:.30em;color:var(--accent);margin:0 0 20px;text-transform:uppercase}
@@ -139,9 +147,13 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px/1.75 var(--mono);max
 <p class="lede" data-i18n="lede">我是 Mark。心率带直连，本地语音，自定义阈值提醒。没有目标区间就不推算、不提醒越区。</p>
 <p id="compatibility" class="note" data-i18n="compat">Android Chrome 支持 Web Bluetooth；iOS Safari 不支持。需 HTTPS 或本机 localhost 安全上下文。手机不能用电脑的 127.0.0.1 地址连接。</p>
 </header>
+<input id="view-live" type="radio" name="view" class="viewradio" checked>
+<input id="view-review" type="radio" name="view" class="viewradio">
+<nav class="viewtabs" aria-label="视图切换"><label for="view-live" class="viewtab" data-i18n="view-live">骑行</label><label for="view-review" class="viewtab" data-i18n="view-review">复盘</label></nav>
+<section id="fall-card" class="panel alert" hidden><h2 data-i18n="fall-h">疑似摔倒</h2><p id="fall-countdown" class="countdown">30</p><p id="fall-message"></p><button id="fall-ok" type="button" data-i18n="fall-ok">我没事，别报警</button></section>
+<div class="view view-live">
 <div class="sheetgrid">
 <div class="mapcol">
-<section id="fall-card" class="panel alert" hidden><h2 data-i18n="fall-h">疑似摔倒</h2><p id="fall-countdown" class="countdown">30</p><p id="fall-message"></p><button id="fall-ok" type="button" data-i18n="fall-ok">我没事，别报警</button></section>
 <section class="panel instrument" aria-label="实时读数">
 <div class="inst-head"><span id="connection" class="chip" data-i18n="conn-init">未连接</span><span id="elapsed" class="mono dim">00:00</span></div>
 <p class="bignumber"><span id="heart-rate" class="hr idle">—</span><span class="unit">bpm</span></p>
@@ -159,11 +171,6 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px/1.75 var(--mono);max
 <h2 data-i18n="profile-h">心率剖面</h2>
 <svg id="profile-plot" viewBox="0 0 1000 160" preserveAspectRatio="none" role="img" aria-label="心率剖面图"><rect id="profile-zone-above" x="0" y="0" width="1000" height="0"/><rect id="profile-zone-within" x="0" y="0" width="1000" height="0"/><rect id="profile-zone-below" x="0" y="0" width="1000" height="0"/><path id="profile-line" d=""/><line id="profile-cursor" x1="0" y1="0" x2="0" y2="160"/></svg>
 <p id="profile-empty" class="note" data-i18n="profile-empty">骑行开始后，这里画出你的心率剖面。只画实际读数；断线留空，不插值。</p>
-</section>
-<section class="panel">
-<h2 data-i18n="timeline-h">原始时间轴</h2>
-<p class="note" data-i18n="timeline-note">仅展示最近 60 个实际点。断线标记 gap，不插值、不用旧读数补齐。超过 5 秒没有新读数也标记信号缺口。</p>
-<pre id="timeline" aria-label="原始心率与断线记录"></pre>
 </section>
 </div>
 <div class="margincol">
@@ -196,8 +203,13 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px/1.75 var(--mono);max
 <pre id="nav-steps" aria-label="路线步骤"></pre>
 <div class="row"><label class="check"><input id="nav-voice" type="checkbox" checked><span data-i18n="nav-voice">接近转向时语音提醒（约 120 米前）</span></label></div>
 </section>
+</div>
+</div>
+</div>
+<div class="view view-review">
+<div class="sheetgrid">
+<div class="mapcol">
 <section id="memory-card" class="panel" hidden aria-labelledby="memory-heading"><h2 id="memory-heading" data-i18n="memory-h">Mark 的记忆</h2><p id="memory-recall"></p><p id="memory-source" class="warn" hidden></p><button id="memory-listen" type="button" class="secondary" data-i18n="listen">听 Mark 说</button></section>
-<section id="ride-weekly" class="panel" aria-labelledby="ride-weekly-heading"><h2 id="ride-weekly-heading"></h2><p id="ride-weekly-summary"></p><p id="ride-weekly-scope" class="note"></p><button id="ride-weekly-listen" type="button" class="secondary" disabled></button><p id="ride-weekly-speech" aria-live="polite"></p></section>
 <section class="panel">
 <h2 data-i18n="summary-h">骑后一句话</h2>
 <p id="summary" class="summaryline" data-i18n="summary-init">结束后根据记录生成。没有数据的部分保持缺失。</p>
@@ -208,6 +220,15 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px/1.75 var(--mono);max
 <div class="row"><button id="retry-upload" type="button" class="secondary" data-i18n="retry">重试上传本机待传记录</button><button id="download-session" type="button" class="secondary" disabled data-i18n="dl-json">下载本次 JSON 备份</button><button id="download-gpx" type="button" class="secondary" disabled data-i18n="dl-gpx">下载 GPX 备份</button></div>
 <p class="note" data-i18n="gpx-note">记录了坐标时，GPX 是真实轨迹（含心率/踏频/功率扩展点），可导入 Strava/行者/Garmin；没有坐标时，GPX 只含心率时间轴与断线标记，不能导入需要轨迹的平台。两种情况都如实标注，不混装。</p>
 </section>
+</div>
+<div class="margincol">
+<section id="ride-weekly" class="panel" aria-labelledby="ride-weekly-heading"><h2 id="ride-weekly-heading"></h2><p id="ride-weekly-summary"></p><p id="ride-weekly-scope" class="note"></p><button id="ride-weekly-listen" type="button" class="secondary" disabled></button><p id="ride-weekly-speech" aria-live="polite"></p></section>
+<section class="panel">
+<h2 data-i18n="timeline-h">原始时间轴</h2>
+<p class="note" data-i18n="timeline-note">仅展示最近 60 个实际点。断线标记 gap，不插值、不用旧读数补齐。超过 5 秒没有新读数也标记信号缺口。</p>
+<pre id="timeline" aria-label="原始心率与断线记录"></pre>
+</section>
+</div>
 </div>
 </div>
 <footer class="archive">
@@ -1035,6 +1056,7 @@ function begin(options={}){
   session = {schema_version:'luma-ride-memory/3', id:'ride-' + [...random].map(n=>n.toString(16).padStart(8,'0')).join(''), started_at:new Date(startedMs).toISOString(), ended_at:null, samples_hz:1, series:[], summary:null, coach_notes:[], persona_version:PERSONA.version, source:SIMULATED ? 'simulated' : 'ble_gatt_0x180d'};
   latestCad = null; latestPwr = null; crankPrev = null; drawAuxLive();
   lastFix=null; startTrackWatch(); drawTrackLive(); drawTrackMap(null);
+  const viewLive=$('view-live');if(viewLive)viewLive.checked=true;
   if(options.source)session.source=options.source;
   if(options.samplesHz)session.samples_hz=options.samplesHz;
   $('demo-start').disabled=true;
@@ -1282,6 +1304,7 @@ function finishRide(reason=''){
   if(auxDevice && auxDevice.gatt.connected)auxDevice.gatt.disconnect();
   if(memoryNumber(memory.summary.avg_hr))previousRideAvgHr=memory.summary.avg_hr;
   drawTrackMap(memory);drawTrackLive();
+  const viewReview=$('view-review');if(viewReview)viewReview.checked=true;
   $('end-ride').disabled=true;$('reconnect').disabled=true;$('start-ride').disabled=false;$('lower').disabled=$('upper').disabled=false;$('milestone-interval').disabled=$('fuel-interval').disabled=false;
   const text=summarize(memory);$('summary').textContent=text;if(memory.coach_notes.length<200)memory.coach_notes.push(text);speak(text,'summary',speechKind==='fuel');
   lastSession=memory;$('download-session').disabled=false;$('download-gpx').disabled=false;$('connection').textContent='记录已结束';state(reason || '记录结束。平均值为实际样本算术平均，不推断训练效果。');
@@ -1355,6 +1378,7 @@ loadSpeechPrefs();
 const I18N_EN=Object.freeze({
   brand:'MARK · Ride',
   'scene-ride':'Ride', 'scene-hike':'Hike', 'scene-office':'Work', 'scene-soon':'soon',
+  'view-live':'Ride', 'view-review':'Review',
   eyebrow:'AI sports companion · one mind, many bodies',
   h1a:'Record the moment.', h1b:'No calls made for you.',
   lede:"I'm Mark. Direct heart-rate-strap connection, on-device voice, your own threshold alerts. No target zone, no inference, no zone alerts.",
