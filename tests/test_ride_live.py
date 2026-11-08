@@ -36,7 +36,7 @@ def feed(session, points):
     return events
 
 
-def transport(speech='已经骑了5公里。', *, status=200, draft=None, finish='stop'):
+def transport(speech='\u5df2\u7ecf\u9a91\u4e865\u516c\u91cc\u3002', *, status=200, draft=None, finish='stop'):
     envelope = {'choices': [{'finish_reason': finish, 'message': {'content': json.dumps(
         {'speech': speech} if draft is None else draft, ensure_ascii=False)}}],
         'usage': {'prompt_tokens': 11, 'completion_tokens': 12}}
@@ -90,9 +90,9 @@ class LiveSessionTests(unittest.TestCase):
     def test_invalid_points_rejected(self):
         session = ride_live.LiveSession()
         session.ingest({'t': T0 + 10.0, 'lat': LAT, 'lng': LNG, 'speed_mps': 5.0})
-        bad = [{'t': T0, 'lat': LAT, 'lng': LNG, 'speed_mps': 5.0},          # 乱序
-               {'t': T0 + 20.0, 'lat': 91.0, 'lng': LNG, 'speed_mps': 5.0},  # 非法纬度
-               {'t': T0 + 20.0, 'lat': LAT, 'lng': LNG, 'speed_mps': -1.0},  # 负速度
+        bad = [{'t': T0, 'lat': LAT, 'lng': LNG, 'speed_mps': 5.0},          # \u4e71\u5e8f
+               {'t': T0 + 20.0, 'lat': 91.0, 'lng': LNG, 'speed_mps': 5.0},  # \u975e\u6cd5\u7eac\u5ea6
+               {'t': T0 + 20.0, 'lat': LAT, 'lng': LNG, 'speed_mps': -1.0},  # \u8d1f\u901f\u5ea6
                {'t': T0 + 20.0, 'lat': LAT, 'lng': LNG, 'speed_mps': float('nan')}]
         for point in bad:
             with self.subTest(point=point):
@@ -105,27 +105,27 @@ class LiveSpeechTests(unittest.TestCase):
         result = ride_live.build_live_speech(milestone_event(), live_facts())
         self.assertEqual(result['llm_status'], 'not_configured')
         self.assertEqual(result['fallback'], 'template')
-        self.assertIn('5公里', result['speech'])
+        self.assertIn('5\u516c\u91cc', result['speech'])
 
     def test_mock_llm_ok_speech_passes(self):
         result = ride_live.build_live_speech(
             milestone_event(), live_facts(), api_key='synthetic-key',
-            http_post=transport('已经骑了5公里，用时8.5分钟。'))
+            http_post=transport('\u5df2\u7ecf\u9a91\u4e865\u516c\u91cc\uff0c\u7528\u65f68.5\u5206\u949f\u3002'))
         self.assertEqual(result['llm_status'], 'ok')
         self.assertIsNone(result['fallback'])
 
     def test_fabricated_number_rejected_falls_back(self):
         result = ride_live.build_live_speech(
             milestone_event(), live_facts(), api_key='synthetic-key',
-            http_post=transport('均速99公里每小时，状态爆表。'))
+            http_post=transport('\u5747\u901f99\u516c\u91cc\u6bcf\u5c0f\u65f6\uff0c\u72b6\u6001\u7206\u8868\u3002'))
         self.assertEqual(result['llm_status'], 'rejected_unverifiable_number')
         self.assertEqual(result['fallback'], 'template')
-        self.assertIn('5公里', result['speech'])
+        self.assertIn('5\u516c\u91cc', result['speech'])
 
     def test_forbidden_wording_rejected(self):
         result = ride_live.build_live_speech(
             milestone_event(), live_facts(), api_key='synthetic-key',
-            http_post=transport('已经骑了5公里，建议你加速冲刺。'))
+            http_post=transport('\u5df2\u7ecf\u9a91\u4e865\u516c\u91cc\uff0c\u5efa\u8bae\u4f60\u52a0\u901f\u51b2\u523a\u3002'))
         self.assertTrue(result['llm_status'].startswith('rejected'))
         self.assertEqual(result['fallback'], 'template')
 
@@ -135,7 +135,7 @@ class LiveSpeechTests(unittest.TestCase):
             milestone_event(), live_facts(), api_key='synthetic-key', http_post=failing)
         self.assertEqual(result['llm_status'], 'error_upstream')
         self.assertEqual(result['fallback'], 'template')
-        self.assertIn('5公里', result['speech'])
+        self.assertIn('5\u516c\u91cc', result['speech'])
 
 
 class LiveEndpointTests(unittest.TestCase):
@@ -188,7 +188,7 @@ class LiveEndpointTests(unittest.TestCase):
         call = result['calls'][0]
         self.assertEqual(call['speech_status'], 'not_configured')
         self.assertEqual(call['fallback'], 'template')
-        self.assertIn('5公里', call['speech'])
+        self.assertIn('5\u516c\u91cc', call['speech'])
         self.post.assert_not_called()
 
     def test_silence_window_suppresses_second_call(self):
@@ -207,7 +207,7 @@ class LiveEndpointTests(unittest.TestCase):
                                   {'live_id': 'ride1', 'point': self.point(T0 + 600.0, km_east=5.1)})
         call = result['calls'][0]
         self.assertEqual(call['speech_status'], 'ok')
-        self.assertEqual(call['speech'], '已经骑了5公里。')
+        self.assertEqual(call['speech'], '\u5df2\u7ecf\u9a91\u4e865\u516c\u91cc\u3002')
 
     def test_invalid_telemetry_point_rejected(self):
         with self.assertRaises(ActionError) as error:
@@ -221,6 +221,138 @@ class LiveEndpointTests(unittest.TestCase):
         result = self.request('/api/coach/ride/live',
                               {'live_id': 'ride2', 'point': self.point(T0 + 600.0, km_east=0.0)})
         self.assertEqual(result, {'calls': []})
+
+
+class LiveEventExtensionTests(unittest.TestCase):
+    @staticmethod
+    def point(seconds, **extra):
+        return {'t': T0 + seconds, 'lat': LAT, 'lng': LNG,
+                'speed_mps': 5.0, **extra}
+
+    def test_sustained_climb_fires_once_with_window_ascent(self):
+        session = ride_live.LiveSession()
+        events = feed(session, (self.point(i * 10, alt=100.0 + i * 3)
+                                for i in range(260)))
+        climbs = [event for event in events if event['type'] == 'climb_start']
+        self.assertEqual(len(climbs), 1)
+        event = climbs[0]
+        self.assertGreaterEqual(event['ascent_m'], 15.0)
+        self.assertAlmostEqual(event['ascent_m'], min(event['duration_s'], 180) * 0.3)
+        self.assertIs(type(event['ascent_m']), float)
+        self.assertEqual(event['distance_m'], 0.0)
+        self.assertGreaterEqual(len(session._alt_samples), 200)
+
+    def test_flat_altitude_and_single_spike_do_not_start_climb(self):
+        for spike in (0.0, -100.0, 100.0):
+            for spike_index in (0, 1, 20):
+                with self.subTest(spike=spike, spike_index=spike_index):
+                    session = ride_live.LiveSession()
+                    events = feed(session, (self.point(
+                        i * 10, alt=100.0 + (spike if i == spike_index else 0))
+                        for i in range(60)))
+                    self.assertNotIn('climb_start', [event['type'] for event in events])
+
+    def test_flat_for_160_seconds_ends_episode_and_climb_can_restart(self):
+        session = ride_live.LiveSession()
+        events = feed(session, (self.point(i * 10, alt=100.0 + i * 3)
+                                for i in range(21)))
+        events.extend(feed(session, (self.point(i * 10, alt=160.0)
+                                     for i in range(21, 37))))
+        self.assertIsNone(session._climb_since)
+        events.extend(feed(session, (self.point(i * 10, alt=160.0 + (i - 36) * 3)
+                                     for i in range(37, 57))))
+        self.assertEqual(sum(event['type'] == 'climb_start' for event in events), 2)
+
+    def test_missing_altitude_is_legal_and_skipped(self):
+        session = ride_live.LiveSession()
+        events = feed(session, (self.point(i * 10) for i in range(100)))
+        self.assertNotIn('climb_start', [event['type'] for event in events])
+        self.assertEqual(len(session._alt_samples), 0)
+        events = []
+        for i in range(100, 121):
+            extra = {'alt': 100.0 + (i - 100) * 3} if i % 2 == 0 else {}
+            events.extend(session.ingest(self.point(i * 10, **extra)))
+        self.assertEqual(sum(event['type'] == 'climb_start' for event in events), 1)
+
+    def test_fuel_crosses_45_and_90_minutes_independently(self):
+        for steps in ((2699, 2700, 2700, 5399, 5400, 5400), (5401,)):
+            with self.subTest(steps=steps):
+                session = ride_live.LiveSession()
+                session.ingest(self.point(0))
+                events = feed(session, (self.point(seconds) for seconds in steps))
+                self.assertEqual([event for event in events if event['type'] == 'fuel'],
+                                 [{'type': 'fuel', 'minutes': 45},
+                                  {'type': 'fuel', 'minutes': 90}])
+                self.assertEqual([event['minutes'] for event in events
+                                  if event['type'] == 'duration_milestone'], [30, 60])
+
+    def test_off_route_edges_missing_state_and_boolean_validation(self):
+        session = ride_live.LiveSession()
+        states = ({'off_route': False}, {'off_route': True}, {}, {'off_route': True},
+                  {'off_route': False}, {}, {'off_route': True})
+        for i, extra in enumerate(states):
+            with self.subTest(i=i):
+                events = session.ingest(self.point(i * 10, **extra))
+                expected = [{'type': 'off_route', 'distance_m': 0.0}] if i in (1, 6) else []
+                self.assertEqual(events, expected)
+        for value in (None, 0, 1, 'true', []):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                session.ingest(self.point(100, off_route=value))
+
+    def test_invalid_altitudes_rejected_without_mutating_session(self):
+        session = ride_live.LiveSession()
+        session.ingest(self.point(0, alt=100.0))
+        before = session.facts()
+        for value in (float('nan'), float('inf'), float('-inf'), -500.1, 9000.1,
+                      None, True, '100', 10 ** 1000):
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    session.ingest(self.point(10, alt=value, off_route=True))
+                self.assertEqual(session.facts(), before)
+                self.assertEqual(len(session._alt_samples), 1)
+                self.assertFalse(session._off_route)
+        for value in (-500.0, 9000.0):
+            with self.subTest(boundary=value):
+                ride_live.LiveSession().ingest(self.point(0, alt=value))
+
+    def test_climb_template_without_key_uses_rounded_meters(self):
+        for ascent in (18.6, 15.5, 16.5):
+            with self.subTest(ascent=ascent):
+                events = [{'type': 'climb_start', 'ascent_m': ascent,
+                           'duration_s': 60.0, 'distance_m': 100.0}]
+                result = ride_live.build_live_speech(events, live_facts())
+                self.assertEqual(result['llm_status'], 'not_configured')
+                self.assertEqual(result['fallback'], 'template')
+                self.assertEqual(result['speech'],
+                                 f'\u5728\u722c\u5761\u4e86\uff0c\u8fd9\u6bb5\u5df2\u7ecf\u722c\u4e86{int(round(ascent))}\u7c73\u3002')
+
+    def test_climb_llm_fabrication_rejected_but_registered_meters_pass(self):
+        events = [{'type': 'climb_start', 'ascent_m': 18.6,
+                   'duration_s': 60.0, 'distance_m': 100.0}]
+        for meters, status in (('999', 'rejected_unverifiable_number'),
+                               ('18.6', 'ok'), ('19', 'ok')):
+            with self.subTest(meters=meters):
+                result = ride_live.build_live_speech(
+                    events, live_facts(), api_key='synthetic-key',
+                    http_post=transport(f'\u8fd9\u6bb5\u5df2\u7ecf\u722c\u4e86{meters}\u7c73\u3002'))
+                self.assertEqual(result['llm_status'], status)
+                if status != 'ok':
+                    self.assertEqual(result['fallback'], 'template')
+                    self.assertEqual(result['speech'],
+                                     '\u5728\u722c\u5761\u4e86\uff0c\u8fd9\u6bb5\u5df2\u7ecf\u722c\u4e8619\u7c73\u3002')
+
+    def test_fuel_and_off_route_templates_and_fuel_minutes_registration(self):
+        events = [{'type': 'fuel', 'minutes': 45},
+                  {'type': 'off_route', 'distance_m': 100.0}]
+        expected = ('\u9a91\u4e8645\u5206\u949f\u4e86\uff0c\u559d\u53e3\u6c34\u3001\u8865\u70b9\u5403\u7684\u3002'
+                    '\u597d\u50cf\u504f\u822a\u4e86\uff0c\u5230\u5b89\u5168\u7684\u5730\u65b9\u505c\u4e0b\u6765\u53ef\u4ee5\u91cd\u65b0\u89c4\u5212\u3002')
+        result = ride_live.build_live_speech(events, live_facts())
+        self.assertEqual(result['llm_status'], 'not_configured')
+        self.assertEqual(result['speech'], expected)
+        result = ride_live.build_live_speech(events, live_facts(), api_key='synthetic-key',
+                                             http_post=transport(expected))
+        self.assertEqual(result['llm_status'], 'ok')
+        self.assertEqual(result['speech'], expected)
 
 
 if __name__ == '__main__':

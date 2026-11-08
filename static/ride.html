@@ -381,7 +381,7 @@ function coachCanSpeak(now=performance.now()){
   return now-lastCoachSpeech>=COACH_SPEECH_GAP_MS && !('speechSynthesis' in window && window.speechSynthesis.speaking);
 }
 function remindFuel(){
-  if(!active || !fuelStepS || elapsedSeconds()<nextFuelSeconds || !coachCanSpeak())return;
+  if(!active || liveOn || !fuelStepS || elapsedSeconds()<nextFuelSeconds || !coachCanSpeak())return;
   noteAndSpeak(nextFuelSeconds===fuelStepS ? activePersona.fuel(Math.round(fuelStepS/60)) : activePersona.fuel_again,'fuel');
   nextFuelSeconds+=fuelStepS;
 }
@@ -721,7 +721,7 @@ function onNavPosition(position){
     if(performance.now()>=navOffRouteSnooze){
       navOffRoute=true;navOffRouteSnooze=performance.now()+NAV_OFF_ROUTE_SNOOZE_MS;
       navStatus(activePersona.nav_offroute);
-      if(navVoice)noteAndSpeak(activePersona.nav_offroute,'nav');
+      if(navVoice&&!liveOn)noteAndSpeak(activePersona.nav_offroute,'nav');
     }
   }else if(navOffRoute && Math.min(distCurrent,distNext)<=NAV_ON_ROUTE_M){
     navOffRoute=false;
@@ -900,6 +900,8 @@ async function liveBeat(){
   try{
     if(!liveId)liveId='live-'+Math.random().toString(36).slice(2,10)+Date.now().toString(36);
     const point={t:Date.now()/1000,lat:lastFix.lat,lng:lastFix.lng,speed_mps:typeof lastFix.spd==='number'?lastFix.spd:0};
+    if(typeof lastFix.alt==='number'&&Number.isFinite(lastFix.alt))point.alt=lastFix.alt;
+    if(typeof navOffRoute!=='undefined'&&navRoute)point.off_route=navOffRoute===true;
     const response=await fetch('/api/coach/ride/live',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify({live_id:liveId,point})});
     if(!liveOn||!active)return;
     const data=await response.json().catch(()=>null);
