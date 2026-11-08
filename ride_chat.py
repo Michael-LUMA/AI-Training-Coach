@@ -13,8 +13,13 @@ from decimal import Decimal, InvalidOperation, localcontext
 from urllib.error import HTTPError, URLError
 from urllib.request import Request
 
-from llm_review import (ENDPOINT, MODEL, MAX_RESPONSE_BYTES, TIMEOUT_S,
+from llm_review import (ENDPOINT, MAX_RESPONSE_BYTES, TIMEOUT_S,
                         _http_post, _json, _usage, _verified_text)
+
+# Per-lane model split (bakeoff 2026-11-08, 34 golden cases per model):
+# the personal lane answers after the ride, not mid-ride — qwen-plus wins on
+# phrasing quality at tolerable latency; the live lane keeps qwen-flash.
+MODEL = "qwen-plus"
 from ride_brain import (MAX_TOKENS, _FORBIDDEN, _count_checked, _facts,
                         _friendly_minutes, _normalized_numbers, _result,
                         _summary)

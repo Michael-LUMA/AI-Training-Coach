@@ -845,8 +845,8 @@ async function askMark(options){
   $('chat-card').hidden=false;
   try {
     const body={question:question};
-    if(lastSession && lastSession.id)body.session_id=lastSession.id;
-    if(liveOn && liveId)body.live_id=liveId;
+    if(active && liveOn && liveId)body.live_id=liveId;
+    else if(lastSession && lastSession.id)body.session_id=lastSession.id;
     const response=await fetch('/api/coach/ride/chat',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify(body)});
     if(!response.ok)throw new Error('chat unavailable');
     const result=await response.json();
@@ -897,27 +897,33 @@ function livePrefsLoad(){try{const p=JSON.parse(localStorage.getItem('luma.live'
 function liveToggle(){liveOn=!liveOn;livePrefsSave();liveApply();}
 function liveStart(){if(liveTimer!==null)return;liveTimer=setInterval(()=>{void liveBeat();},LIVE_POST_MS);}
 function liveStop(){if(liveTimer!==null){clearInterval(liveTimer);liveTimer=null;}}
-function liveResetSession(){liveId=null;}
+function liveResetSession(){liveId=null;liveOkAt=-Infinity;}
 async function liveBeat(){
   if(!liveOn||!active||liveBusy)return;
   if(!lastFix||performance.now()-lastFix.mono>TRACK_STALE_MS)return;
   liveBusy=true;
+  let requestLiveId=null;
   try{
     if(!liveId)liveId='live-'+Math.random().toString(36).slice(2,10)+Date.now().toString(36);
+    requestLiveId=liveId;
     const point={t:Date.now()/1000,lat:lastFix.lat,lng:lastFix.lng,speed_mps:typeof lastFix.spd==='number'?lastFix.spd:0};
     if(typeof lastFix.alt==='number'&&Number.isFinite(lastFix.alt))point.alt=lastFix.alt;
     if(typeof navOffRoute!=='undefined'&&navRoute)point.off_route=navOffRoute===true;
-    if(previous&&typeof previous.hr==='number'&&Number.isInteger(previous.hr)&&previous.hr>=20&&previous.hr<=240)point.hr=previous.hr;
+    if(previous&&!gapOpen&&performance.now()-previous.mono<=STALE_MS&&typeof previous.hr==='number'&&Number.isInteger(previous.hr)&&previous.hr>=20&&previous.hr<=240)point.hr=previous.hr;
     if(target&&Number.isFinite(target.lower)&&Number.isFinite(target.upper)){point.hr_lower=target.lower;point.hr_upper=target.upper;}
     const response=await fetch('/api/coach/ride/live',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify({live_id:liveId,activity:currentActivity(),point})});
-    if(!liveOn||!active)return;
+    if(!liveOn||!active||liveId!==requestLiveId)return;
     const data=await response.json().catch(()=>null);
-    if(data&&typeof data==='object')liveOkAt=performance.now();
-    const calls=data&&Array.isArray(data.calls)?data.calls:[];
+    if(!liveOn||!active||liveId!==requestLiveId)return;
+    const valid=response.ok&&data&&Array.isArray(data.calls)&&data.calls.every(call=>
+      call&&typeof call.speech==='string'&&call.speech.trim()&&call.speech.length<=300);
+    if(!valid){liveOkAt=-Infinity;return;}
+    liveOkAt=performance.now();
+    const calls=data.calls;
     for(const call of calls){
       if(call&&typeof call.speech==='string'&&call.speech&&(coachCanSpeak()||call.urgent===true))noteAndSpeak(call.speech,'live');
     }
-  }catch(_){/* a missed beat stays silent */}
+  }catch(_){if(liveId===requestLiveId)liveOkAt=-Infinity;/* local reminders remain available */}
   finally{liveBusy=false;}
 }
 // Ears of the assistant: one tap to talk, transcript lands in the box and sends.

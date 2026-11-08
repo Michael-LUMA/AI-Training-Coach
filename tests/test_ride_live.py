@@ -283,6 +283,37 @@ class LiveEndpointTests(unittest.TestCase):
         self.assertEqual(result['speech'], '\u73b0\u5728\u5fc3\u7387152\u3002')
         self.post.assert_not_called()
 
+    def test_live_lane_uses_latest_point_not_first(self):
+        # Regression: the door once merged hr/speed from entry[3] (the first
+        # point ever), so live answers went stale as the ride progressed.
+        first = {**self.point(T0), 'hr': 120}
+        self.request('/api/coach/ride/live', {'live_id': 'ride1', 'point': first})
+        second = {**self.point(T0 + 300.0, km_east=1.0), 'hr': 152}
+        self.request('/api/coach/ride/live', {'live_id': 'ride1', 'point': second})
+        self.app.llm_post = transport('现在心率152。')
+        with patch.dict(os.environ, {'DASHSCOPE_API_KEY': 'synthetic-key'}):
+            result = self.chat({'question': '我现在心率多少？', 'live_id': 'ride1'})
+        self.assertEqual((result['lane'], result['speech_status']), ('live', 'ok'))
+        self.assertEqual(result['speech'], '现在心率152。')
+        self.app.llm_post = transport('现在心率120。')  # stale value must fail verification
+        with patch.dict(os.environ, {'DASHSCOPE_API_KEY': 'synthetic-key'}):
+            stale = self.chat({'question': '我现在心率多少？', 'live_id': 'ride1'})
+        self.assertNotEqual((stale['lane'], stale['speech_status']), ('live', 'ok'))
+
+    def test_live_lane_verifies_run_pace_speech(self):
+        # Regression: pace phrasing (分钟每公里) was unverifiable with a key
+        # configured, so every LLM pace answer fell back to template.
+        import ride_live
+        facts = {'activity': 'run', 'speed_mps': 3.0, 'duration_s': 600,
+                 'distance_m': 1800, 'avg_speed_kmh': 10.8, 'paused': False}
+        ok = ride_live.build_live_answer('现在配速多少？', facts, api_key='k',
+                                         http_post=transport('现在配速5.6分钟每公里。'))
+        self.assertEqual(ok['llm_status'], 'ok')
+        self.assertEqual(ok['speech'], '现在配速5.6分钟每公里。')
+        wrong = ride_live.build_live_answer('现在配速多少？', facts, api_key='k',
+                                            http_post=transport('现在配速7.2分钟每公里。'))
+        self.assertEqual(wrong['llm_status'], 'rejected_unverifiable_number')
+
     def test_live_lane_requires_marker_and_valid_id(self):
         self.request('/api/coach/ride/live', {'live_id': 'ride1', 'point': self.point(T0)})
         with patch.dict(os.environ, {'DASHSCOPE_API_KEY': 'synthetic-key'}):

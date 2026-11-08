@@ -53,6 +53,7 @@ _UNITS = {
     "km": ("distance", "1000"), "kilometer": ("distance", "1000"),
     "kilometers": ("distance", "1000"),
     "m/s": ("speed", "1"), "km/h": ("speed", "0.2777777777777777777777777778"),
+    "s/m": ("pace", "1"), "min/km": ("pace", "0.06"),
     "w": ("power", "1"), "watt": ("power", "1"), "watts": ("power", "1"),
     "bpm": ("heart_rate", "1"), "rpm": ("cadence", "1"),
     "%": ("percentage", "1"), "percent": ("percentage", "1"),

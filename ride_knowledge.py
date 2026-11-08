@@ -14,8 +14,12 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request
 
-from llm_review import (ENDPOINT, MODEL, MAX_RESPONSE_BYTES, TIMEOUT_S,
+from llm_review import (ENDPOINT, MAX_RESPONSE_BYTES, TIMEOUT_S,
                         _http_post, _json, _usage, _verified_text)
+
+# Per-lane model split: knowledge phrasing benefits from qwen-plus while the
+# latency-critical live lane stays on qwen-flash (see ride_chat note).
+MODEL = "qwen-plus"
 from ride_brain import (MAX_TOKENS, _FORBIDDEN, _NUM, _UNITS,
                         _normalized_numbers, _result)
 from ride_chat import _check_question

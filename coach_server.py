@@ -42,7 +42,7 @@ from ride_memory import validate_session, RideMemoryError
 from ride_brain import build_ride_review
 from ride_chat import build_ride_chat
 from ride_knowledge import build_knowledge_answer, load_cards
-from ride_live import LiveSession, build_live_answer, build_live_speech
+from ride_live import LIVE_TEMPLATE, LiveSession, build_live_answer, build_live_speech
 from ride_nav import plan_route
 from ride_weekly import build_ride_weekly, aggregate_ride_weeks, split_week_sessions, weekly_template
 from ride_server import strict_json, dumps
@@ -64,6 +64,7 @@ DEFAULT_PORT = 8794
 _PERSONAL_MARKERS = ("我", "这次", "上次", "最近", "今天", "昨天",
                      "这周", "本周", "这个月", "本月", "累计")
 _LIVE_SILENCE_S = 60.0      # 主动播报全局静默期：克制即智能
+_LIVE_FRESH_S = 30.0        # Three missed 10-second heartbeats make current facts unavailable.
 _LIVE_IDLE_S = 3 * 3600.0   # 实时会话空闲回收
 _LIVE_MAX_SESSIONS = 200    # 进程内存实时会话上限
 _LIVE_URGENT_TYPES = frozenset({"hr_high", "hr_low"})  # 安全事件直通，不受静默期约束
@@ -516,19 +517,22 @@ class App:
         question = payload["question"]
         key = os.environ.get("DASHSCOPE_API_KEY")
         if live_id is not None and any(marker in question for marker in _LIVE_MARKERS):
+            # Snapshot and freshness belong to one validated telemetry update.
+            # Never substitute historical records for unavailable current facts.
             with self._live_lock:
                 entry = self._live.get(live_id)
-            if entry is not None:
-                session = entry[0]
-                live_facts = session.facts()
-                if len(entry) > 3 and type(entry[3]) is dict:
+                live_facts = None
+                if entry is not None and time.monotonic() - entry[2] < _LIVE_FRESH_S:
+                    live_facts = entry[0].facts()
                     for name in ("hr", "hr_upper", "hr_lower", "speed_mps"):
                         if name in entry[3]:
                             live_facts[name] = entry[3][name]
-                live = build_live_answer(question, live_facts, api_key=key, http_post=self.llm_post)
-                if live["llm_status"] == "ok":
-                    return {"speech_status": "ok", "speech": live["speech"],
-                            "fallback": live["fallback"], "usage": live["usage"], "lane": "live"}
+            if live_facts is None:
+                return {"speech_status": "ok", "speech": LIVE_TEMPLATE,
+                        "fallback": "template", "usage": None, "lane": "live"}
+            live = build_live_answer(question, live_facts, api_key=key, http_post=self.llm_post)
+            return {"speech_status": live["llm_status"], "speech": live["speech"],
+                    "fallback": live["fallback"], "usage": live["usage"], "lane": "live"}
         prefer_personal = any(marker in question for marker in _PERSONAL_MARKERS)
 
         def personal():
@@ -567,39 +571,44 @@ class App:
                 "Invalid live_id")
         require(type(payload["point"]) is dict, "Invalid telemetry point")
         now = time.monotonic()
+        entry_point = dict(payload["point"])
         with self._live_lock:
-            for key in [key for key, entry in self._live.items() if now - entry[2] >= _LIVE_IDLE_S]:
+            entry = self._live.get(live_id)
+            if entry is not None and now - entry[2] >= _LIVE_IDLE_S:
+                entry = None
+            session = entry[0] if entry is not None else LiveSession(activity)
+            try:
+                events = session.ingest(entry_point)
+            except ValueError:
+                raise ActionError("invalid_json", "Invalid telemetry point", 400) from None
+            # Rejected packets neither refresh freshness nor allocate a session.
+            for key in [key for key, value in self._live.items() if now - value[2] >= _LIVE_IDLE_S]:
                 del self._live[key]
-            if live_id not in self._live:
+            if entry is None:
                 overflow = len(self._live) - _LIVE_MAX_SESSIONS + 1
                 if overflow > 0:
                     eldest = sorted(self._live.items(), key=lambda item: item[1][2])[:overflow]
                     for key, _ in eldest:
                         del self._live[key]
-                self._live[live_id] = [LiveSession(activity), None, now]
-            entry = self._live[live_id]
-            entry[2] = now
-            session, last_call = entry[0], entry[1]
-        entry_point = dict(payload["point"])
-        try:
-            events = session.ingest(entry_point)
-            with self._live_lock:
-                if live_id in self._live:
-                    self._live[live_id].append(entry_point)
-        except ValueError:
-            raise ActionError("invalid_json", "Invalid telemetry point", 400) from None
+                entry = [session, None, now, entry_point]
+                self._live[live_id] = entry
+            else:
+                entry[2] = now
+                entry[3] = entry_point
+            last_call = entry[1]
+            speech_facts = session.facts()
         urgent = any(event.get("type") in _LIVE_URGENT_TYPES for event in events)
         if not events or (not urgent and last_call is not None and now - last_call < _LIVE_SILENCE_S):
             return {"calls": []}
-        result = build_live_speech(events, session.facts(),
+        result = build_live_speech(events, speech_facts,
                                    api_key=os.environ.get("DASHSCOPE_API_KEY"),
                                    http_post=self.llm_post)
         speech = result["speech"]
         if type(speech) is not str or not speech.strip():
             return {"calls": []}
         with self._live_lock:
-            if live_id in self._live:
-                self._live[live_id][1] = now
+            if self._live.get(live_id) is entry:
+                entry[1] = now
         return {"calls": [{"speech": speech, "speech_status": result["llm_status"],
                            "fallback": result["fallback"], "usage": result["usage"],
                            "urgent": result.get("urgent") is True}],
