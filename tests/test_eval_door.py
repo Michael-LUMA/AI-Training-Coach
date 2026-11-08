@@ -26,17 +26,17 @@ class EvalDoorTests(unittest.TestCase):
         self.addCleanup(capture.__exit__, None, None, None)
 
     def test_all_door_cases_pass_real_routing(self):
-        self.assertEqual(len(self.cases), 18)
+        self.assertEqual(len(self.cases), 19)
         report = eval_door.run_evaluation(self.cases)
-        self.assertEqual(report["summary"]["pass"], 18)
-        self.assertEqual(report["summary"]["total"], 18)
+        self.assertEqual(report["summary"]["pass"], 19)
+        self.assertEqual(report["summary"]["total"], 19)
         self.assertEqual(report["summary"]["pass_rate"], 1.0)
         self.assertTrue(all(row["passed"] for row in report["cases"]))
         by_lane = report["summary"]["by_lane"]
         self.assertGreaterEqual(by_lane["live"], 3)  # live lane really exercised
         self.assertGreaterEqual(by_lane["personal"], 3)
         self.assertGreaterEqual(by_lane["knowledge"], 3)
-        self.assertIn("door: 18/18 pass (100%)", self.output.getvalue())
+        self.assertIn("door: 19/19 pass (100%)", self.output.getvalue())
 
     def test_corpus_validation_rejects_bad_shapes(self):
         bad_cases = (

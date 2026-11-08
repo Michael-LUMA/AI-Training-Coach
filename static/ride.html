@@ -641,6 +641,7 @@ function onTrackFix(position){
 // weather from AMap as a fact with its source named. Simulated/demo fixes are
 // fictional and never trigger a real lookup; failures stay silent.
 let weatherFetched=false;
+let lastWeather=null;
 async function fetchWeatherBrief(fix){
   if(weatherFetched||SIMULATED||DEMO)return;
   weatherFetched=true;
@@ -650,6 +651,7 @@ async function fetchWeatherBrief(fix){
     if(!response.ok)return;
     const result=await response.json().catch(()=>null);
     if(!result||result.weather_status!=='ok')return;
+    lastWeather={city:result.city,day_weather:result.day_weather,day_temp:result.day_temp,night_weather:result.night_weather,night_temp:result.night_temp};
     speak('高德天气：'+result.city+'今天白天'+result.day_weather+'，'+result.day_temp+'度；夜间'+result.night_weather+'，'+result.night_temp+'度。','other');
   }catch(_){/* weather is a bonus; silence is honest */}
 }
@@ -1103,6 +1105,7 @@ async function askMark(options){
     const body={question:question,conv_id:CONV_ID};
     if(active && liveOn && liveId)body.live_id=liveId;
     else {const reviewTarget=selectedHistory||lastSession;if(reviewTarget && reviewTarget.id)body.session_id=reviewTarget.id;}
+    if(lastWeather)body.weather=lastWeather;
     const response=await fetch('/api/coach/ride/chat',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify(body)});
     if(!response.ok)throw new Error('chat unavailable');
     const result=await response.json();

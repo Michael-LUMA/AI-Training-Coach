@@ -207,6 +207,26 @@ class RideMemoryUI(unittest.TestCase):
         self.assertEqual(result['batches'], 0)
         self.assertIn('超过 5 MB', result['status'])
 
+    def test_chat_carries_relayed_weather_when_known(self):
+        result = self.run_js("""
+          lastWeather={city:'上海市',day_weather:'多云',day_temp:15,night_weather:'晴',night_temp:9};
+          $('chat-input').value='今天天气怎么样？';
+          await askMark();
+          const chats=_calls.filter(c=>c.url==='/api/coach/ride/chat');
+          return {body:JSON.parse(chats[0].body)};
+        """, history=[metadata()])
+        self.assertEqual(result['body']['weather']['city'], '上海市')
+        self.assertEqual(result['body']['weather']['day_temp'], 15)
+
+    def test_chat_omits_weather_when_never_fetched(self):
+        result = self.run_js("""
+          $('chat-input').value='今天天气怎么样？';
+          await askMark();
+          const chats=_calls.filter(c=>c.url==='/api/coach/ride/chat');
+          return {body:JSON.parse(chats[0].body)};
+        """, history=[metadata()])
+        self.assertNotIn('weather', result['body'])
+
     def test_no_history_stays_hidden_and_debug_only(self):
         result = self.run_js("return {hidden:$('memory-card').hidden,spoken:_spoken,debug:_debug,text:$('memory-recall').textContent};")
         self.assertTrue(result['hidden'])

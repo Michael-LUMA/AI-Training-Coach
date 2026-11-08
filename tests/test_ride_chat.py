@@ -865,3 +865,66 @@ class ChatWeekTests(unittest.TestCase):
         result = self.chat(None, http_post=post)
         self.assertEqual(result['llm_status'], 'ok')
         self.assertNotIn('week', facts_of(post))
+
+
+class ChatWeatherTests(unittest.TestCase):
+    """Client-relayed AMap weather: validated bundle, unitless temperatures."""
+
+    def weather(self):
+        return {'city': '上海市', 'day_weather': '多云', 'day_temp': 15,
+                'night_weather': '晴', 'night_temp': 9}
+
+    def chat(self, weather, question='今天天气怎么样？', **kwargs):
+        kwargs.setdefault('api_key', 'synthetic-key')
+        return ride_chat.build_ride_chat(question, session=None, weather=weather, **kwargs)
+
+    def test_weather_projection_and_verified_speech(self):
+        weather = self.weather(); before = copy.deepcopy(weather)
+        post = transport('高德天气：上海市今天白天多云，15度；夜间晴，9度。')
+        result = self.chat(weather, http_post=post)
+        self.assertEqual(result['llm_status'], 'ok')
+        self.assertEqual(weather, before)
+        facts = facts_of(post)
+        self.assertEqual(facts['weather'], {'source': 'amap', **self.weather()})
+        self.assertIn('weather', ride_chat.SYSTEM_PROMPT)
+
+    def test_string_temperatures_normalize_to_int(self):
+        post = transport('高德天气：上海市今天白天多云，15度；夜间晴，9度。')
+        bundle = self.weather() | {'day_temp': '15', 'night_temp': '9'}
+        result = self.chat(bundle, http_post=post)
+        self.assertEqual(result['llm_status'], 'ok')
+        self.assertEqual(facts_of(post)['weather']['day_temp'], 15)
+
+    def test_unregistered_temperature_rejected(self):
+        post = transport('今天白天16度。')
+        result = self.chat(self.weather(), http_post=post)
+        self.assertEqual(result['llm_status'], 'rejected_unverifiable_number')
+
+    def test_missing_field_drops_bundle(self):
+        bundle = {key: value for key, value in self.weather().items() if key != 'city'}
+        post = transport('这个我没记到。')
+        result = self.chat(bundle, http_post=post)
+        self.assertEqual(result['llm_status'], 'ok')
+        self.assertNotIn('weather', facts_of(post))
+
+    def test_malformed_weather_drops_out_whole(self):
+        invalid = ['weather', 3, [],
+                   self.weather() | {'day_temp': 71},
+                   self.weather() | {'day_temp': 'hot'},
+                   self.weather() | {'night_temp': None},
+                   self.weather() | {'day_temp': True},
+                   self.weather() | {'city': ''},
+                   self.weather() | {'day_weather': '多云' * 40},
+                   self.weather() | {'night_weather': '晴\n'}]
+        for bundle in invalid:
+            with self.subTest(weather=repr(bundle)[:60]):
+                post = transport('这个我没记到。')
+                result = self.chat(bundle, http_post=post)
+                self.assertEqual(result['llm_status'], 'ok')
+                self.assertNotIn('weather', facts_of(post))
+
+    def test_none_weather_leaves_no_trace(self):
+        post = transport('这个我没记到。')
+        result = self.chat(None, http_post=post)
+        self.assertEqual(result['llm_status'], 'ok')
+        self.assertNotIn('weather', facts_of(post))

@@ -492,11 +492,14 @@ class App:
         by build_ride_chat. Optional conv_id carries at most _CONV_MAX_TURNS
         recent turns as context — memory-only, TTL-bounded, never persisted.
         """
-        require(type(payload) is dict and set(payload) in ({"question"}, {"question", "session_id"},
+        require(type(payload) is dict and set(payload) - {"weather"} in ({"question"}, {"question", "session_id"},
                                                         {"question", "live_id"}, {"question", "conv_id"},
                                                         {"question", "session_id", "conv_id"},
                                                         {"question", "live_id", "conv_id"}),
                 "Expected question and optional session_id, live_id or conv_id")
+        # Optional client-relayed AMap weather; validated and bounded again by
+        # ride_chat._weather_facts, dropped whole when malformed.
+        weather = payload.get("weather")
         live_id = payload.get("live_id")
         if live_id is not None:
             require(type(live_id) is str and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", live_id) is not None,
@@ -630,7 +633,7 @@ class App:
                     recent_summaries=copy.deepcopy(recent),
                     activity_ordinal=ordinal if ordinal else None,
                     excluded_simulated=excluded_simulated, totals=totals, history=dialog,
-                    profile=profile, week=week, notes=list(user_notes),
+                    profile=profile, week=week, notes=list(user_notes), weather=weather,
                     http_post=self.llm_post, **kw),
                 question=question)
 
