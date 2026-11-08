@@ -39,6 +39,7 @@ from ride_gpx import GPXError
 from ride_review import ReviewError
 from ride_memory import validate_session, RideMemoryError
 from ride_brain import build_ride_review
+from ride_chat import build_ride_chat
 from ride_nav import plan_route
 from ride_weekly import build_ride_weekly, aggregate_ride_weeks, split_week_sessions, weekly_template
 from ride_server import strict_json, dumps
@@ -54,6 +55,7 @@ RIDE_LIST = "/api/coach/ride/sessions"
 RIDE_REVIEW = "/api/coach/ride/review"
 RIDE_WEEKLY = "/api/coach/ride/weekly"
 RIDE_ROUTE = "/api/coach/ride/route"
+RIDE_CHAT = "/api/coach/ride/chat"
 DEFAULT_PORT = 8794
 
 
@@ -215,7 +217,7 @@ class App:
             token = headers.get("X-Coach-Token", "")
             require(type(token) is str and token.isascii() and secrets.compare_digest(token, self.token), "Session token required", "token_denied", 403)
         allowed = ((method == "GET" and (parsed.path in ("/", "/privacy", "/terms", "/api/coach/config", "/api/coach/activities", "/ride", "/ride.webmanifest", "/icon.svg", RIDE_LIST) or font_path is not None)) or
-                   (method == "POST" and path in ("/api/coach/connect", "/api/coach/review", "/api/coach/review-l2", "/api/coach/demo-review", "/api/coach/waitlist", "/api/coach/weekly", RIDE_POST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE)))
+                   (method == "POST" and path in ("/api/coach/connect", "/api/coach/review", "/api/coach/review-l2", "/api/coach/demo-review", "/api/coach/waitlist", "/api/coach/weekly", RIDE_POST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE, RIDE_CHAT)))
         require(allowed, "Endpoint not found", "not_found", 404)
         if method == "POST":
             require(headers.get("Transfer-Encoding") is None and headers.get("Content-Type") == "application/json", "Fixed-length JSON required", "invalid_body", 415)
@@ -229,7 +231,7 @@ class App:
 
     def dispatch(self, method, path, headers, body=b"", port=DEFAULT_PORT):
         length = self.preflight(method, path, headers, port)
-        if urlsplit(path).path in (RIDE_POST, RIDE_LIST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE):
+        if urlsplit(path).path in (RIDE_POST, RIDE_LIST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE, RIDE_CHAT):
             self._ride_rate_limit(method)
         if method == "POST" and path == "/api/coach/billing/webhook":
             require(len(body) == length, "Incomplete request body", "invalid_body")
@@ -290,6 +292,8 @@ class App:
             return self._weekly_ride(payload)
         if path == RIDE_REVIEW:
             return self._review_ride(payload)
+        if path == RIDE_CHAT:
+            return self._chat_ride(payload)
         if path == "/api/coach/waitlist":
             require(type(payload) is dict and set(payload) == {"email"}, "Expected email only")
             status = self.waitlist.register(payload["email"])
@@ -395,6 +399,69 @@ class App:
                                    activity_ordinal=ordinal,
                                    excluded_simulated=excluded_simulated,
                                    api_key=os.environ.get("DASHSCOPE_API_KEY"), http_post=self.llm_post)
+        return {"speech_status": result["llm_status"],
+                "speech": result["draft"]["speech"] if result["draft"] else None,
+                "fallback": result["fallback"], "usage": result["usage"]}
+
+    def _chat_ride(self, payload):
+        """Stateless Q&A over stored sessions; cloud request outside the disk lock.
+
+        The question is data, never an instruction channel: bounded and validated
+        by build_ride_chat. No chat history is stored or sent upstream.
+        """
+        require(type(payload) is dict and set(payload) in ({"question"}, {"question", "session_id"}),
+                "Expected question and optional session_id")
+        identifier = payload.get("session_id")
+        if identifier is not None:
+            require(type(identifier) is str and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", identifier) is not None,
+                    "Invalid session_id")
+        with self._ride_lock:
+            directory = self.ride_dir
+            require(not directory.is_symlink(), "Ride storage unavailable", "storage_unavailable", 503)
+            memory = None
+            if identifier is not None:
+                path = directory / (identifier + ".json")
+                require(not path.is_symlink(), "Session not found", "not_found", 404)
+                try:
+                    require(path.stat().st_size <= MAX_RIDE_BODY_BYTES, "Invalid stored session", "storage_unavailable", 503)
+                    memory = validate_session(strict_json(path.read_bytes()))
+                    require(memory["id"] == identifier, "Invalid stored session", "storage_unavailable", 503)
+                except FileNotFoundError:
+                    raise ActionError("not_found", "Session not found", 404) from None
+                except (RideMemoryError, OSError):
+                    raise ActionError("storage_unavailable", "Ride storage unavailable", 503) from None
+            activity = memory.get("activity", "ride") if memory is not None else None
+            history = []  # (when, summary) of non-simulated sessions in scope
+            excluded_simulated = 0
+            for candidate in directory.glob("*.json"):
+                if candidate.is_symlink():
+                    continue
+                try:
+                    if candidate.stat().st_size > MAX_RIDE_BODY_BYTES:
+                        continue
+                    stored = validate_session(strict_json(candidate.read_bytes()))
+                    if stored["id"] != candidate.stem:
+                        continue
+                    if memory is not None and stored["id"] == identifier:
+                        continue
+                    if activity is not None and stored.get("activity", "ride") != activity:
+                        continue
+                    when = datetime.fromisoformat(stored["started_at"].replace("Z", "+00:00"))
+                    if stored["source"] == "simulated":
+                        excluded_simulated += 1
+                        continue
+                    history.append((when, stored["summary"]))
+                except (RideMemoryError, ActionError, OSError, ValueError):
+                    continue
+            history.sort(key=lambda entry: entry[0])
+            recent = [summary for _, summary in history[-3:]]
+            ordinal = len(history) + (1 if memory is not None else 0)
+        result = build_ride_chat(payload["question"],
+                                 session=copy.deepcopy(memory) if memory is not None else None,
+                                 recent_summaries=copy.deepcopy(recent),
+                                 activity_ordinal=ordinal if ordinal else None,
+                                 excluded_simulated=excluded_simulated,
+                                 api_key=os.environ.get("DASHSCOPE_API_KEY"), http_post=self.llm_post)
         return {"speech_status": result["llm_status"],
                 "speech": result["draft"]["speech"] if result["draft"] else None,
                 "fallback": result["fallback"], "usage": result["usage"]}

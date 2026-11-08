@@ -1,0 +1,299 @@
+"""Offline Chinese chat-brain tests (synthetic data, no network)."""
+import copy
+import json
+import os
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import coach_server
+import ride_chat
+import ride_brain as brain
+from action_cards import ActionError
+
+
+def memory(identifier='current', started='2026-11-07T08:00:00Z'):
+    return {'schema_version':'luma-ride-memory/1','id':identifier,'started_at':started,
+            'ended_at':started.replace('08:00:00','08:01:00'),'samples_hz':1,
+            'series':[{'t':0,'hr':120},{'t':60,'hr':120}],
+            'summary':{'duration_s':60,'avg_hr':120,'max_hr':120,'time_in_zone_s':None,
+                       'zone_target':None,'gaps':0,'alerts':0},
+            'coach_notes':['private note not for cloud'],'persona_version':'ride-persona/4',
+            'source':'ble_gatt_0x180d'}
+
+
+def transport(speech='这次平均心率120 bpm，记录了1分钟。', *, status=200, draft=None, finish='stop'):
+    envelope={'choices':[{'finish_reason':finish,'message':{'content':json.dumps({'speech':speech} if draft is None else draft,ensure_ascii=False)}}],
+              'usage':{'prompt_tokens':11,'completion_tokens':12}}
+    return Mock(return_value=(status, {}, json.dumps(envelope,ensure_ascii=False).encode('utf-8')))
+
+
+def facts_of(post):
+    return json.loads(json.loads(post.call_args.args[0].data)['messages'][1]['content'])
+
+
+class ChatQuestionValidationTests(unittest.TestCase):
+    def test_invalid_question_rejected_without_upstream(self):
+        post=Mock(side_effect=AssertionError('no network'))
+        for question in ('','   ','问'*201,'心率多少？\x00','心率多少？\n','心率多少？\x7f',None,123,['心率']):
+            with self.subTest(question=repr(question)):
+                result=ride_chat.build_ride_chat(question,session=memory(),
+                                                 api_key='synthetic-key',http_post=post)
+                self.assertEqual(result['llm_status'],'rejected_bad_schema')
+                self.assertIsNone(result['draft']);self.assertEqual(result['fallback'],'template')
+        post.assert_not_called()
+
+    def test_boundary_question_lengths_accepted(self):
+        for question in ('？','问'*200):
+            with self.subTest(length=len(question)):
+                result=ride_chat.build_ride_chat(question,session=memory(),
+                                                 api_key='synthetic-key',http_post=transport())
+                self.assertEqual(result['llm_status'],'ok')
+
+    def test_not_configured_never_calls_transport_or_reads_env(self):
+        post=Mock(side_effect=AssertionError('no network'))
+        with patch.dict(os.environ, {'DASHSCOPE_API_KEY':'must-not-read'}):
+            for key in (None,'','   '):
+                result=ride_chat.build_ride_chat('心率多少？',session=memory(),api_key=key,http_post=post)
+                self.assertEqual(result,{'llm_status':'not_configured','draft':None,'usage':None,'fallback':'template'})
+        post.assert_not_called()
+
+
+class ChatFactsTests(unittest.TestCase):
+    def chat(self,question='这次心率多少？',speech='这次平均心率120 bpm。',**kwargs):
+        kwargs.setdefault('api_key','synthetic-key')
+        return ride_chat.build_ride_chat(question,**kwargs)
+
+    def test_session_facts_projected_question_included_no_key_in_body(self):
+        post=transport()
+        result=self.chat(session=memory(),http_post=post)
+        self.assertEqual(result['llm_status'],'ok')
+        post.assert_called_once()
+        request=post.call_args.args[0]
+        self.assertEqual(request.full_url,brain.ENDPOINT)
+        self.assertEqual(request.get_header('Authorization'),'Bearer synthetic-key')
+        self.assertNotIn(b'synthetic-key',request.data)
+        facts=facts_of(post)
+        self.assertEqual(facts['question'],'这次心率多少？')
+        self.assertEqual(facts['summary']['avg_hr'],120)
+        self.assertEqual(facts['activity'],'ride')
+        self.assertEqual(facts['display']['duration_min'],1)
+        for forbidden in ('private note','series','started_at','persona_version','current','chat'):
+            self.assertNotIn(forbidden,json.dumps(facts,ensure_ascii=False))
+        system=json.loads(request.data)['messages'][0]['content']
+        self.assertEqual(system,ride_chat.SYSTEM_PROMPT)
+        self.assertNotEqual(system,brain.SYSTEM_PROMPT)
+
+    def test_no_session_gives_history_facts_only(self):
+        recent=[{'duration_s':120,'avg_hr':130,'max_hr':140,'time_in_zone_s':None,
+                 'zone_target':None,'gaps':0,'alerts':0}]
+        post=transport('近一次平均心率130，时长2分钟，这是你第3次骑行。')
+        result=self.chat(question='我最近骑得怎么样？',session=None,
+                         recent_summaries=recent,activity_ordinal=3,http_post=post)
+        self.assertEqual(result['llm_status'],'ok')
+        facts=facts_of(post)
+        self.assertNotIn('summary',facts)
+        self.assertNotIn('source',facts)
+        self.assertEqual(facts['recent_trend']['avg_hr_list'],[130])
+        self.assertEqual(facts['recent_trend']['duration_min_list'],[2])
+        self.assertEqual(facts['session_ordinal'],3)
+
+    def test_empty_history_facts_are_reachable_i_dont_know(self):
+        post=transport('这个我没记到。')
+        result=self.chat(question='我上周爬升多少？',session=None,http_post=post)
+        self.assertEqual(result['llm_status'],'ok')
+        self.assertEqual(facts_of(post),{'question':'我上周爬升多少？'})
+
+    def test_no_chat_history_in_payload(self):
+        post=transport()
+        first=self.chat(question='第一个问题',session=memory(),http_post=post)
+        self.assertEqual(first['llm_status'],'ok')
+        second_post=transport()
+        second=self.chat(question='第二个问题',session=memory(),http_post=second_post)
+        self.assertEqual(second['llm_status'],'ok')
+        body=json.loads(second_post.call_args.args[0].data)
+        self.assertEqual(len(body['messages']),2)
+        self.assertNotIn('第一个问题',json.dumps(body,ensure_ascii=False))
+
+
+class ChatVerificationTests(unittest.TestCase):
+    def answer(self,speech,**kwargs):
+        kwargs.setdefault('api_key','synthetic-key')
+        kwargs.setdefault('session',memory())
+        return ride_chat.build_ride_chat('这次心率多少？',http_post=transport(speech),**kwargs)
+
+    def test_invented_number_rejects_entire_draft(self):
+        for speech in ('这次平均心率999。','这次骑了500公里。'):
+            with self.subTest(speech=speech):
+                result=self.answer(speech)
+                self.assertEqual(result['llm_status'],'rejected_unverifiable_number')
+                self.assertIsNone(result['draft']);self.assertEqual(result['fallback'],'template')
+
+    def test_verified_numbers_pass(self):
+        for speech in ('这次平均心率120 bpm。','这次记录了1分钟。','平均心率一百二十，时长六十秒。'):
+            with self.subTest(speech=speech):
+                self.assertEqual(self.answer(speech)['llm_status'],'ok')
+
+    def test_forbidden_prescription_and_medical_rejected(self):
+        for speech in ('你变强了，建议加大强度。','这个训练效果不错。'):
+            with self.subTest(speech=speech):
+                self.assertEqual(self.answer(speech)['llm_status'],'rejected_unsafe_speech')
+
+    def test_i_dont_know_answer_passes(self):
+        result=self.answer('这个我没记到。')
+        self.assertEqual(result['llm_status'],'ok')
+        self.assertEqual(result['draft'],{'speech':'这个我没记到。'})
+
+    def test_simulated_source_must_be_disclosed(self):
+        item=memory();item['source']='simulated'
+        hidden=self.answer('这次平均心率120。',session=item)
+        self.assertEqual(hidden['llm_status'],'rejected_unsafe_speech')
+        shown=self.answer('模拟记录：这次平均心率120。',session=item)
+        self.assertEqual(shown['llm_status'],'ok')
+        post=transport('模拟记录：这次平均心率120。')
+        ride_chat.build_ride_chat('心率？',session=memory(identifier='x')|{'source':'simulated'},
+                                  api_key='synthetic-key',http_post=post)
+        self.assertIn('speech_rule',facts_of(post))
+
+    def test_malformed_drafts_rejected(self):
+        for draft in ({},{'speech':''},{'speech':'   '},{'speech':'好'*301},{'speech':'行','extra':1}):
+            with self.subTest(draft=draft):
+                result=ride_chat.build_ride_chat('心率？',session=memory(),api_key='synthetic-key',
+                                                 http_post=transport(draft=draft))
+                self.assertEqual(result['llm_status'],'rejected_bad_schema')
+
+    def test_upstream_failures_map_to_fallback(self):
+        for post in (Mock(return_value=(500,{},b'{}')),
+                     Mock(return_value=(200,{},b'not json')),
+                     Mock(return_value=(200,{},json.dumps({'error':{'message':'x'}}).encode())),
+                     Mock(side_effect=TimeoutError())):
+            with self.subTest(post=post):
+                result=ride_chat.build_ride_chat('心率？',session=memory(),
+                                                 api_key='synthetic-key',http_post=post)
+                self.assertEqual(result['llm_status'],'upstream_error')
+                self.assertEqual(result['fallback'],'template')
+
+
+class ChatTemplateTests(unittest.TestCase):
+    def test_template_snapshot(self):
+        self.assertEqual(ride_chat.chat_template(),'这个我现在答不上来，等我记到更多数据再聊。')
+        self.assertEqual(ride_chat.TEMPLATE,ride_chat.chat_template())
+
+    def test_session_not_mutated(self):
+        item=memory();before=copy.deepcopy(item)
+        ride_chat.build_ride_chat('心率？',session=item,api_key='synthetic-key',http_post=transport())
+        self.assertEqual(item,before)
+
+
+class ChatEndpointTests(unittest.TestCase):
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
+        self.post=transport();self.app=coach_server.App(store=SimpleNamespace(path=Path(self.temp.name)/'coach.sqlite3'),llm_post=self.post)
+        self.env=patch.dict(os.environ,{'DASHSCOPE_API_KEY':''});self.env.start();self.addCleanup(self.env.stop)
+
+    def request(self,path,payload,headers=None):
+        body=json.dumps(payload,ensure_ascii=False).encode()
+        default={'Host':'127.0.0.1:8794','Origin':'http://127.0.0.1:8794','Content-Type':'application/json',
+                 'Content-Length':str(len(body)),'X-Coach-Token':self.app.token}
+        default.update(headers or {})
+        return self.app.dispatch('POST',path,default,body)
+
+    def save(self,item=None):
+        return self.request('/api/coach/ride/session',memory() if item is None else item)
+
+    def v3(self,identifier,started,avg_hr,source='ble_gatt_0x180d'):
+        return {'schema_version':'luma-ride-memory/3','id':identifier,'started_at':started,
+                'ended_at':started.replace('00:00Z','01:00Z'),'samples_hz':1,
+                'series':[{'t':0,'hr':avg_hr},{'t':60,'hr':avg_hr}],
+                'summary':{'duration_s':60,'avg_hr':avg_hr,'max_hr':avg_hr,'time_in_zone_s':None,
+                           'zone_target':None,'gaps':0,'alerts':0,'avg_cadence':None,'avg_power':None,
+                           'max_power':None,'distance_m':None,'avg_speed_mps':None,'max_speed_mps':None},
+                'coach_notes':[],'persona_version':'ride-persona/14','source':source}
+
+    def test_whitelist_and_security_headers(self):
+        with self.assertRaises(ActionError) as error:
+            self.request('/api/coach/ride/chats',{'question':'心率？'})
+        self.assertEqual(error.exception.status,404)
+        for headers in ({'X-Coach-Token':'bad'},{'Origin':'https://evil.invalid'},{'Host':'evil.invalid'}):
+            with self.subTest(headers=headers):
+                with self.assertRaises(ActionError) as error:
+                    self.request('/api/coach/ride/chat',{'question':'心率？'},headers)
+                self.assertEqual(error.exception.status,403)
+        self.post.assert_not_called()
+
+    def test_field_validation_and_invalid_question_shape(self):
+        for payload in ({},{'session_id':'current'},{'question':'心率？','extra':1},
+                        {'question':'心率？','session_id':'../secret'},{'question':'心率？','session_id':[]}):
+            with self.subTest(payload=payload):
+                with self.assertRaises(ActionError) as error:
+                    self.request('/api/coach/ride/chat',payload)
+                self.assertEqual(error.exception.status,400)
+        self.post.assert_not_called()
+        self.save()
+        with patch.dict(os.environ,{'DASHSCOPE_API_KEY':'synthetic-key'}):
+            result=self.request('/api/coach/ride/chat',{'question':'问'*201,'session_id':'current'})
+        self.assertEqual(result['speech_status'],'rejected_bad_schema')
+        self.assertEqual(result['fallback'],'template')
+        self.post.assert_not_called()
+
+    def test_missing_session_404(self):
+        with self.assertRaises(ActionError) as error:
+            self.request('/api/coach/ride/chat',{'question':'心率？','session_id':'missing'})
+        self.assertEqual((error.exception.status,error.exception.code),(404,'not_found'))
+        self.post.assert_not_called()
+
+    def test_unconfigured_returns_quiet_template_shape(self):
+        self.save()
+        result=self.request('/api/coach/ride/chat',{'question':'心率？','session_id':'current'})
+        self.assertEqual(result,{'speech_status':'not_configured','speech':None,'fallback':'template','usage':None})
+        self.post.assert_not_called()
+
+    def test_chat_with_session_and_history_aggregation(self):
+        self.save(self.v3('older','2026-11-05T08:00:00Z',138))
+        self.save(self.v3('sim','2026-11-06T08:00:00Z',140,source='simulated'))
+        self.save()
+        with patch.dict(os.environ,{'DASHSCOPE_API_KEY':'synthetic-key'}):
+            result=self.request('/api/coach/ride/chat',{'question':'这次心率多少？','session_id':'current'})
+        self.assertEqual(result['speech_status'],'ok')
+        self.assertEqual(result['speech'],'这次平均心率120 bpm，记录了1分钟。')
+        facts=json.loads(json.loads(self.post.call_args.args[0].data)['messages'][1]['content'])
+        self.assertEqual(facts['question'],'这次心率多少？')
+        self.assertEqual(facts['summary']['avg_hr'],120)
+        self.assertEqual(facts['recent_trend']['avg_hr_list'],[138])
+        self.assertEqual(facts['session_ordinal'],2)
+        self.assertEqual(facts['excluded_simulated'],1)
+
+    def test_chat_without_session_uses_history_only(self):
+        self.save(self.v3('one','2026-11-05T08:00:00Z',138))
+        self.save(self.v3('two','2026-11-06T08:00:00Z',135))
+        self.post.return_value=transport('近两次平均心率138和135 bpm。').return_value
+        with patch.dict(os.environ,{'DASHSCOPE_API_KEY':'synthetic-key'}):
+            result=self.request('/api/coach/ride/chat',{'question':'我最近几次心率多少？'})
+        self.assertEqual(result['speech_status'],'ok')
+        facts=json.loads(json.loads(self.post.call_args.args[0].data)['messages'][1]['content'])
+        self.assertNotIn('summary',facts)
+        self.assertEqual(facts['recent_trend']['avg_hr_list'],[138,135])
+        self.assertEqual(facts['session_ordinal'],2)
+
+    def test_chat_counts_toward_shared_post_bucket(self):
+        self.save()
+        for _ in range(9):
+            self.request('/api/coach/ride/chat',{'question':'心率？','session_id':'current'})
+        with self.assertRaises(ActionError) as error:
+            self.request('/api/coach/ride/chat',{'question':'心率？','session_id':'current'})
+        self.assertEqual((error.exception.status,error.exception.code),(429,'rate_limited'))
+
+    def test_chat_writes_no_history_to_disk(self):
+        self.save()
+        with patch.dict(os.environ,{'DASHSCOPE_API_KEY':'synthetic-key'}):
+            self.request('/api/coach/ride/chat',{'question':'心率？','session_id':'current'})
+        stored=[path.name for path in self.app.ride_dir.glob('*.json')]
+        self.assertEqual(stored,['current.json'])
+
+
+if __name__=='__main__':
+    unittest.main()

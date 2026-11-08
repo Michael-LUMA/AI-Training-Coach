@@ -204,6 +204,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px/1.75 var(--mono);max
 <h2 data-i18n="summary-h">骑后一句话</h2>
 <p id="summary" class="summaryline" data-i18n="summary-init">结束后根据记录生成。没有数据的部分保持缺失。</p>
 <section id="brain-card" hidden aria-labelledby="brain-heading"><h3 id="brain-heading" data-i18n="brain-h">Mark 想了想</h3><p id="brain-speech"></p><button id="brain-listen" type="button" class="secondary" data-i18n="listen2">听 Mark 说</button></section>
+<section id="chat-card" hidden aria-labelledby="chat-heading"><h3 id="chat-heading" data-i18n="chat-h">问 Mark</h3><div class="row"><input id="chat-input" type="text" maxlength="200" placeholder="问问这次记录…" data-i18n-ph="chat-ph"><button id="chat-send" type="button" class="secondary" data-i18n="chat-send">问</button></div><p id="chat-answer" aria-live="polite"></p></section>
 <p id="memory-compare" aria-live="polite" hidden></p>
 <p id="compare-source" class="warn" hidden></p>
 <p id="save-status" class="note" role="status" aria-live="polite" data-i18n="save-init">本片存储为 ephemeral：重启或重新部署可能丢失，请保留下载备份。</p>
@@ -232,7 +233,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px/1.75 var(--mono);max
 'use strict';
 // Device adapter only: ride_memory.py owns the reusable versioned memory contract.
 const PERSONA = Object.freeze({
-  version:'ride-persona/14', name:'Mark', above:'心率超过你设的上限了。', below:'心率低于你设的下限了。', disconnected:'心率信号断了，我看不到读数。', short:'记录太短，我还总结不了。',
+  version:'ride-persona/15', name:'Mark', above:'心率超过你设的上限了。', below:'心率低于你设的下限了。', disconnected:'心率信号断了，我看不到读数。', short:'记录太短，我还总结不了。',
   recall:parts=>'我记得上次'+parts.join('，')+'。记录还很少，这不算趋势。',
   recall_no_history:'我还没有可回放的历史记录。',
   compare_better:(label,amount,unit)=>'我看到'+label+'比上次'+(unit==='分钟' ? '少' : '低')+amount+unit+'。',
@@ -281,7 +282,9 @@ const PERSONA = Object.freeze({
   nav_next:(text,dist)=>'下一转向：'+text+' · 约 '+dist+' 米',
   nav_arrival:'已接近终点附近，导航结束。',
   nav_offroute:'好像偏航了，离规划路线有点远。我不会自动重算，到安全的地方停下来可以重新规划。',
-  nav_back:'回到路线上了。'
+  nav_back:'回到路线上了。',
+  chat_title:'问 Mark', chat_placeholder:'问问这次记录…', chat_send:'问',
+  chat_fallback:'这个我现在答不上来，等我记到更多数据再聊。'
 });
 const SERVICE = 0x180D, CHARACTERISTIC = 0x2A37;
 const CSC_SERVICE = 0x1816, CSC_MEASUREMENT = 0x2A5B, POWER_SERVICE = 0x1818, POWER_MEASUREMENT = 0x2A63;
@@ -299,7 +302,7 @@ let outsideSince = null, outsideKind = null, lastAlert = -Infinity, alerts = 0;
 let timer = null, simulator = null, lastSession = null, target = null;
 let totals = {below:0, within:0, above:0};
 let recallText = '', recallSpoken = false, comparisonRequest = 0;
-let brainSpeech = '', brainRequest = 0;
+let brainSpeech = '', brainRequest = 0, chatRequest = 0;
 let weeklyFacts = null, weeklyWeekStart = '', weeklyRequest = 0;
 let demoPlaying = false, demoElapsed = 0, demoStep = 0, demoProfile = [];
 let screenLock = null, wakePending = false, wakeEpoch = 0, wakeWarningShown = false;
@@ -821,6 +824,29 @@ async function requestRideSpeech(memory){
     $('brain-heading').textContent=activePersona.thinking;$('brain-speech').textContent=brainSpeech;$('brain-card').hidden=false;
   }catch(_){ /* Quiet, honest fallback: existing template is never removed. */ }
 }
+// Q&A never speaks: the answer is text only, fallback is the honest local line.
+async function askMark(){
+  const question=($('chat-input').value||'').trim();
+  if(!question)return;
+  const request=++chatRequest;
+  $('chat-card').hidden=false;
+  try {
+    const body={question:question};
+    if(lastSession && lastSession.id)body.session_id=lastSession.id;
+    const response=await fetch('/api/coach/ride/chat',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify(body)});
+    if(!response.ok)throw new Error('chat unavailable');
+    const result=await response.json();
+    if(request!==chatRequest)return;
+    if(result.speech_status==='ok' && typeof result.speech==='string' && result.speech.trim()){
+      $('chat-answer').textContent=result.speech;
+    }else{
+      $('chat-answer').textContent=activePersona.chat_fallback;
+    }
+  }catch(_){
+    if(request!==chatRequest)return;
+    $('chat-answer').textContent=activePersona.chat_fallback;
+  }
+}
 function compareMetric(label,current,previous,unit){
   // better/worse are required contract keys, not training-quality judgements.
   const delta=current-previous, tolerance=previous*.03;
@@ -1053,6 +1079,7 @@ async function connectAux(){
 function onHeartRate(event){try {receiveHR(parseHeartRate(event.target.value));} catch (_) {markGap(); state('心率数据格式异常，已标记缺口，没有补数。');}}
 function begin(options={}){
   brainRequest+=1;brainSpeech='';$('brain-card').hidden=true;
+  chatRequest+=1;$('chat-card').hidden=true;$('chat-answer').textContent='';
   comparisonRequest+=1;$('memory-compare').hidden=true;$('compare-source').hidden=true;
   applyActivity();
   target = options.target === undefined ? readTarget() : options.target; startedMs = Date.now(); startedMono = performance.now();
@@ -1313,10 +1340,11 @@ function finishRide(reason=''){
   const viewReview=$('view-review');if(viewReview)viewReview.checked=true;
   $('end-ride').disabled=true;$('reconnect').disabled=true;$('start-ride').disabled=false;$('lower').disabled=$('upper').disabled=false;$('milestone-interval').disabled=$('fuel-interval').disabled=false;$('activity-select').disabled=false;
   const text=summarize(memory);$('summary').textContent=text;if(memory.coach_notes.length<200)memory.coach_notes.push(text);speak(text,'summary',speechKind==='fuel');
-  lastSession=memory;$('download-session').disabled=false;$('download-gpx').disabled=false;$('connection').textContent='记录已结束';state(reason || '记录结束。平均值为实际样本算术平均，不推断训练效果。');
+  lastSession=memory;$('chat-card').hidden=false;$('download-session').disabled=false;$('download-gpx').disabled=false;$('connection').textContent='记录已结束';state(reason || '记录结束。平均值为实际样本算术平均，不推断训练效果。');
   const retained=retain(memory); void upload(memory,retained);
 }
 $('ride-weekly-listen').addEventListener('click',listenWeekly);
+$('chat-send').addEventListener('click',askMark);
 $('nav-plan').addEventListener('click',planNav);
 $('nav-clear').addEventListener('click',clearNav);
 $('nav-voice').addEventListener('click',()=>{navVoice=$('nav-voice').checked!==false;});
@@ -1418,6 +1446,7 @@ const I18N_EN=Object.freeze({
   'memory-h':"Mark's memory", listen:'Hear Mark', listen2:'Hear Mark',
   'summary-h':'One line after the ride', 'summary-init':'Generated from the record after you finish. Whatever has no data stays missing.',
   'brain-h':'Mark thought it over',
+  'chat-h':'Ask Mark', 'chat-send':'Ask', 'chat-ph':'Ask about this record…',
   'save-init':'Server storage is ephemeral: restarts or redeploys may lose it. Keep a downloaded backup.',
   retry:'Retry uploading pending records', 'dl-json':'Download JSON backup', 'dl-gpx':'Download GPX backup',
   'gpx-note':'With recorded coordinates, the GPX is a real track (heart rate / cadence / power as extension values), importable into Strava, Xingzhe, or Garmin. Without coordinates it holds only the heart-rate timeline and gap markers and cannot be imported where a track is required. The two are never blended.',
