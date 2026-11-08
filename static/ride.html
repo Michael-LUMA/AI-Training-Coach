@@ -885,7 +885,7 @@ function answerVoice(){
 // engine every LIVE_POST_MS; the engine alone decides what is worth saying
 // (server enforces the silence window). The client only renders speech.
 const LIVE_POST_MS=10000;
-let liveOn=false,liveId=null,liveTimer=null,liveBusy=false;
+let liveOn=false,liveId=null,liveTimer=null,liveBusy=false,liveOkAt=-Infinity;
 function livePrefsSave(){try{localStorage.setItem('luma.live',JSON.stringify({on:liveOn}));}catch(_){/* companion never blocks a ride */}}
 function liveApply(){const b=$('live-toggle');if(b){b.textContent=liveOn?activePersona.live_on:activePersona.live_toggle;if(b.classList&&typeof b.classList.toggle==='function')b.classList.toggle('on',liveOn);}if(liveOn)liveStart();else liveStop();}
 function livePrefsLoad(){try{const p=JSON.parse(localStorage.getItem('luma.live')||'null');if(p&&p.on===true)liveOn=true;}catch(_){/* defaults stay */}liveApply();}
@@ -902,12 +902,15 @@ async function liveBeat(){
     const point={t:Date.now()/1000,lat:lastFix.lat,lng:lastFix.lng,speed_mps:typeof lastFix.spd==='number'?lastFix.spd:0};
     if(typeof lastFix.alt==='number'&&Number.isFinite(lastFix.alt))point.alt=lastFix.alt;
     if(typeof navOffRoute!=='undefined'&&navRoute)point.off_route=navOffRoute===true;
+    if(previous&&typeof previous.hr==='number'&&Number.isInteger(previous.hr)&&previous.hr>=20&&previous.hr<=240)point.hr=previous.hr;
+    if(target&&Number.isFinite(target.lower)&&Number.isFinite(target.upper)){point.hr_lower=target.lower;point.hr_upper=target.upper;}
     const response=await fetch('/api/coach/ride/live',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify({live_id:liveId,point})});
     if(!liveOn||!active)return;
     const data=await response.json().catch(()=>null);
+    if(data&&typeof data==='object')liveOkAt=performance.now();
     const calls=data&&Array.isArray(data.calls)?data.calls:[];
     for(const call of calls){
-      if(call&&typeof call.speech==='string'&&call.speech&&coachCanSpeak())noteAndSpeak(call.speech,'live');
+      if(call&&typeof call.speech==='string'&&call.speech&&(coachCanSpeak()||call.urgent===true))noteAndSpeak(call.speech,'live');
     }
   }catch(_){/* a missed beat stays silent */}
   finally{liveBusy=false;}
@@ -1077,7 +1080,7 @@ function receiveHR(hr, now = performance.now()){
   remindFuel(); remindMilestone();
   if (kind === null || kind === 'within') {resetOutside(); return;}
   if (outsideKind !== kind) {outsideSince = now; outsideKind = kind; if(speechKind==='zone')cancelSpeech();}
-  if (now - outsideSince >= OUTSIDE_DWELL_MS && now - lastAlert >= ALERT_COOLDOWN_MS && coachCanSpeak(now)) {
+  if (now - outsideSince >= OUTSIDE_DWELL_MS && now - lastAlert >= ALERT_COOLDOWN_MS && coachCanSpeak(now) && !(liveOn && now-liveOkAt<30000)) {
     lastAlert = now; alerts += 1; noteAndSpeak(PERSONA[kind],'zone');
   }
 }

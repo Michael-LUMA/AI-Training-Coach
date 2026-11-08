@@ -66,6 +66,7 @@ _PERSONAL_MARKERS = ("我", "这次", "上次", "最近", "今天", "昨天",
 _LIVE_SILENCE_S = 60.0      # 主动播报全局静默期：克制即智能
 _LIVE_IDLE_S = 3 * 3600.0   # 实时会话空闲回收
 _LIVE_MAX_SESSIONS = 200    # 进程内存实时会话上限
+_LIVE_URGENT_TYPES = frozenset({"hr_high", "hr_low"})  # 安全事件直通，不受静默期约束
 
 
 class CoachStore:
@@ -561,7 +562,8 @@ class App:
             events = session.ingest(payload["point"])
         except ValueError:
             raise ActionError("invalid_json", "Invalid telemetry point", 400) from None
-        if not events or (last_call is not None and now - last_call < _LIVE_SILENCE_S):
+        urgent = any(event.get("type") in _LIVE_URGENT_TYPES for event in events)
+        if not events or (not urgent and last_call is not None and now - last_call < _LIVE_SILENCE_S):
             return {"calls": []}
         result = build_live_speech(events, session.facts(),
                                    api_key=os.environ.get("DASHSCOPE_API_KEY"),
@@ -573,7 +575,8 @@ class App:
             if live_id in self._live:
                 self._live[live_id][1] = now
         return {"calls": [{"speech": speech, "speech_status": result["llm_status"],
-                           "fallback": result["fallback"], "usage": result["usage"]}],
+                           "fallback": result["fallback"], "usage": result["usage"],
+                           "urgent": result.get("urgent") is True}],
                 "events": [event["type"] for event in events]}
 
     def _weekly_ride(self, payload):

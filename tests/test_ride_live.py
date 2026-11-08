@@ -222,6 +222,21 @@ class LiveEndpointTests(unittest.TestCase):
                               {'live_id': 'ride2', 'point': self.point(T0 + 600.0, km_east=0.0)})
         self.assertEqual(result, {'calls': []})
 
+    def test_urgent_hr_bypasses_silence_window(self):
+        self.request('/api/coach/ride/live', {'live_id': 'ride1', 'point': self.point(T0)})
+        milestone = self.request('/api/coach/ride/live',
+                                 {'live_id': 'ride1', 'point': self.point(T0 + 600.0, km_east=5.1)})
+        self.assertEqual(len(milestone['calls']), 1)  # 静默期从此刻起算
+        point = {**self.point(T0 + 610.0, km_east=5.1),
+                 'hr': 150, 'hr_upper': 140, 'hr_lower': 90}
+        self.request('/api/coach/ride/live', {'live_id': 'ride1', 'point': point})
+        point = {**point, 't': T0 + 621.0}  # 越限持续 11 秒，处于静默期内
+        result = self.request('/api/coach/ride/live', {'live_id': 'ride1', 'point': point})
+        self.assertEqual(result['events'], ['hr_high'])
+        self.assertEqual(len(result['calls']), 1)  # 安全事件直通
+        self.assertTrue(result['calls'][0]['urgent'])
+        self.assertIn('150', result['calls'][0]['speech'])
+
 
 class LiveEventExtensionTests(unittest.TestCase):
     @staticmethod
@@ -353,6 +368,209 @@ class LiveEventExtensionTests(unittest.TestCase):
                                              http_post=transport(expected))
         self.assertEqual(result['llm_status'], 'ok')
         self.assertEqual(result['speech'], expected)
+
+
+class LiveHeartRateTests(unittest.TestCase):
+    @staticmethod
+    def point(seconds, **extra):
+        return {'t': T0 + seconds, 'lat': LAT, 'lng': LNG, 'speed_mps': 5.0,
+                'hr_upper': 160, 'hr_lower': 100, **extra}
+
+    @staticmethod
+    def high_event(hr=170.0, upper=160.0):
+        return {'type': 'hr_high', 'hr': hr, 'hr_upper': upper, 'duration_s': 10.0}
+
+    def test_high_requires_ten_seconds_and_fires_once(self):
+        session = ride_live.LiveSession()
+        for seconds in (0, 9):
+            self.assertEqual(session.ingest(self.point(seconds, hr=170)), [])
+        events = session.ingest(self.point(10, hr=171))
+        self.assertEqual(events, [self.high_event(hr=171.0)])
+        for name in ('hr', 'hr_upper', 'duration_s'):
+            self.assertIs(type(events[0][name]), float)
+        self.assertEqual(feed(session, (self.point(t, hr=180)
+                                        for t in (10, 20, 100))), [])
+        # Only an upper limit is needed to detect a high episode.
+        session = ride_live.LiveSession()
+        for t in (0, 10):
+            point = self.point(t, hr=170)
+            del point['hr_lower']
+            events = session.ingest(point)
+        self.assertEqual(events, [self.high_event()])
+
+    def test_short_spikes_and_missing_samples_break_confirmation(self):
+        session = ride_live.LiveSession()
+        events = feed(session, (self.point(t, hr=hr) for t, hr in
+                               ((0, 170), (9, 120), (10, 170), (19, 120))))
+        self.assertEqual(events, [])
+        session.ingest(self.point(20, hr=170))
+        self.assertEqual(session.ingest(self.point(25)), [])
+        for t in (30, 39):
+            self.assertEqual(session.ingest(self.point(t, hr=170)), [])
+        events = session.ingest(self.point(40, hr=170))
+        self.assertEqual(events, [dict(self.high_event(), duration_s=40.0)])
+
+    def test_back_after_ten_seconds_and_rearm_after_fifteen(self):
+        for outside, boundary, kind in ((170, 160, 'hr_high'), (90, 100, 'hr_low')):
+            with self.subTest(kind=kind):
+                session = ride_live.LiveSession()
+                session.ingest(self.point(0, hr=outside))
+                self.assertEqual(session.ingest(self.point(10, hr=outside))[0]['type'], kind)
+                for t in (20, 29):
+                    self.assertEqual(session.ingest(self.point(t, hr=boundary)), [])
+                self.assertEqual(session.ingest(self.point(30, hr=boundary)),
+                                 [{'type': 'hr_back', 'hr': float(boundary)}])
+                self.assertEqual(session.ingest(self.point(35, hr=boundary)), [])
+                self.assertEqual(session.ingest(self.point(40, hr=outside)), [])
+                self.assertEqual(session.ingest(self.point(50, hr=outside))[0]['type'], kind)
+                # A recovery lasting only fourteen seconds cannot rearm.
+                self.assertEqual(session.ingest(self.point(60, hr=boundary)), [])
+                self.assertEqual(session.ingest(self.point(74, hr=boundary)),
+                                 [{'type': 'hr_back', 'hr': float(boundary)}])
+                self.assertEqual(session.ingest(self.point(75, hr=outside)), [])
+                self.assertEqual(session.ingest(self.point(85, hr=outside)), [])
+
+    def test_low_is_symmetric_and_can_cross_from_high(self):
+        session = ride_live.LiveSession()
+        self.assertEqual(session.ingest(self.point(0, hr=90)), [])
+        self.assertEqual(session.ingest(self.point(9, hr=90)), [])
+        events = session.ingest(self.point(10, hr=89))
+        self.assertEqual(events, [{'type': 'hr_low', 'hr': 89.0,
+                                  'hr_lower': 100.0, 'duration_s': 10.0}])
+        self.assertEqual(session.ingest(self.point(20, hr=80)), [])
+        self.assertEqual(session.ingest(self.point(30, hr=170)), [])
+        self.assertEqual(session.ingest(self.point(40, hr=170)),
+                         [dict(self.high_event(), duration_s=40.0)])
+        session = ride_live.LiveSession()
+        for t in (0, 10):
+            point = self.point(t, hr=90)
+            del point['hr_upper']
+            events = session.ingest(point)
+        self.assertEqual(events[0]['type'], 'hr_low')
+
+    def test_missing_hr_preserves_episode_until_sixty_second_reset(self):
+        for kind, outside in (('hr_high', 170), ('hr_low', 90)):
+            for include_timeout_sample in (False, True):
+                with self.subTest(kind=kind, timeout_sample=include_timeout_sample):
+                    session = ride_live.LiveSession()
+                    session.ingest(self.point(0, hr=outside))
+                    session.ingest(self.point(10, hr=outside))
+                    # Short gaps retain the episode and the pending back event,
+                    # but break the ten/fifteen-second recovery timers.
+                    self.assertEqual(session.ingest(self.point(20, hr=120)), [])
+                    self.assertEqual(session.ingest(self.point(25)), [])
+                    self.assertEqual(session.ingest(self.point(30, hr=outside)), [])
+                    self.assertEqual(session.ingest(self.point(40, hr=outside)), [])
+                    self.assertEqual(session.ingest(self.point(50, hr=120)), [])
+                    self.assertEqual(session.ingest(self.point(55)), [])
+                    self.assertEqual(session.ingest(self.point(60, hr=120)), [])
+                    self.assertEqual(session.ingest(self.point(69, hr=120)), [])
+                    self.assertEqual(session.ingest(self.point(70, hr=120)),
+                                     [{'type': 'hr_back', 'hr': 120.0}])
+                    session.ingest(self.point(75, hr=120))
+                    session.ingest(self.point(80, hr=outside))
+                    self.assertEqual(session.ingest(self.point(90, hr=outside))[0]['type'], kind)
+                    self.assertEqual(session.ingest(self.point(100)), [])
+                    self.assertEqual(session.ingest(self.point(159)), [])
+                    if include_timeout_sample:
+                        self.assertEqual(session.ingest(self.point(160)), [])
+                    self.assertEqual(session.ingest(self.point(160, hr=120)), [])
+                    self.assertEqual(session.ingest(self.point(170, hr=120)), [])
+                    self.assertEqual(session.ingest(self.point(180, hr=outside)), [])
+                    self.assertEqual(session.ingest(self.point(190, hr=outside))[0]['type'], kind)
+
+    def test_no_thresholds_never_emit_heart_events(self):
+        session = ride_live.LiveSession()
+        for t in range(100):
+            point = LiveEventExtensionTests.point(t, hr=240 if t < 50 else 20)
+            self.assertEqual(session.ingest(point), [])
+        # Limits are optional on every point, not silently carried forward.
+        session.ingest(self.point(100, hr=170))
+        self.assertEqual(session.ingest(LiveEventExtensionTests.point(110, hr=170)), [])
+        self.assertEqual(session.ingest(self.point(120, hr=170)), [])
+        self.assertEqual(session.ingest(self.point(130, hr=170)),
+                         [dict(self.high_event(), duration_s=130.0)])
+        self.assertEqual(session.ingest(LiveEventExtensionTests.point(140, hr=120)), [])
+        self.assertEqual(session.ingest(LiveEventExtensionTests.point(160, hr=120)), [])
+
+    def test_invalid_heart_fields_rejected_without_mutation(self):
+        session = ride_live.LiveSession()
+        session.ingest(self.point(0, hr=170))
+        before = session.facts()
+        states = {kind: dict(state) for kind, state in session._hr_states.items()}
+        invalid = [{'hr_upper': 100, 'hr_lower': 100},
+                   {'hr_upper': 99, 'hr_lower': 100}]
+        for name, values in (
+                ('hr', (0, 300, 19.9, 240.1)),
+                ('hr_upper', (39.9, 220.1)), ('hr_lower', (39.9, 220.1))):
+            invalid.extend({name: value} for value in
+                           (*values, float('nan'), float('inf'), float('-inf'),
+                            True, False, None, '170', 10 ** 1000))
+        for extra in invalid:
+            with self.subTest(extra=extra), self.assertRaises(ValueError):
+                session.ingest(self.point(10, **extra))
+            self.assertEqual(session.facts(), before)
+            self.assertEqual(session._hr_states, states)
+        self.assertEqual(session.ingest(self.point(10, hr=170)), [self.high_event()])
+        for name, values in (('hr', (20, 240)), ('hr_upper', (40, 220)),
+                              ('hr_lower', (40, 220))):
+            for value in values:
+                with self.subTest(boundary=(name, value)):
+                    point = LiveEventExtensionTests.point(0, **{name: value})
+                    self.assertEqual(ride_live.LiveSession().ingest(point), [])
+
+    def test_heart_templates_without_key(self):
+        for event, expected in (
+                (self.high_event(hr=171.9, upper=160.9),
+                 '\u5fc3\u7387171\uff0c\u8d85\u8fc7\u4f60\u8bbe\u7684\u4e0a\u9650160\u4e86\u3002'),
+                ({'type': 'hr_low', 'hr': 89.9, 'hr_lower': 100.9, 'duration_s': 10.0},
+                 '\u5fc3\u738789\uff0c\u4f4e\u4e8e\u4f60\u8bbe\u7684\u4e0b\u9650100\u4e86\u3002'),
+                ({'type': 'hr_back', 'hr': 120.0},
+                 '\u5fc3\u7387\u56de\u5230\u533a\u95f4\u91cc\u4e86\u3002')):
+            with self.subTest(event=event):
+                result = ride_live.build_live_speech([event], live_facts())
+                self.assertEqual(result['llm_status'], 'not_configured')
+                self.assertEqual(result['fallback'], 'template')
+                self.assertEqual(result['speech'], expected)
+
+    def test_llm_heart_fabrication_rejected_and_registered_bpm_pass(self):
+        event = self.high_event(hr=171.9, upper=160.9)
+        fallback = ride_live.build_live_speech([event], live_facts())['speech']
+        for speech, status in (
+                ('\u5fc3\u7387999\u3002', 'rejected_unverifiable_number'),
+                ('\u5fc3\u7387999 bpm\u3002', 'rejected_unverifiable_number'),
+                ('\u5fc3\u7387171.9 bpm\uff0c\u4e0a\u9650160.9 bpm\u3002', 'ok'),
+                ('\u5fc3\u7387171 bpm\uff0c\u4e0a\u9650160 bpm\u3002', 'ok'),
+                ('\u5fc3\u7387171\uff0c\u4e0a\u9650160\u3002', 'ok'),
+                ('\u5fc3\u7387171\u7c73\u3002', 'rejected_unverifiable_number')):
+            with self.subTest(speech=speech):
+                post = transport(speech)
+                result = ride_live.build_live_speech(
+                    [event], live_facts(), api_key='synthetic-key', http_post=post)
+                self.assertEqual(result['llm_status'], status)
+                if status != 'ok':
+                    self.assertEqual(result['fallback'], 'template')
+                    self.assertEqual(result['speech'], fallback)
+                payload = json.loads(post.call_args.args[0].data)
+                self.assertIn('\u7981\u6b62\u533b\u7597\u5224\u65ad',
+                              payload['messages'][0]['content'])
+
+    def test_urgent_for_high_and_low_across_speech_paths(self):
+        low = {'type': 'hr_low', 'hr': 90, 'hr_lower': 100, 'duration_s': 10}
+        for events, urgent in (([self.high_event()], True), ([low], True),
+                               (milestone_event() + [self.high_event()], True),
+                               (milestone_event(), False), ([], False),
+                               ([{'type': 'hr_back', 'hr': 120}], False)):
+            for options in ({}, {'api_key': 'synthetic-key', 'http_post': transport()},
+                            {'api_key': 'synthetic-key',
+                             'http_post': Mock(side_effect=URLError('down'))},
+                            {'api_key': 'bad key'}):
+                with self.subTest(events=events, options=options):
+                    result = ride_live.build_live_speech(events, live_facts(), **options)
+                    self.assertIs(result['urgent'], urgent)
+        result = ride_live.build_live_speech([{'type': 'unknown'}], live_facts())
+        self.assertEqual(result['llm_status'], 'rejected_bad_schema')
+        self.assertIs(result['urgent'], False)
 
 
 if __name__ == '__main__':
