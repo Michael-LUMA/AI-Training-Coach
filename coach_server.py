@@ -21,6 +21,7 @@ from collections import deque
 from threading import Lock
 from contextlib import closing
 from datetime import date, datetime, timedelta
+from decimal import Decimal, ROUND_HALF_UP
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -456,11 +457,38 @@ class App:
             history.sort(key=lambda entry: entry[0])
             recent = [summary for _, summary in history[-3:]]
             ordinal = len(history) + (1 if memory is not None else 0)
+            # Cumulative + current-month aggregates over the same honest scope:
+            # real sessions only; distance only when every session recorded it.
+            entries = list(history)
+            if memory is not None and memory["source"] != "simulated":
+                entries.append((datetime.fromisoformat(memory["started_at"].replace("Z", "+00:00")), memory["summary"]))
+            totals = None
+            if entries:
+                month_start = self.today().replace(day=1)
+
+                def _minutes(pairs):
+                    seconds = sum(summary.get("duration_s") or 0 for _, summary in pairs)
+                    return int((Decimal(str(seconds)) / 60).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+                def _kilometers(pairs):
+                    distances = [summary.get("distance_m") for _, summary in pairs]
+                    if not distances or any(type(d) not in (int, float) or not -1e15 < d < 1e15 for d in distances):
+                        return None
+                    total = (Decimal(str(sum(distances))) / 1000).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+                    return int(total) if total == total.to_integral() else float(total)
+
+                month_entries = [entry for entry in entries
+                                 if entry[0].astimezone().date().replace(day=1) == month_start]
+                totals = {"sessions_count": len(entries), "duration_min": _minutes(entries),
+                          "distance_km": _kilometers(entries), "month_sessions": len(month_entries),
+                          "month_duration_min": _minutes(month_entries),
+                          "month_distance_km": _kilometers(month_entries)}
         result = build_ride_chat(payload["question"],
                                  session=copy.deepcopy(memory) if memory is not None else None,
                                  recent_summaries=copy.deepcopy(recent),
                                  activity_ordinal=ordinal if ordinal else None,
                                  excluded_simulated=excluded_simulated,
+                                 totals=totals,
                                  api_key=os.environ.get("DASHSCOPE_API_KEY"), http_post=self.llm_post)
         return {"speech_status": result["llm_status"],
                 "speech": result["draft"]["speech"] if result["draft"] else None,

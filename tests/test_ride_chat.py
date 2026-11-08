@@ -5,6 +5,7 @@ import os
 import sys
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -287,12 +288,182 @@ class ChatEndpointTests(unittest.TestCase):
             self.request('/api/coach/ride/chat',{'question':'心率？','session_id':'current'})
         self.assertEqual((error.exception.status,error.exception.code),(429,'rate_limited'))
 
+    def test_chat_totals_aggregated_under_lock(self):
+        day=lambda n: date.today().replace(day=n).isoformat()+'T08:00:00Z'
+        first=self.v3('one',day(1),138)
+        first['summary'].update(distance_m=1200,avg_speed_mps=20.0,max_speed_mps=25.0)
+        second=self.v3('two',day(2),135)
+        second['summary'].update(distance_m=1200,avg_speed_mps=20.0,max_speed_mps=25.0)
+        self.save(first);self.save(second)
+        self.post.return_value=transport('你累计骑了2次，总共2分钟，累计2.4公里。本月2次。').return_value
+        with patch.dict(os.environ,{'DASHSCOPE_API_KEY':'synthetic-key'}):
+            result=self.request('/api/coach/ride/chat',{'question':'我累计骑了多少？'})
+        self.assertEqual(result['speech_status'],'ok')
+        facts=json.loads(json.loads(self.post.call_args.args[0].data)['messages'][1]['content'])
+        self.assertEqual(facts['totals'],{'sessions_count':2,'duration_min':2,'distance_km':2.4,
+                                          'month':{'sessions':2,'duration_min':2,'distance_km':2.4}})
+
+    def test_chat_totals_distance_hidden_when_any_session_lacks_it(self):
+        day=lambda n: date.today().replace(day=n).isoformat()+'T08:00:00Z'
+        first=self.v3('one',day(1),138)
+        first['summary'].update(distance_m=1200,avg_speed_mps=20.0,max_speed_mps=25.0)
+        self.save(first);self.save(self.v3('two',day(2),135))
+        self.post.return_value=transport('你累计骑了2次，总共2分钟。').return_value
+        with patch.dict(os.environ,{'DASHSCOPE_API_KEY':'synthetic-key'}):
+            result=self.request('/api/coach/ride/chat',{'question':'我累计骑了多少？'})
+        self.assertEqual(result['speech_status'],'ok')
+        facts=json.loads(json.loads(self.post.call_args.args[0].data)['messages'][1]['content'])
+        self.assertIsNone(facts['totals']['distance_km'])
+        self.assertIsNone(facts['totals']['month']['distance_km'])
+
     def test_chat_writes_no_history_to_disk(self):
         self.save()
         with patch.dict(os.environ,{'DASHSCOPE_API_KEY':'synthetic-key'}):
             self.request('/api/coach/ride/chat',{'question':'心率？','session_id':'current'})
         stored=[path.name for path in self.app.ride_dir.glob('*.json')]
         self.assertEqual(stored,['current.json'])
+
+
+class ChatTotalsTests(unittest.TestCase):
+    def totals(self):
+        return {'sessions_count':12,'duration_min':600,'distance_km':201.5,
+                'month_sessions':3,'month_duration_min':150,'month_distance_km':60.2}
+
+    def chat(self,totals,**kwargs):
+        kwargs.setdefault('api_key','synthetic-key')
+        return ride_chat.build_ride_chat('我累计和本月骑了多少？',totals=totals,**kwargs)
+
+    def test_invalid_totals_rejected_without_upstream(self):
+        invalid=[False,12,1.5,'totals',[],(),set()]
+        for key in self.totals():
+            missing=self.totals();del missing[key]
+            invalid.append(missing)
+        invalid.append(self.totals()|{'extra':1})
+        limits={'sessions_count':100000,'duration_min':600000,'distance_km':200000,
+                'month_sessions':100000,'month_duration_min':100000,'month_distance_km':100000}
+        for key,maximum in limits.items():
+            values=[-1,maximum+1,'1',True,False,float('nan'),float('inf'),
+                    float('-inf'),ride_chat.Decimal('1'),[],{}]
+            if key == 'sessions_count':
+                values.extend([0,1.0,1.5,None])
+            elif key == 'month_sessions':
+                values.extend([1.0,1.5,None])
+            elif key not in ('distance_km','month_distance_km'):
+                values.append(None)
+            for value in values:
+                invalid.append(self.totals()|{key:value})
+        for totals in invalid:
+            for session in (None,memory()):
+                with self.subTest(totals=totals,session=session is not None):
+                    post=Mock(side_effect=AssertionError('no network'))
+                    result=self.chat(totals,session=session,http_post=post)
+                    self.assertEqual(result['llm_status'],'rejected_bad_schema')
+                    self.assertIsNone(result['draft'])
+                    self.assertEqual(result['fallback'],'template')
+                    post.assert_not_called()
+
+    def test_none_totals_remains_optional(self):
+        self.assertEqual(ride_chat._totals_facts(None),({},[]))
+        post=transport('这个我没记到。')
+        result=self.chat(None,session=None,http_post=post)
+        self.assertEqual(result['llm_status'],'ok')
+        self.assertEqual(facts_of(post),{'question':'我累计和本月骑了多少？'})
+
+    def test_totals_only_projection_and_verified_speech(self):
+        totals=self.totals();before=copy.deepcopy(totals)
+        speech='你累计骑了12次，一共600分钟，累计201.5公里。本月3次。'
+        post=transport(speech)
+        result=self.chat(totals,session=None,http_post=post)
+        self.assertEqual(result['llm_status'],'ok')
+        self.assertEqual(result['draft'],{'speech':speech})
+        facts=facts_of(post)
+        self.assertEqual(facts,{'totals':{'sessions_count':12,'duration_min':600,
+                                        'distance_km':201.5,
+                                        'month':{'sessions':3,'duration_min':150,
+                                                 'distance_km':60.2}},
+                               'question':'我累计和本月骑了多少？'})
+        self.assertLess(list(facts).index('totals'),list(facts).index('question'))
+        self.assertEqual(totals,before)
+
+    def test_zero_month_sessions_is_honest_and_accepted(self):
+        totals=self.totals()|{'month_sessions':0,'month_duration_min':0,'month_distance_km':None}
+        post=transport('本月还没有记录。')
+        result=self.chat(totals,session=None,http_post=post)
+        self.assertEqual(result['llm_status'],'ok')
+        self.assertEqual(facts_of(post)['totals']['month'],{'sessions':0,'duration_min':0,'distance_km':None})
+
+    def test_totals_numbers_registered_with_decimal_and_units(self):
+        _,numbers=ride_chat._totals_facts(self.totals())
+        expected=[('12',None),('600','min'),('201.5','km'),
+                  ('3',None),('150','min'),('60.2','km')]
+        self.assertEqual(numbers,[(ride_chat.Decimal(value),unit) for value,unit in expected])
+        for value,_ in numbers:
+            self.assertIs(type(value),ride_chat.Decimal)
+
+    def test_all_totals_numbers_are_available_to_verification(self):
+        for speech in ('累计12次。','累计600分钟。','累计201.5公里。',
+                       '本月3次。','本月150分钟。','本月60.2公里。'):
+            with self.subTest(speech=speech):
+                result=self.chat(self.totals(),http_post=transport(speech))
+                self.assertEqual(result['llm_status'],'ok')
+
+    def test_invented_totals_count_rejected(self):
+        result=self.chat(self.totals(),session=None,http_post=transport('你累计骑了13次'))
+        self.assertEqual(result['llm_status'],'rejected_unverifiable_number')
+        self.assertIsNone(result['draft'])
+        self.assertEqual(result['fallback'],'template')
+
+    def test_null_distances_preserved_and_not_registered(self):
+        for key in ('distance_km','month_distance_km'):
+            with self.subTest(key=key):
+                totals=self.totals()|{key:None}
+                facts,numbers=ride_chat._totals_facts(totals)
+                if key=='distance_km':
+                    self.assertIsNone(facts['distance_km'])
+                else:
+                    self.assertIsNone(facts['month']['distance_km'])
+                self.assertEqual(len(numbers),5)
+                self.assertNotIn((ride_chat.Decimal(str(self.totals()[key])),'km'),numbers)
+        totals=self.totals()|{'distance_km':None,'month_distance_km':None}
+        post=transport('累计12次，共600分钟。本月3次，共150分钟。')
+        result=self.chat(totals,http_post=post)
+        self.assertEqual(result['llm_status'],'ok')
+        self.assertIsNone(facts_of(post)['totals']['distance_km'])
+        self.assertIsNone(facts_of(post)['totals']['month']['distance_km'])
+        _,numbers=ride_chat._totals_facts(totals)
+        self.assertFalse(any(unit=='km' for _,unit in numbers))
+
+    def test_null_distances_reject_any_claimed_kilometers(self):
+        totals=self.totals()|{'distance_km':None,'month_distance_km':None}
+        for number in (0,1,3,12,150,600,201.5,60.2):
+            with self.subTest(number=number):
+                result=self.chat(totals,http_post=transport(f'累计{number}公里。'))
+                self.assertEqual(result['llm_status'],'rejected_unverifiable_number')
+                self.assertIsNone(result['draft'])
+
+    def test_totals_merge_with_session_and_history(self):
+        post=transport('这次平均心率120 bpm，累计12次，本月150分钟。')
+        result=self.chat(self.totals(),session=memory(),recent_summaries=[memory()['summary']],
+                         activity_ordinal=12,excluded_simulated=2,http_post=post)
+        self.assertEqual(result['llm_status'],'ok')
+        facts=facts_of(post)
+        self.assertEqual(facts['summary']['avg_hr'],120)
+        self.assertEqual(facts['totals']['sessions_count'],12)
+        self.assertEqual(facts['totals']['month']['duration_min'],150)
+        self.assertEqual(facts['recent_trend']['count'],1)
+        self.assertEqual(facts['session_ordinal'],12)
+        self.assertEqual(facts['excluded_simulated'],2)
+        self.assertEqual(facts['question'],'我累计和本月骑了多少？')
+
+    def test_totals_numeric_boundaries_and_floats_accepted(self):
+        for totals in ({'sessions_count':1,'duration_min':0,'distance_km':0,
+                        'month_sessions':1,'month_duration_min':0,'month_distance_km':0},
+                       {'sessions_count':100000,'duration_min':600000,'distance_km':200000,
+                        'month_sessions':100000,'month_duration_min':100000,'month_distance_km':100000},
+                       self.totals()|{'duration_min':600.5,'month_duration_min':150.5}):
+            with self.subTest(totals=totals):
+                result=self.chat(totals,http_post=transport('这个我没记到。'))
+                self.assertEqual(result['llm_status'],'ok')
 
 
 if __name__=='__main__':

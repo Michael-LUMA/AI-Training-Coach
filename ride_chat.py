@@ -34,6 +34,10 @@ SYSTEM_PROMPT = """你是 Mark，像同行的朋友，用第一人称“我”�
 禁止推断趋势原因）、session_ordinal（陪同完成的次数，禁止拔高成里程碑评价）、
 excluded_simulated（被剔除的合成演示次数，不得把模拟当成真实活动）。
 source=simulated 是合成演示，绝不能当成真实骑行；有模拟来源须明确说模拟。
+facts 可能含 totals：sessions_count 是累计记录次数、duration_min 是累计分钟、
+distance_km 是累计公里（为 null 就完全不提）；totals.month 是本月
+（sessions 次数、duration_min 分钟、distance_km 公里）。总量只陈述数值，
+禁止推断训练效果，禁止『坚持得不错』类评价。
 只输出 JSON {"speech":"..."}，speech 非空且最多300字，不要额外字段。
 """
 
@@ -87,10 +91,49 @@ def _history_facts(recent_summaries, activity_ordinal, excluded_simulated):
     return facts, numbers
 
 
+def _totals_facts(totals):
+    """Validate a complete totals bundle and register only its bounded numbers."""
+    if totals is None:
+        return {}, []
+    fields = (('sessions_count', 100000, None),
+              ('duration_min', 600000, 'min'),
+              ('distance_km', 200000, 'km'),
+              ('month_sessions', 100000, None),
+              ('month_duration_min', 100000, 'min'),
+              ('month_distance_km', 100000, 'km'))
+    if type(totals) is not dict or set(totals) != {key for key, _, _ in fields}:
+        raise ValueError('complete totals object required')
+    numbers = []
+    for key, maximum, unit in fields:
+        value = totals[key]
+        if value is None and unit == 'km':
+            continue
+        if unit is None:
+            if key == 'month_sessions':
+                if type(value) is not int or not 0 <= value <= maximum:
+                    raise ValueError('month_sessions must be a bounded non-negative integer')
+            else:
+                value = _count_checked(value)
+        elif type(value) not in (int, float):
+            raise ValueError('invalid totals number')
+        number = Decimal(str(value))
+        if not number.is_finite() or not 0 <= number <= maximum:
+            raise ValueError('totals number out of range')
+        numbers.append((number, unit))
+    facts = {'sessions_count': totals['sessions_count'],
+             'duration_min': totals['duration_min'],
+             'distance_km': totals['distance_km'],
+             'month': {'sessions': totals['month_sessions'],
+                       'duration_min': totals['month_duration_min'],
+                       'distance_km': totals['month_distance_km']}}
+    return facts, numbers
+
+
 def build_ride_chat(question, session: dict | None = None,
                     recent_summaries: list | None = None,
                     activity_ordinal: int | None = None,
                     excluded_simulated: int | None = None, *,
+                    totals: dict | None = None,
                     api_key: str | None = None, http_post=None) -> dict:
     """Answer one bounded Chinese question, or return an honest template fallback.
 
@@ -98,6 +141,7 @@ def build_ride_chat(question, session: dict | None = None,
         question: Plain user text, 1..200 chars, no control characters.
         session: Optional ride-memory object; validated and deep-copied by _facts.
             None answers from history aggregates only.
+        totals: Optional complete cumulative and current-month numeric aggregates.
         api_key: Caller-supplied printable ASCII bearer key; never read from env.
         http_post: Injectable offline transport(request, timeout=20) returning
             (status, headers, bytes). No retry; production adapter blocks redirects.
@@ -120,6 +164,9 @@ def build_ride_chat(question, session: dict | None = None,
         else:
             facts, numbers = _facts(session, None, recent_summaries,
                                     activity_ordinal, excluded_simulated)
+        if totals is not None:
+            facts['totals'], extra = _totals_facts(totals)
+            numbers.extend(extra)
         if facts.get('source') == 'simulated':
             facts['speech_rule'] = '本次是合成演示，speech 必须以「模拟记录：」开头'
         facts['question'] = question

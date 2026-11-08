@@ -61,6 +61,9 @@ source=simulated 是合成演示，绝不能当成真实骑行；有模拟来源
 _HAN = '零〇一二两三四五六七八九十百千万亿'
 _DIGITS = {'零':0,'〇':0,'一':1,'二':2,'两':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9}
 _HAN_RE = re.compile(r'['+_HAN+r']+(?:点['+_HAN+r']+)?')
+# Compounds whose 一 is not a numeral; rewritten before numeric verification.
+_IDIOM_ONE = (('一共','总共'),('一起','一同'),('一会儿','片刻'),('一会','片刻'),
+              ('一定','必定'),('一般','通常'),('一律','一概'),('一切','全部'))
 _NUM = r'[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?'
 _UNIT_RE = re.compile(r'\s*(bpm|公里|千米|分钟|小时|秒钟|秒|%|次|个|条|点|瓦|转|米|[A-Za-z]+(?:/[A-Za-z]+)?)', re.I)
 _UNITS = {'分钟':'min','小时':'h','秒钟':'s','秒':'s','次':'','个':'','条':'','点':'','瓦':'w','转':'rpm','公里':'km','千米':'km','米':'m'}
@@ -105,6 +108,8 @@ def _han_number(match):
 
 def _normalized_numbers(text):
     text=text.replace('负','-').replace('−','-')
+    for idiom,plain in _IDIOM_ONE:
+        text=text.replace(idiom,plain)
     text=re.sub(r'百分之(['+_HAN+r'点0-9.]+)',r'\1%',text)
     text=_HAN_RE.sub(_han_number,text)
     text=re.sub(r'半(?=小时|分钟|秒)', '0.5', text)
