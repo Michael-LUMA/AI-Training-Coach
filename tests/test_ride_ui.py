@@ -214,12 +214,26 @@ class RideMemoryUI(unittest.TestCase):
     def test_greeting_omits_missing_metrics(self):
         result = self.run_js("""
           const mk=ageH=>({id:'a',started_at:new Date(Date.now()-ageH*3600e3).toISOString(),summary:{},source:'ble_gatt_0x180d'});
-          renderGreeting([mk(50)]);
+          renderGreeting([mk(200)]);
           return $('greeting').textContent;
         """)
         self.assertNotIn('null', result)
         self.assertNotIn('分钟', result)
-        self.assertEqual(result, '2天没见。今天出门吗？')
+        self.assertEqual(result, '8天没见了，我还在。今天出门吗？')
+
+    def test_greeting_mentions_this_week_count(self):
+        result = self.run_js("""
+          const mk=(ageH)=>({id:'a'+ageH,started_at:new Date(Date.now()-ageH*3600e3).toISOString(),summary:{avg_hr:130,duration_s:3600},source:'ble_gatt_0x180d'});
+          const ages=[15,40,100];
+          renderGreeting(ages.map(mk));
+          const monday=new Date();monday.setHours(0,0,0,0);monday.setDate(monday.getDate()-(monday.getDay()+6)%7);
+          const expected=ages.filter(h=>Date.now()-h*3600e3>=monday.getTime()).length;
+          return {text:$('greeting').textContent,expected:expected};
+        """)
+        if result['expected']:
+            self.assertIn('本周你已记录' + str(result['expected']) + '次。', result['text'])
+        else:
+            self.assertNotIn('本周', result['text'])
 
     def test_greeting_mentions_usual_start_hour_with_three_sessions(self):
         result = self.run_js("""

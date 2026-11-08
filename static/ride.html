@@ -250,6 +250,7 @@ const PERSONA = Object.freeze({
   greeting_days:(n)=>n+'天没见。',
   greeting_long:(n)=>n+'天没见了，我还在。',
   greeting_usual:(h,m)=>'你通常'+h+'点出门'+(m!==null?'，一次'+m+'分钟左右':'')+'。',
+  greeting_week:(n)=>'本周你已记录'+n+'次。',
   greeting_tail:'今天出门吗？',
   stop_notice:'你停了几分钟了。我不催你——要继续，随时出发。',
   compare_better:(label,amount,unit)=>'我看到'+label+'比上次'+(unit==='分钟' ? '少' : '低')+amount+unit+'。',
@@ -883,10 +884,14 @@ function renderGreeting(memories){
   const days=Math.floor(age/86400e3);
   const head=days>=7 ? activePersona.greeting_long(days) : days>=1 ? activePersona.greeting_days(days) : activePersona.greeting_hours(Math.floor(age/3600e3));
   const usual=usualProfile(memories);
+  const monday=new Date();monday.setHours(0,0,0,0);monday.setDate(monday.getDate()-(monday.getDay()+6)%7);
+  const weekCount=real.filter(m=>memoryTime(m)>=monday.getTime()).length;
   const summary=latest.summary || {}, parts=[];
   if(memoryNumber(summary.duration_s))parts.push('记录了'+memoryValue(summary.duration_s/60)+'分钟');
   if(memoryNumber(summary.avg_hr))parts.push('样本平均心率'+memoryValue(summary.avg_hr)+' bpm');
-  el.textContent=head+(usual.hour!==null ? activePersona.greeting_usual(usual.hour,usual.minutes) : '')+(parts.length ? '上次'+parts.join('，')+'。' : '')+activePersona.greeting_tail;
+  el.textContent=head+(usual.hour!==null ? activePersona.greeting_usual(usual.hour,usual.minutes) : '')
+    +(weekCount ? activePersona.greeting_week(weekCount) : '')
+    +(parts.length ? '上次'+parts.join('，')+'。' : '')+activePersona.greeting_tail;
   el.hidden=false;
 }
 async function loadRecall(){
