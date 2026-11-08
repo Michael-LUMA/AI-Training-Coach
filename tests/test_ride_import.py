@@ -210,6 +210,37 @@ class ImportServerTests(unittest.TestCase):
         text = json.dumps(answer, ensure_ascii=False)
         self.assertNotIn('error_code', text)
 
+    def test_batch_import_saves_each_independently(self):
+        result = self.post({'data': [GPX, TCX]})
+        self.assertEqual(result['status'], 'ok')
+        self.assertEqual(result['saved'], 2)
+        self.assertEqual(result['duplicate'], 0)
+        self.assertEqual(result['failed'], 0)
+        ids = [item['id'] for item in result['results']]
+        self.assertEqual(len(set(ids)), 2)
+        for identifier in ids:
+            self.assertTrue((self.app.ride_dir / (identifier + '.json')).is_file())
+
+    def test_batch_import_partial_failure_never_blocks_good_files(self):
+        result = self.post({'data': [GPX, GPX_NO_HR, '<x/>', 123]})
+        self.assertEqual(result['saved'], 1)
+        self.assertEqual(result['failed'], 3)
+        codes = [item['code'] for item in result['results'] if item['status'] == 'error']
+        self.assertEqual(codes, ['no_heart_rate', 'unsupported_format', 'invalid_input'])
+        self.assertNotIn('trkpt', json.dumps(result))
+
+    def test_batch_import_reimport_all_duplicates(self):
+        first = self.post({'data': [GPX, TCX]})
+        second = self.post({'data': [GPX, TCX]})
+        self.assertEqual(first['saved'], 2)
+        self.assertEqual(second['saved'], 0)
+        self.assertEqual(second['duplicate'], 2)
+
+    def test_batch_rejects_empty_oversized_and_wrong_element_types(self):
+        self.error('invalid_input', lambda: self.post({'data': []}))
+        self.error('invalid_input', lambda: self.post({'data': [GPX] * 21}))
+        self.error('invalid_input', lambda: self.post({'data': {'text': GPX}}))
+
 
 if __name__ == '__main__':
     unittest.main()

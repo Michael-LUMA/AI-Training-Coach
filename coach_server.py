@@ -56,6 +56,7 @@ DEFAULT_DB = ROOT / ".runtime/coach/coach.sqlite3"
 MAX_BODY_BYTES = 8192
 MAX_RIDE_BODY_BYTES = 2 * 1024 * 1024
 MAX_IMPORT_BODY_BYTES = 6 * 1024 * 1024  # 5 MB file text plus JSON envelope.
+MAX_IMPORT_BATCH = 20  # One request carries at most this many file texts.
 RIDE_POST = "/api/coach/ride/session"
 RIDE_LIST = "/api/coach/ride/sessions"
 RIDE_IMPORT = "/api/coach/ride/import"
@@ -825,21 +826,45 @@ class App:
         return {"status": "saved", "id": session["id"], "storage": "ephemeral"}
 
     def _import_ride(self, payload):
-        """Build a v3 session from user-exported GPX/TCX text, then store it.
+        """Build v3 sessions from user-exported GPX/TCX text, then store them.
 
         The builder validates against the same contract as live rides, so the
         result flows through the standard idempotent save path unchanged.
+        data may be one file text or a bounded list (batch import): each entry
+        is built and stored independently — one bad file never blocks the rest,
+        and per-file rejections carry only a sanitized code, never content.
         """
         require(type(payload) is dict and set(payload) == {"data"}, "Expected data only")
-        require(type(payload["data"]) is str, "Expected data as text", "invalid_input")
-        try:
-            session = build_import_session(payload["data"])
-        except ImportBuildError as error:
-            raise ActionError(error.code, str(error), 422) from None
-        existed = (self.ride_dir / (session["id"] + ".json")).exists()
-        result = self._save_ride(session)
-        return {"status": "duplicate" if existed else "saved",
-                "id": result["id"], "source": session["source"]}
+        data = payload["data"]
+        if type(data) is str:
+            try:
+                session = build_import_session(data)
+            except ImportBuildError as error:
+                raise ActionError(error.code, str(error), 422) from None
+            existed = (self.ride_dir / (session["id"] + ".json")).exists()
+            result = self._save_ride(session)
+            return {"status": "duplicate" if existed else "saved",
+                    "id": result["id"], "source": session["source"]}
+        require(type(data) is list and 1 <= len(data) <= MAX_IMPORT_BATCH,
+                "Expected 1..%d file texts" % MAX_IMPORT_BATCH, "invalid_input")
+        results = []
+        for entry in data:
+            if type(entry) is not str:
+                results.append({"status": "error", "code": "invalid_input"})
+                continue
+            try:
+                session = build_import_session(entry)
+            except ImportBuildError as error:
+                results.append({"status": "error", "code": error.code})
+                continue
+            existed = (self.ride_dir / (session["id"] + ".json")).exists()
+            saved = self._save_ride(session)
+            results.append({"status": "duplicate" if existed else "saved", "id": saved["id"]})
+        return {"status": "ok",
+                "saved": sum(1 for r in results if r["status"] == "saved"),
+                "duplicate": sum(1 for r in results if r["status"] == "duplicate"),
+                "failed": sum(1 for r in results if r["status"] == "error"),
+                "results": results}
 
     def _ride_sessions(self, query):
         """Return newest persisted metadata only, with a strict 1..20 limit."""
