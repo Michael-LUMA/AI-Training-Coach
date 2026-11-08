@@ -249,7 +249,7 @@ const PERSONA = Object.freeze({
   greeting_hours:(h)=>h+'个小时没见。',
   greeting_days:(n)=>n+'天没见。',
   greeting_long:(n)=>n+'天没见了，我还在。',
-  greeting_usual:(h)=>'你通常'+h+'点出门。',
+  greeting_usual:(h,m)=>'你通常'+h+'点出门'+(m!==null?'，一次'+m+'分钟左右':'')+'。',
   greeting_tail:'今天出门吗？',
   compare_better:(label,amount,unit)=>'我看到'+label+'比上次'+(unit==='分钟' ? '少' : '低')+amount+unit+'。',
   compare_worse:(label,amount,unit)=>'我看到'+label+'比上次'+(unit==='分钟' ? '多' : '高')+amount+unit+'。',
@@ -853,13 +853,16 @@ async function listenWeekly(){
 }
 // Mark notices absence, from local history only. The greeting reports elapsed
 // time plus the same bounded recall facts; it asks a question, never prescribes.
-// Local-clock median start hour, only with three or more real sessions;
-// below that Mark stays silent about "usual" rather than guessing.
-function usualStartHour(memories){
-  const hours=memories.filter(m=>m && m.source!=='simulated')
-    .map(m=>{const d=new Date(memoryTime(m));return Number.isFinite(d.getTime())?d.getHours():null;})
+// Local-clock median start hour and median duration, each only with three or
+// more real samples; below that Mark stays silent about "usual".
+function usualProfile(memories){
+  const real=memories.filter(m=>m && m.source!=='simulated');
+  const hours=real.map(m=>{const d=new Date(memoryTime(m));return Number.isFinite(d.getTime())?d.getHours():null;})
     .filter(h=>h!==null).sort((a,b)=>a-b);
-  return hours.length>=3 ? hours[Math.floor((hours.length-1)/2)] : null;
+  const minutes=real.map(m=>m && m.summary && memoryNumber(m.summary.duration_s) ? m.summary.duration_s/60 : null)
+    .filter(v=>v!==null).sort((a,b)=>a-b);
+  return {hour:hours.length>=3 ? hours[Math.floor((hours.length-1)/2)] : null,
+          minutes:minutes.length>=3 ? Math.round(minutes[Math.floor((minutes.length-1)/2)]*10)/10 : null};
 }
 function renderGreeting(memories){
   const el=$('greeting');if(!el)return;
@@ -869,11 +872,11 @@ function renderGreeting(memories){
   if(!Number.isFinite(age) || age<12*3600e3){el.hidden=true;return;}
   const days=Math.floor(age/86400e3);
   const head=days>=7 ? activePersona.greeting_long(days) : days>=1 ? activePersona.greeting_days(days) : activePersona.greeting_hours(Math.floor(age/3600e3));
-  const usual=usualStartHour(memories);
+  const usual=usualProfile(memories);
   const summary=latest.summary || {}, parts=[];
   if(memoryNumber(summary.duration_s))parts.push('记录了'+memoryValue(summary.duration_s/60)+'分钟');
   if(memoryNumber(summary.avg_hr))parts.push('样本平均心率'+memoryValue(summary.avg_hr)+' bpm');
-  el.textContent=head+(usual!==null ? activePersona.greeting_usual(usual) : '')+(parts.length ? '上次'+parts.join('，')+'。' : '')+activePersona.greeting_tail;
+  el.textContent=head+(usual.hour!==null ? activePersona.greeting_usual(usual.hour,usual.minutes) : '')+(parts.length ? '上次'+parts.join('，')+'。' : '')+activePersona.greeting_tail;
   el.hidden=false;
 }
 async function loadRecall(){

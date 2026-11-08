@@ -227,7 +227,24 @@ class RideMemoryUI(unittest.TestCase):
           renderGreeting([mk(50,20),mk(60,21),mk(70,22)]);
           return $('greeting').textContent;
         """)
-        self.assertIn('你通常21点出门。', result)
+        self.assertIn('你通常21点出门，一次60分钟左右。', result)
+
+    def test_greeting_usual_duration_is_median(self):
+        result = self.run_js("""
+          const mk=(ageH,hour,dur)=>{const d=new Date(Date.now()-ageH*3600e3);d.setHours(hour,0,0,0);return {id:'a'+ageH,started_at:d.toISOString(),summary:{avg_hr:130,duration_s:dur},source:'ble_gatt_0x180d'};};
+          renderGreeting([mk(50,20,1800),mk(60,20,3600),mk(70,20,7200)]);
+          return $('greeting').textContent;
+        """)
+        self.assertIn('一次60分钟左右', result)
+
+    def test_greeting_usual_omits_duration_when_durations_missing(self):
+        result = self.run_js("""
+          const mk=(ageH,hour)=>{const d=new Date(Date.now()-ageH*3600e3);d.setHours(hour,0,0,0);return {id:'a'+ageH,started_at:d.toISOString(),summary:{avg_hr:130},source:'ble_gatt_0x180d'};};
+          renderGreeting([mk(50,20),mk(60,20),mk(70,20)]);
+          return $('greeting').textContent;
+        """)
+        self.assertIn('你通常20点出门。', result)
+        self.assertNotIn('左右', result)
 
     def test_greeting_silent_about_usual_with_two_sessions(self):
         result = self.run_js("""
