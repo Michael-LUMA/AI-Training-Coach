@@ -183,7 +183,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px/1.75 var(--mono);max
 <div class="row"><button id="connect-aux" type="button" class="secondary" data-i18n="aux">加连功率计/踏频计（可选）</button></div>
 <p class="note" data-i18n="aux-note">可选第二步：连接功率计或踏频计（CSC/Cycling Power 标准协议）。只连接心率带也能正常记录，功率和踏频会如实留空。</p>
 <div class="row"><label class="check"><input id="track-enabled" type="checkbox" checked><span data-i18n="track-enabled-label">记录骑行轨迹（GPS，仅本机）</span></label></div>
-<p class="note" data-i18n="track-note">轨迹只写入本页内存和你手动下载的备份文件；上传到本服务的记录自动剥离坐标，只带距离/速度聚合数字。精度差于 30 米的定位点直接丢弃并如实留空。GPS 常开预计每小时耗电约 10%，长途建议低电量模式并带充电宝；屏幕熄灭不影响记录。</p>
+<p class="note" data-i18n="track-note">轨迹只写入本页内存和你手动下载的备份文件；上传到本服务的记录自动剥离坐标，只带距离/速度聚合数字。精度差于 30 米的定位点直接丢弃并如实留空。GPS 常开预计每小时耗电约 10%，长途建议低电量模式并带充电宝；屏幕熄灭不影响记录。授权定位后，本页会在首次定位成功时通过本服务向高德请求一次当日天气（坐标仅用于该次请求，不写入任何记录）。</p>
 <div class="row"><label class="check"><input id="track-upload-none" type="checkbox"><span data-i18n="track-upload-label">连距离/速度聚合数字也不上传</span></label></div>
 <div class="row"><label class="check"><input id="track-clip" type="checkbox" checked><span data-i18n="track-clip-label">GPX 导出时裁掉起终点各 500 米（防家庭住址泄露）</span></label></div>
 <p id="status" class="statusline" role="status" aria-live="polite" data-i18n="status-init">准备记录。语音需点击开始激活；请先在静止状态连接设备。</p>
@@ -625,8 +625,25 @@ function onTrackFix(position){
   const alt=typeof coords.altitude==='number' && Number.isFinite(coords.altitude) ? coords.altitude : null;
   const spd=typeof coords.speed==='number' && Number.isFinite(coords.speed) && coords.speed>=0 && coords.speed<=30 ? coords.speed : 0;
   lastFix={lat:coords.latitude,lng:coords.longitude,alt,acc,spd,mono:performance.now()};
+  void fetchWeatherBrief(lastFix);
   trackMovement(lastFix);
   drawTrackLive();
+}
+// Weather brief: once per page, on the first real fix, Mark speaks today's
+// weather from AMap as a fact with its source named. Simulated/demo fixes are
+// fictional and never trigger a real lookup; failures stay silent.
+let weatherFetched=false;
+async function fetchWeatherBrief(fix){
+  if(weatherFetched||SIMULATED||DEMO)return;
+  weatherFetched=true;
+  try{
+    const token=await getToken();
+    const response=await fetch('/api/coach/ride/weather',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify({lat:fix.lat,lng:fix.lng})});
+    if(!response.ok)return;
+    const result=await response.json().catch(()=>null);
+    if(!result||result.weather_status!=='ok')return;
+    speak('高德天气：'+result.city+'今天白天'+result.day_weather+'，'+result.day_temp+'度；夜间'+result.night_weather+'，'+result.night_temp+'度。','other');
+  }catch(_){/* weather is a bonus; silence is honest */}
 }
 // Movement = displacement beyond GPS jitter; it resets the stop-care episode.
 // Shared by real geolocation fixes and the simulated demo track.
@@ -1822,7 +1839,7 @@ const I18N_EN=Object.freeze({
   'track-live-init':'Track: not started', 'track-h':'Ride track',
   'track-empty':'Coordinates recorded during the ride are drawn here. Real fixes only; breaks stay open, never connected.',
   'track-enabled-label':'Record ride track (GPS, on-device only)',
-  'track-note':'The track lives only in this page\u2019s memory and the backups you download; uploads to this service strip coordinates and carry only distance/speed aggregates. Fixes worse than 30 m accuracy are dropped and honestly left blank. Continuous GPS costs roughly 10% battery per hour — use low-battery mode and a power bank on long rides; a sleeping screen does not stop recording.',
+  'track-note':'The track lives only in this page\u2019s memory and the backups you download; uploads to this service strip coordinates and carry only distance/speed aggregates. Fixes worse than 30 m accuracy are dropped and honestly left blank. Continuous GPS costs roughly 10% battery per hour — use low-battery mode and a power bank on long rides; a sleeping screen does not stop recording. After you grant location, this page requests today\u2019s weather once via this service from AMap on the first fix (coordinates serve that single request only and are never written into any record).',
   'track-upload-label':'Do not upload even the distance/speed aggregates',
   'track-clip-label':'Clip the first/last 500 m in GPX export (protects home address)',
   f1:'Record only. Not medical advice.',

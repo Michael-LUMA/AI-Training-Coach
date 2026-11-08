@@ -46,6 +46,7 @@ from ride_chat import build_ride_chat
 from ride_knowledge import build_knowledge_answer, load_cards
 from ride_live import LIVE_TEMPLATE, LiveSession, build_live_answer, build_live_speech
 from ride_nav import plan_route
+from ride_weather import fetch_weather
 from ride_weekly import build_ride_weekly, aggregate_ride_weeks, split_week_sessions, weekly_template
 from ride_server import strict_json, dumps
 
@@ -63,6 +64,7 @@ RIDE_IMPORT = "/api/coach/ride/import"
 RIDE_REVIEW = "/api/coach/ride/review"
 RIDE_WEEKLY = "/api/coach/ride/weekly"
 RIDE_ROUTE = "/api/coach/ride/route"
+RIDE_WEATHER = "/api/coach/ride/weather"
 RIDE_CHAT = "/api/coach/ride/chat"
 RIDE_LIVE = "/api/coach/ride/live"
 
@@ -269,7 +271,7 @@ class App:
             token = headers.get("X-Coach-Token", "")
             require(type(token) is str and token.isascii() and secrets.compare_digest(token, self.token), "Session token required", "token_denied", 403)
         allowed = ((method == "GET" and (parsed.path in ("/", "/privacy", "/terms", "/api/coach/config", "/api/coach/activities", "/ride", "/ride.webmanifest", "/icon.svg", RIDE_LIST) or font_path is not None)) or
-                   (method == "POST" and path in ("/api/coach/connect", "/api/coach/review", "/api/coach/review-l2", "/api/coach/demo-review", "/api/coach/waitlist", "/api/coach/weekly", RIDE_POST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE, RIDE_CHAT, RIDE_LIVE, RIDE_IMPORT)))
+                   (method == "POST" and path in ("/api/coach/connect", "/api/coach/review", "/api/coach/review-l2", "/api/coach/demo-review", "/api/coach/waitlist", "/api/coach/weekly", RIDE_POST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE, RIDE_CHAT, RIDE_LIVE, RIDE_IMPORT, RIDE_WEATHER)))
         require(allowed, "Endpoint not found", "not_found", 404)
         if method == "POST":
             require(headers.get("Transfer-Encoding") is None and headers.get("Content-Type") == "application/json", "Fixed-length JSON required", "invalid_body", 415)
@@ -284,7 +286,7 @@ class App:
 
     def dispatch(self, method, path, headers, body=b"", port=DEFAULT_PORT):
         length = self.preflight(method, path, headers, port)
-        if urlsplit(path).path in (RIDE_POST, RIDE_LIST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE, RIDE_CHAT, RIDE_LIVE, RIDE_IMPORT):
+        if urlsplit(path).path in (RIDE_POST, RIDE_LIST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE, RIDE_CHAT, RIDE_LIVE, RIDE_IMPORT, RIDE_WEATHER):
             self._ride_rate_limit(method)
         if method == "POST" and path == "/api/coach/billing/webhook":
             require(len(body) == length, "Incomplete request body", "invalid_body")
@@ -343,6 +345,8 @@ class App:
             return self._import_ride(payload)
         if path == RIDE_ROUTE:
             return self._route_ride(payload)
+        if path == RIDE_WEATHER:
+            return self._weather_ride(payload)
         if path == RIDE_WEEKLY:
             return self._weekly_ride(payload)
         if path == RIDE_REVIEW:
@@ -774,6 +778,14 @@ class App:
                             api_key=os.environ.get("AMAP_API_KEY"), http_get=self.nav_get,
                             mode=mode)
         require(result["route_status"] != "invalid_input", "Invalid origin or destination_address")
+        return result
+
+    def _weather_ride(self, payload):
+        """Proxy one weather lookup; coordinates stay server-side, key never leaves."""
+        require(type(payload) is dict and set(payload) == {"lat", "lng"}, "Expected lat and lng only")
+        result = fetch_weather(payload["lat"], payload["lng"],
+                               api_key=os.environ.get("AMAP_API_KEY"), http_get=self.nav_get)
+        require(result["weather_status"] != "invalid_input", "Invalid coordinates")
         return result
 
     def _ride_rate_limit(self, method):
