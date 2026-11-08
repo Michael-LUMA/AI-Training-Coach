@@ -1016,19 +1016,23 @@ async function loadNotes(){
     if(result && Array.isArray(result.notes))renderNotes(result.notes);
   }catch(_){/* notes are an enhancement; the panel stays as-is */}
 }
-async function addNote(){
+// addNote returns whether the note was stored, so the voice path can speak an
+// honest confirmation. Typed use clears the input; voice use leaves it alone.
+async function addNote(voiceText){
   const input=$('note-input'), status=$('note-status');
-  const text=(input.value||'').trim();
-  if(!text)return;
+  const text=(typeof voiceText==='string'?voiceText:(input.value||'')).trim();
+  if(!text)return false;
+  if(text.length>140){status.textContent='一条最多 140 字，这条没记住。';return false;}
   status.textContent='';
   try{
     const token=await getToken();
     const response=await fetch('/api/coach/ride/note',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify({text:text})});
     const result=await response.json().catch(()=>null);
-    if(!response.ok){status.textContent=result && result.error_code==='note_limit' ? '备忘录已满（50 条），请先删除一条。' : '没记住（'+(result && result.error_code || ('HTTP '+response.status))+'）。';return;}
-    input.value='';
+    if(!response.ok){status.textContent=result && result.error_code==='note_limit' ? '备忘录已满（50 条），请先删除一条。' : '没记住（'+(result && result.error_code || ('HTTP '+response.status))+'）。';return false;}
+    if(typeof voiceText!=='string')input.value='';
     loadNotes();
-  }catch(error){status.textContent='没记住：'+error.message+'。';}
+    return true;
+  }catch(error){status.textContent='没记住：'+error.message+'。';return false;}
 }
 async function deleteNote(id){
   try{
@@ -1133,6 +1137,8 @@ function routeVoiceIntent(text){
   if(prefix&&prefix[1].trim())return{kind:'nav',destination:prefix[1].trim()};
   const suffix=cleaned.match(/^(.+?)(?:怎么走|怎么去|如何去|的导航|导航)$/);
   if(suffix&&suffix[1].trim().length>=2)return{kind:'nav',destination:suffix[1].trim()};
+  const remember=cleaned.match(/^(?:帮我)?(?:记住|记一下|记着)(.+)$/);
+  if(remember&&remember[1].trim())return{kind:'note',text:remember[1].trim()};
   return{kind:'qa',question:cleaned};
 }
 function answerVoice(){
@@ -1140,10 +1146,20 @@ function answerVoice(){
     const intent=routeVoiceIntent(text);
     if(intent.kind==='nav'){
       $('nav-destination').value=intent.destination;planNav();
+    }else if(intent.kind==='note'){
+      void voiceNote(intent.text);
     }else if(intent.kind==='qa'){
       $('chat-card').hidden=false;$('chat-input').value=intent.question;askMark({speak:true});
     }
   });
+}
+// Voice-authored note: the spoken sentence is the note itself, stored verbatim
+// only after the server confirms; the spoken reply mirrors the real outcome.
+async function voiceNote(text){
+  const ok=await addNote(text);
+  const msg=ok?'记住了：'+text:($('note-status').textContent||'没记住，请稍后再试。');
+  $('chat-card').hidden=false;$('chat-answer').textContent=msg;$('chat-listen').hidden=false;
+  speak(msg);
 }
 // Live companion (B5): while a ride records, GPS fixes flow to Mark's live
 // engine every LIVE_POST_MS; the engine alone decides what is worth saying

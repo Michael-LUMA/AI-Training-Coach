@@ -96,6 +96,17 @@ sandbox.fetch=async(url,init={})=>{
     if(options.routeFail)return {ok:false,status:503,json:async()=>({error_code:'unavailable'})};
     return {ok:true,status:200,json:async()=>options.route || {route_status:'not_configured'}};
   }
+  if(url==='/api/coach/ride/note'){
+    if(options.noteLimit)return {ok:false,status:409,json:async()=>({error_code:'note_limit'})};
+    if(options.noteFail)return {ok:false,status:503,json:async()=>({error_code:'storage_unavailable'})};
+    return {ok:true,status:200,json:async()=>({status:'saved',id:'n1',created_at:'2026-11-09T00:00:00Z'})};
+  }
+  if(url==='/api/coach/ride/note/delete'){
+    return {ok:true,status:200,json:async()=>({status:'deleted'})};
+  }
+  if(url==='/api/coach/ride/notes'){
+    return {ok:true,status:200,json:async()=>({notes:options.notes||[]})};
+  }
   if(url==='/api/coach/ride/import'){
     if(options.importResponses&&options.importResponses.length){
       const r=options.importResponses.shift();
@@ -1839,6 +1850,61 @@ class ChatCardUI(RideMemoryUI):
         self.assertEqual(result['body']['question'], '我心率多少')
         self.assertRegex(result['body']['conv_id'], r'^conv-')
         self.assertEqual(result['spoken'], ['这次平均心率120。'])
+
+    def test_voice_intent_routes_remember_to_note(self):
+        result = self.run_js("""
+          return ['记住我每周二四骑车','帮我记住车架号是ABC123','Mark，记一下下周比赛','记一下','我记住了这首歌'].map(routeVoiceIntent);
+        """)
+        self.assertEqual(result[0], {'kind': 'note', 'text': '我每周二四骑车'})
+        self.assertEqual(result[1], {'kind': 'note', 'text': '车架号是ABC123'})
+        self.assertEqual(result[2], {'kind': 'note', 'text': '下周比赛'})
+        self.assertEqual(result[3], {'kind': 'qa', 'question': '记一下'})
+        self.assertEqual(result[4], {'kind': 'qa', 'question': '我记住了这首歌'})
+
+    def test_voice_note_stores_and_speaks_confirmation(self):
+        result = self.run_js("""
+          await $('voice-command').click();
+          const r=_sr[0];
+          const res=[{transcript:'记住我每周二四骑车'}];res.isFinal=true;
+          r.onresult({resultIndex:0,results:[res]});
+          r.onend();
+          await _flush();await _flush();await _flush();
+          const call=_calls.find(c=>c.url==='/api/coach/ride/note');
+          return {answer:$('chat-answer').textContent,spoken:_spoken,
+                  body:call?JSON.parse(call.body):null,
+                  chatted:_calls.some(c=>c.url==='/api/coach/ride/chat')};
+        """, sr=True)
+        self.assertEqual(result['body'], {'text': '我每周二四骑车'})
+        self.assertFalse(result['chatted'])
+        self.assertEqual(result['answer'], '记住了：我每周二四骑车')
+        self.assertEqual(result['spoken'], ['记住了：我每周二四骑车'])
+
+    def test_voice_note_failure_speaks_the_real_reason(self):
+        result = self.run_js("""
+          await $('voice-command').click();
+          const r=_sr[0];
+          const res=[{transcript:'记住测试失败路径'}];res.isFinal=true;
+          r.onresult({resultIndex:0,results:[res]});
+          r.onend();
+          await _flush();await _flush();await _flush();
+          return {answer:$('chat-answer').textContent,spoken:_spoken,status:$('note-status').textContent};
+        """, sr=True, noteLimit=True)
+        self.assertIn('备忘录已满', result['answer'])
+        self.assertEqual(result['spoken'], [result['answer']])
+
+    def test_voice_note_over_limit_declined_honestly(self):
+        result = self.run_js("""
+          await $('voice-command').click();
+          const r=_sr[0];
+          const res=[{transcript:'记住'+'很长的内容'.repeat(30)}];res.isFinal=true;
+          r.onresult({resultIndex:0,results:[res]});
+          r.onend();
+          await _flush();await _flush();
+          return {answer:$('chat-answer').textContent,
+                  called:_calls.some(c=>c.url==='/api/coach/ride/note')};
+        """, sr=True)
+        self.assertIn('140 字', result['answer'])
+        self.assertFalse(result['called'])
 
     def test_typed_question_stays_silent(self):
         result = self.run_js("""
