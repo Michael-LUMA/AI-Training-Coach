@@ -158,6 +158,14 @@ class WeatherServerTests(unittest.TestCase):
         result = self.post({'lat': 31.23, 'lng': 121.47})
         self.assertNotIn(KEY, json.dumps(result))
 
+    def test_production_default_app_has_nav_transport(self):
+        # Regression: App() without injection used to leave nav_get=None, so
+        # live route/weather calls died with TypeError behind a 500.
+        from unittest.mock import Mock
+        app = server.App(store=Mock())
+        self.assertIsNotNone(app.nav_get)
+        self.assertTrue(callable(app.nav_get))
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -45,7 +45,7 @@ import llm_router
 from ride_chat import build_ride_chat
 from ride_knowledge import build_knowledge_answer, load_cards
 from ride_live import LIVE_TEMPLATE, LiveSession, build_live_answer, build_live_speech
-from ride_nav import plan_route
+from ride_nav import plan_route, _http_get as _nav_http_get
 from ride_notes import NoteError, add_note, load_notes, remove_note
 from ride_weather import fetch_weather
 from ride_weekly import build_ride_weekly, aggregate_ride_weeks, split_week_sessions, weekly_template
@@ -197,7 +197,9 @@ class App:
         self._waitlist = None
         self.fetch = fetch
         self.llm_post = llm_post
-        self.nav_get = nav_get
+        # Production default mirrors the llm_post=None pattern: the module's
+        # own no-redirect transport. Tests inject strict fakes instead.
+        self.nav_get = nav_get if nav_get is not None else _nav_http_get
         self.today = today if today is not None else date.today
         self.token = secrets.token_urlsafe(32)
         # Credential-adjacent ephemeral data; tests/custom DBs stay isolated.
