@@ -98,6 +98,8 @@ h1 .grad{color:var(--accent)}
 .countdown{font:800 64px/1 var(--sans);margin:0 0 8px;font-variant-numeric:tabular-nums;color:var(--route)}
 .row{display:flex;gap:14px;flex-wrap:wrap;margin:12px 0}
 #voice-command{position:fixed;right:18px;bottom:18px;z-index:50;border-radius:999px;padding:14px 22px}
+#live-toggle{position:fixed;right:18px;bottom:84px;z-index:50;border-radius:999px;padding:12px 20px;opacity:.92}
+#live-toggle.on{font-weight:700;opacity:1}
 label{display:grid;gap:6px;flex:1;font-size:12.5px;font-weight:600;min-width:140px;color:#B9C3CE}
 label.check{display:flex;flex-direction:row;align-items:center;gap:10px;flex:none;color:var(--ink);font-size:13px}
 input,select,button{font:inherit}
@@ -231,11 +233,12 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px/1.75 var(--mono);max
 </footer>
 </main>
 <button id="voice-command" type="button" data-i18n="voice-cmd">对 Mark 说话</button>
+<button id="live-toggle" type="button" data-i18n="live_toggle">陪伴播报</button>
 <script>
 'use strict';
 // Device adapter only: ride_memory.py owns the reusable versioned memory contract.
 const PERSONA = Object.freeze({
-  version:'ride-persona/18', name:'Mark', above:'心率超过你设的上限了。', below:'心率低于你设的下限了。', disconnected:'心率信号断了，我看不到读数。', short:'记录太短，我还总结不了。',
+  version:'ride-persona/19', name:'Mark', above:'心率超过你设的上限了。', below:'心率低于你设的下限了。', disconnected:'心率信号断了，我看不到读数。', short:'记录太短，我还总结不了。',
   recall:parts=>'我记得上次'+parts.join('，')+'。记录还很少，这不算趋势。',
   recall_no_history:'我还没有可回放的历史记录。',
   compare_better:(label,amount,unit)=>'我看到'+label+'比上次'+(unit==='分钟' ? '少' : '低')+amount+unit+'。',
@@ -288,7 +291,8 @@ const PERSONA = Object.freeze({
   chat_title:'问 Mark', chat_placeholder:'问问这次记录…', chat_send:'问',
   chat_fallback:'这个我现在答不上来，等我记到更多数据再聊。',
   chat_mic:'说', chat_listening:'在听…', chat_listen:'听回答',
-  nav_mic:'说目的地', voice_command:'对 Mark 说话'
+  nav_mic:'说目的地', voice_command:'对 Mark 说话',
+  live_toggle:'陪伴播报', live_on:'陪伴播报 · 开'
 });
 const SERVICE = 0x180D, CHARACTERISTIC = 0x2A37;
 const CSC_SERVICE = 0x1816, CSC_MEASUREMENT = 0x2A5B, POWER_SERVICE = 0x1818, POWER_MEASUREMENT = 0x2A63;
@@ -546,7 +550,8 @@ function onTrackFix(position){
   if(!Number.isFinite(coords.latitude) || !Number.isFinite(coords.longitude))return;
   const acc=typeof coords.accuracy==='number' && Number.isFinite(coords.accuracy) ? coords.accuracy : Infinity;
   const alt=typeof coords.altitude==='number' && Number.isFinite(coords.altitude) ? coords.altitude : null;
-  lastFix={lat:coords.latitude,lng:coords.longitude,alt,acc,mono:performance.now()};
+  const spd=typeof coords.speed==='number' && Number.isFinite(coords.speed) && coords.speed>=0 && coords.speed<=30 ? coords.speed : 0;
+  lastFix={lat:coords.latitude,lng:coords.longitude,alt,acc,spd,mono:performance.now()};
   drawTrackLive();
 }
 function trackAttach(point){
@@ -876,6 +881,35 @@ function answerVoice(){
     }
   });
 }
+// Live companion (B5): while a ride records, GPS fixes flow to Mark's live
+// engine every LIVE_POST_MS; the engine alone decides what is worth saying
+// (server enforces the silence window). The client only renders speech.
+const LIVE_POST_MS=10000;
+let liveOn=false,liveId=null,liveTimer=null,liveBusy=false;
+function livePrefsSave(){try{localStorage.setItem('luma.live',JSON.stringify({on:liveOn}));}catch(_){/* companion never blocks a ride */}}
+function liveApply(){const b=$('live-toggle');if(b){b.textContent=liveOn?activePersona.live_on:activePersona.live_toggle;if(b.classList&&typeof b.classList.toggle==='function')b.classList.toggle('on',liveOn);}if(liveOn)liveStart();else liveStop();}
+function livePrefsLoad(){try{const p=JSON.parse(localStorage.getItem('luma.live')||'null');if(p&&p.on===true)liveOn=true;}catch(_){/* defaults stay */}liveApply();}
+function liveToggle(){liveOn=!liveOn;livePrefsSave();liveApply();}
+function liveStart(){if(liveTimer!==null)return;liveTimer=setInterval(()=>{void liveBeat();},LIVE_POST_MS);}
+function liveStop(){if(liveTimer!==null){clearInterval(liveTimer);liveTimer=null;}}
+function liveResetSession(){liveId=null;}
+async function liveBeat(){
+  if(!liveOn||!active||liveBusy)return;
+  if(!lastFix||performance.now()-lastFix.mono>TRACK_STALE_MS)return;
+  liveBusy=true;
+  try{
+    if(!liveId)liveId='live-'+Math.random().toString(36).slice(2,10)+Date.now().toString(36);
+    const point={t:Date.now()/1000,lat:lastFix.lat,lng:lastFix.lng,speed_mps:typeof lastFix.spd==='number'?lastFix.spd:0};
+    const response=await fetch('/api/coach/ride/live',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify({live_id:liveId,point})});
+    if(!liveOn||!active)return;
+    const data=await response.json().catch(()=>null);
+    const calls=data&&Array.isArray(data.calls)?data.calls:[];
+    for(const call of calls){
+      if(call&&typeof call.speech==='string'&&call.speech&&coachCanSpeak())noteAndSpeak(call.speech,'live');
+    }
+  }catch(_){/* a missed beat stays silent */}
+  finally{liveBusy=false;}
+}
 // Ears of the assistant: one tap to talk, transcript lands in the box and sends.
 // SpeechRecognition is a progressive enhancement — no support, no button.
 const SpeechEngine=window.SpeechRecognition||window.webkitSpeechRecognition;
@@ -1158,7 +1192,7 @@ function begin(options={}){
   saveSpeechPrefs();
   nextFuelSeconds=fuelStepS||Infinity;nextMilestoneSeconds=milestoneStepS||Infinity;lastCoachSpeech=-Infinity;
   crashState='idle';clearInterval(fallTimer);$('fall-card').hidden=true;
-  active = true; void requestScreenLock(); startNavWatch(); previous = null; lastSignal = null; gapOpen = false; outsideSince = null; outsideKind = null; lastAlert = -Infinity; alerts = 0; totals = {below:0, within:0, above:0};
+  active = true; void requestScreenLock(); startNavWatch(); liveResetSession(); previous = null; lastSignal = null; gapOpen = false; outsideSince = null; outsideKind = null; lastAlert = -Infinity; alerts = 0; totals = {below:0, within:0, above:0};
   $('lower').disabled = $('upper').disabled = true; $('milestone-interval').disabled = $('fuel-interval').disabled = true; $('activity-select').disabled = true; $('start-ride').disabled = true; $('end-ride').disabled = false; $('timeline').textContent = ''; $('heart-rate').textContent = '—'; $('heart-rate').classList.add('idle'); $('summary').textContent = '记录中，结束后总结。'; drawProfile();
   timer = setInterval(()=>{if (!active) return; remindFuel(); remindMilestone(); const s=Math.floor(elapsedSeconds()); $('elapsed').textContent = String(Math.floor(s/60)).padStart(2,'0') + ':' + String(s%60).padStart(2,'0'); if (lastSignal !== null && performance.now()-lastSignal > STALE_MS) markGap();}, 500);
 }
@@ -1410,6 +1444,8 @@ function finishRide(reason=''){
 $('ride-weekly-listen').addEventListener('click',listenWeekly);
 $('chat-send').addEventListener('click',()=>askMark());
 $('voice-command').addEventListener('click',answerVoice);
+$('live-toggle').addEventListener('click',liveToggle);
+livePrefsLoad();
 $('chat-mic').addEventListener('click',toggleMic);
 $('chat-listen').addEventListener('click',()=>{const text=$('chat-answer').textContent;if(text)speak(text);});
 $('nav-plan').addEventListener('click',planNav);

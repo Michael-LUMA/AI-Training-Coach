@@ -42,6 +42,7 @@ from ride_memory import validate_session, RideMemoryError
 from ride_brain import build_ride_review
 from ride_chat import build_ride_chat
 from ride_knowledge import build_knowledge_answer, load_cards
+from ride_live import LiveSession, build_live_speech
 from ride_nav import plan_route
 from ride_weekly import build_ride_weekly, aggregate_ride_weeks, split_week_sessions, weekly_template
 from ride_server import strict_json, dumps
@@ -58,9 +59,13 @@ RIDE_REVIEW = "/api/coach/ride/review"
 RIDE_WEEKLY = "/api/coach/ride/weekly"
 RIDE_ROUTE = "/api/coach/ride/route"
 RIDE_CHAT = "/api/coach/ride/chat"
+RIDE_LIVE = "/api/coach/ride/live"
 DEFAULT_PORT = 8794
 _PERSONAL_MARKERS = ("我", "这次", "上次", "最近", "今天", "昨天",
                      "这周", "本周", "这个月", "本月", "累计")
+_LIVE_SILENCE_S = 60.0      # 主动播报全局静默期：克制即智能
+_LIVE_IDLE_S = 3 * 3600.0   # 实时会话空闲回收
+_LIVE_MAX_SESSIONS = 200    # 进程内存实时会话上限
 
 
 class CoachStore:
@@ -165,6 +170,8 @@ class App:
         self._ride_lock = Lock()
         self._ride_requests = {"GET": deque(), "POST": deque()}
         self._knowledge_cards = None
+        self._live = {}  # live_id -> [LiveSession, last_call_mono, last_seen_mono]
+        self._live_lock = Lock()
 
     @property
     def knowledge_cards(self):
@@ -229,7 +236,7 @@ class App:
             token = headers.get("X-Coach-Token", "")
             require(type(token) is str and token.isascii() and secrets.compare_digest(token, self.token), "Session token required", "token_denied", 403)
         allowed = ((method == "GET" and (parsed.path in ("/", "/privacy", "/terms", "/api/coach/config", "/api/coach/activities", "/ride", "/ride.webmanifest", "/icon.svg", RIDE_LIST) or font_path is not None)) or
-                   (method == "POST" and path in ("/api/coach/connect", "/api/coach/review", "/api/coach/review-l2", "/api/coach/demo-review", "/api/coach/waitlist", "/api/coach/weekly", RIDE_POST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE, RIDE_CHAT)))
+                   (method == "POST" and path in ("/api/coach/connect", "/api/coach/review", "/api/coach/review-l2", "/api/coach/demo-review", "/api/coach/waitlist", "/api/coach/weekly", RIDE_POST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE, RIDE_CHAT, RIDE_LIVE)))
         require(allowed, "Endpoint not found", "not_found", 404)
         if method == "POST":
             require(headers.get("Transfer-Encoding") is None and headers.get("Content-Type") == "application/json", "Fixed-length JSON required", "invalid_body", 415)
@@ -243,7 +250,7 @@ class App:
 
     def dispatch(self, method, path, headers, body=b"", port=DEFAULT_PORT):
         length = self.preflight(method, path, headers, port)
-        if urlsplit(path).path in (RIDE_POST, RIDE_LIST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE, RIDE_CHAT):
+        if urlsplit(path).path in (RIDE_POST, RIDE_LIST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE, RIDE_CHAT, RIDE_LIVE):
             self._ride_rate_limit(method)
         if method == "POST" and path == "/api/coach/billing/webhook":
             require(len(body) == length, "Incomplete request body", "invalid_body")
@@ -306,6 +313,8 @@ class App:
             return self._review_ride(payload)
         if path == RIDE_CHAT:
             return self._chat_ride(payload)
+        if path == RIDE_LIVE:
+            return self._live_ride(payload)
         if path == "/api/coach/waitlist":
             require(type(payload) is dict and set(payload) == {"email"}, "Expected email only")
             status = self.waitlist.register(payload["email"])
@@ -520,6 +529,52 @@ class App:
         return {"speech_status": result["llm_status"],
                 "speech": result["draft"]["speech"] if result["draft"] else None,
                 "fallback": result["fallback"], "usage": result["usage"], "lane": lane}
+
+    def _live_ride(self, payload):
+        """In-ride companion: telemetry point in, bounded spoken calls out.
+
+        Live sessions stay in process memory — no disk lock is touched; the
+        cloud request happens after state update. Anti-spam is the product:
+        at most one spoken call per live session per _LIVE_SILENCE_S.
+        """
+        require(type(payload) is dict and set(payload) == {"live_id", "point"},
+                "Expected live_id and point")
+        live_id = payload["live_id"]
+        require(type(live_id) is str and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", live_id) is not None,
+                "Invalid live_id")
+        require(type(payload["point"]) is dict, "Invalid telemetry point")
+        now = time.monotonic()
+        with self._live_lock:
+            for key in [key for key, entry in self._live.items() if now - entry[2] >= _LIVE_IDLE_S]:
+                del self._live[key]
+            if live_id not in self._live:
+                overflow = len(self._live) - _LIVE_MAX_SESSIONS + 1
+                if overflow > 0:
+                    eldest = sorted(self._live.items(), key=lambda item: item[1][2])[:overflow]
+                    for key, _ in eldest:
+                        del self._live[key]
+                self._live[live_id] = [LiveSession(), None, now]
+            entry = self._live[live_id]
+            entry[2] = now
+            session, last_call = entry[0], entry[1]
+        try:
+            events = session.ingest(payload["point"])
+        except ValueError:
+            raise ActionError("invalid_json", "Invalid telemetry point", 400) from None
+        if not events or (last_call is not None and now - last_call < _LIVE_SILENCE_S):
+            return {"calls": []}
+        result = build_live_speech(events, session.facts(),
+                                   api_key=os.environ.get("DASHSCOPE_API_KEY"),
+                                   http_post=self.llm_post)
+        speech = result["speech"]
+        if type(speech) is not str or not speech.strip():
+            return {"calls": []}
+        with self._live_lock:
+            if live_id in self._live:
+                self._live[live_id][1] = now
+        return {"calls": [{"speech": speech, "speech_status": result["llm_status"],
+                           "fallback": result["fallback"], "usage": result["usage"]}],
+                "events": [event["type"] for event in events]}
 
     def _weekly_ride(self, payload):
         """Snapshot/aggregate under disk lock; cloud request always outside it.
