@@ -258,6 +258,7 @@ const PERSONA = Object.freeze({
   compare_flat:(label,current,previous,unit)=>'我看到'+label+'变化不超过3%（本次'+current+unit+'，上次'+previous+unit+'）。',
   no_compare:(reason='上次记录字段不全')=>'我这次无法对比：'+reason+'。',
   compare_caution:'两次记录还说明不了趋势。',
+  compare_usual:(m)=>'你的通常是一次'+m+'分钟左右。',
   simulated:'SIMULATED · 合成记录，不是真实骑行',
   start:'开始记录。', thinking:'Mark 想了想',
   demo_notice:'演示模式：这是一段合成的 45 分钟骑行，90 秒放完。Mark 说的每句话都是真实逻辑，数据是假的。',
@@ -1079,7 +1080,9 @@ async function refreshComparison(memory){
     const previous=memories.find(m=>m.id!==memory.id && memoryTime(m)<memoryTime(memory));
     const notice=sourceNotice(previous ? [memory,previous] : [memory]);
     if(request!==comparisonRequest || active || !lastSession || lastSession.id!==memory.id)return;
-    $('memory-compare').textContent=compareMemories(memory,previous);$('memory-compare').hidden=false;
+    const usual=usualProfile(memories.filter(m=>m.id!==memory.id));
+    $('memory-compare').textContent=compareMemories(memory,previous)+(usual.minutes!==null ? activePersona.compare_usual(usual.minutes) : '');
+    $('memory-compare').hidden=false;
     $('compare-source').textContent=notice;$('compare-source').hidden=!notice;
   }catch(_){
     if(request!==comparisonRequest || active || !lastSession || lastSession.id!==memory.id)return;

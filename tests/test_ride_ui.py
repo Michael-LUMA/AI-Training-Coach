@@ -346,6 +346,28 @@ class RideMemoryUI(unittest.TestCase):
         self.assertEqual(result['local'], 0)
         self.assertEqual(result['spoken'], [])
 
+    def test_comparison_cites_usual_duration_with_three_prior_sessions(self):
+        history = [metadata('old1', '2026-11-01T08:00:00Z', 120, 1800),
+                   metadata('old2', '2026-11-03T08:00:00Z', 122, 3600),
+                   metadata('old3', '2026-11-05T08:00:00Z', 124, 5400),
+                   metadata('current', '2026-11-07T08:00:00Z', 126, 4320)]
+        result = self.run_js("""
+          const memory={id:'current',started_at:'2026-11-07T08:00:00Z',source:'ble_gatt_0x180d',summary:{avg_hr:126,duration_s:4320}};
+          lastSession=memory;retain(memory);await upload(memory,true);
+          return {text:$('memory-compare').textContent};
+        """, history=history)
+        self.assertIn('你的通常是一次60分钟左右。', result['text'])
+
+    def test_comparison_omits_usual_with_two_prior_sessions(self):
+        history = [metadata('old1', '2026-11-03T08:00:00Z', 122, 3600),
+                   metadata('current', '2026-11-07T08:00:00Z', 126, 4320)]
+        result = self.run_js("""
+          const memory={id:'current',started_at:'2026-11-07T08:00:00Z',source:'ble_gatt_0x180d',summary:{avg_hr:126,duration_s:4320}};
+          lastSession=memory;retain(memory);await upload(memory,true);
+          return {text:$('memory-compare').textContent};
+        """, history=history)
+        self.assertNotIn('通常', result['text'])
+
     def test_upload_failure_keeps_local_and_never_compares(self):
         result = self.run_js("""
           const memory={id:'pending'};lastSession=memory;retain(memory);const saved=await upload(memory,true);
