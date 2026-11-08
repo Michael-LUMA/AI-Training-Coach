@@ -1906,6 +1906,31 @@ class ChatCardUI(RideMemoryUI):
         self.assertIn('140 字', result['answer'])
         self.assertFalse(result['called'])
 
+    def test_voice_intent_routes_import_command(self):
+        result = self.run_js("""
+          return ['导入记录','帮我导入历史','批量导入','导入功能怎么用','导入我的文件'].map(routeVoiceIntent);
+        """)
+        self.assertEqual(result[0], {'kind': 'import'})
+        self.assertEqual(result[1], {'kind': 'import'})
+        self.assertEqual(result[2], {'kind': 'import'})
+        self.assertEqual(result[3], {'kind': 'qa', 'question': '导入功能怎么用'})
+        self.assertEqual(result[4], {'kind': 'qa', 'question': '导入我的文件'})
+
+    def test_voice_import_switches_view_and_speaks_honest_copy(self):
+        result = self.run_js("""
+          await $('voice-command').click();
+          const r=_sr[0];
+          const res=[{transcript:'导入记录'}];res.isFinal=true;
+          r.onresult({resultIndex:0,results:[res]});
+          r.onend();
+          await _flush();await _flush();
+          return {checked:$('view-review').checked,answer:$('chat-answer').textContent,spoken:_spoken,
+                  picked:$('import-file').listeners.change?false:true};
+        """, sr=True)
+        self.assertTrue(result['checked'])
+        self.assertIn('亲手点', result['answer'])
+        self.assertEqual(result['spoken'], [result['answer']])
+
     def test_voice_forget_deletes_unique_match_and_speaks_it(self):
         result = self.run_js("""
           await $('voice-command').click();

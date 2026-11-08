@@ -1141,6 +1141,8 @@ function routeVoiceIntent(text){
   if(remember&&remember[1].trim())return{kind:'note',text:remember[1].trim()};
   const forget=cleaned.match(/^(?:帮我)?(?:忘掉|删掉|删除)(.+)$/);
   if(forget&&forget[1].trim())return{kind:'forget',text:forget[1].trim()};
+  const importCmd=cleaned.match(/^(?:帮我)?(?:导入|批量导入)(?:骑行)?(?:记录|历史|文件)?$/);
+  if(importCmd)return{kind:'import'};
   return{kind:'qa',question:cleaned};
 }
 function answerVoice(){
@@ -1152,6 +1154,8 @@ function answerVoice(){
       void voiceNote(intent.text);
     }else if(intent.kind==='forget'){
       void voiceForget(intent.text);
+    }else if(intent.kind==='import'){
+      voiceImport();
     }else if(intent.kind==='qa'){
       $('chat-card').hidden=false;$('chat-input').value=intent.question;askMark({speak:true});
     }
@@ -1162,6 +1166,15 @@ function answerVoice(){
 async function voiceNote(text){
   const ok=await addNote(text);
   const msg=ok?'记住了：'+text:($('note-status').textContent||'没记住，请稍后再试。');
+  $('chat-card').hidden=false;$('chat-answer').textContent=msg;$('chat-listen').hidden=false;
+  speak(msg);
+}
+// Voice import: switch to the review view and open the picker. The system file
+// dialog may refuse non-gesture clicks — the spoken copy says the tap is yours.
+function voiceImport(){
+  const viewReview=$('view-review');if(viewReview)viewReview.checked=true;
+  try{$('import-pick').click();}catch(_){/* the dialog may need a real tap */}
+  const msg='导入入口在复盘页，超过 20 个文件会自动分批。系统选文件那一下要你亲手点。';
   $('chat-card').hidden=false;$('chat-answer').textContent=msg;$('chat-listen').hidden=false;
   speak(msg);
 }
