@@ -120,6 +120,26 @@ class ImportBuildTests(unittest.TestCase):
         self.assertNotIn('trkpt', str(error))
         self.assertNotIn('31.2304', str(error))
 
+    def test_worst_case_import_fits_storage_read_limit(self):
+        # A decimated MAX_SERIES import must stay under the server's per-file
+        # read cap, or the session could be saved but never reviewed/listed.
+        points = []
+        for i in range(21000):  # Above MAX_SERIES: exercises the stride path.
+            points.append(
+                f'<trkpt lat="{31.2 + i * 1e-6:.7f}" lon="121.47"><ele>15.5</ele>'
+                f'<time>2026-11-01T{8 + i // 3600:02d}:{i % 3600 // 60:02d}:{i % 60:02d}Z</time>'
+                f'<extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>{100 + i % 60}</gpxtpx:hr>'
+                f'<gpxtpx:cad>85</gpxtpx:cad></gpxtpx:TrackPointExtension></extensions></trkpt>')
+        big = ('<?xml version="1.0"?><gpx version="1.1" creator="t" '
+               'xmlns="http://www.topografix.com/GPX/1/1" '
+               'xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1">'
+               '<trk><trkseg>' + ''.join(points) + '</trkseg></trk></gpx>')
+        self.assertLess(len(big.encode('utf-8')), ride_import.MAX_IMPORT_BYTES)
+        session = build_import_session(big)
+        self.assertLessEqual(len(session['series']), ride_import.MAX_SERIES)
+        size = len(json.dumps(session).encode('utf-8'))
+        self.assertLess(size, server.MAX_RIDE_BODY_BYTES)
+
 
 class ImportServerTests(unittest.TestCase):
     def setUp(self):
