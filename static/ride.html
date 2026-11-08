@@ -224,7 +224,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px/1.75 var(--mono);max
 <div class="row"><button id="retry-upload" type="button" class="secondary" data-i18n="retry">重试上传本机待传记录</button><button id="download-session" type="button" class="secondary" disabled data-i18n="dl-json">下载本次 JSON 备份</button><button id="download-gpx" type="button" class="secondary" disabled data-i18n="dl-gpx">下载 GPX 备份</button></div>
 <p class="note" data-i18n="gpx-note">记录了坐标时，GPX 是真实轨迹（含心率/踏频/功率扩展点），可导入 Strava/行者/Garmin；没有坐标时，GPX 只含心率时间轴与断线标记，不能导入需要轨迹的平台。两种情况都如实标注，不混装。</p>
 <div class="row"><input id="import-file" type="file" accept=".gpx,.tcx" multiple hidden><button id="import-pick" type="button" class="secondary" data-i18n="import-pick">导入 GPX/TCX 记录</button></div>
-<p class="note" data-i18n="import-note">把 Garmin/Strava/行者导出的 GPX/TCX 文件交给 Mark（需含心率，一次最多 20 个、共 ≤5 MB）；来源如实标注为导入，无心率的文件不导入，不修补、不猜测。</p>
+<p class="note" data-i18n="import-note">把 Garmin/Strava/行者导出的 GPX/TCX 文件交给 Mark（需含心率；超过 20 个或 5 MB 会自动分批上传，单个文件不能超过 5 MB）；来源如实标注为导入，无心率的文件不导入，不修补、不猜测。</p>
 <p id="import-status" class="note" role="status" aria-live="polite"></p>
 </section>
 </div>
@@ -1848,15 +1848,56 @@ const IMPORT_ERRORS=Object.freeze({
 $('goto-import').addEventListener('click',()=>{const viewReview=$('view-review');if(viewReview)viewReview.checked=true;});
 $('note-add').addEventListener('click',addNote);
 $('note-input').addEventListener('keydown',event=>{if(event.key==='Enter')addNote();});
+// Batch import: the server accepts ≤20 files and ≤5 MB per request; bigger
+// selections are split here and uploaded batch by batch. Progress and partial
+// failures are reported honestly — a single file over 5 MB can never fit any
+// request, so it is skipped and counted by name in the final summary.
+async function importInBatches(files,status){
+  const batches=[];let batch=[],batchSize=0;const oversized=[];
+  for(const file of files){
+    if(file.size>5*1024*1024){oversized.push(file);continue;}
+    if(batch.length===20||batchSize+file.size>5*1024*1024){batches.push(batch);batch=[];batchSize=0;}
+    batch.push(file);batchSize+=file.size;
+  }
+  if(batch.length)batches.push(batch);
+  if(!batches.length){status.textContent=IMPORT_ERRORS.body_too_large;return;}
+  const totals={saved:0,duplicate:0,failed:0,reasons:{}};
+  const mergeResult=result=>{
+    if(result && result.results){
+      totals.saved+=result.saved||0;totals.duplicate+=result.duplicate||0;totals.failed+=result.failed||0;
+      (result.results||[]).filter(r=>r.status==='error').forEach(r=>{totals.reasons[r.code]=(totals.reasons[r.code]||0)+1;});
+    }
+    else if(result && result.status==='duplicate')totals.duplicate+=1;
+    else totals.saved+=1;
+  };
+  try{
+    const token=await getToken();
+    for(let i=0;i<batches.length;i++){
+      status.textContent='分批导入中：第 '+(i+1)+'/'+batches.length+' 批…';
+      const texts=await Promise.all(batches[i].map(file=>file.text()));
+      const response=await fetch('/api/coach/ride/import',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify({data:texts.length===1?texts[0]:texts})});
+      const result=await response.json().catch(()=>null);
+      if(!response.ok){
+        const why=(result && IMPORT_ERRORS[result.error_code])||'导入失败（'+(result && result.error_code || ('HTTP '+response.status))+'）。';
+        status.textContent=i===0?why:'第 '+(i+1)+' 批'+why+'已成功 '+totals.saved+' 条保留在记忆里，剩余 '+(batches.length-i-1)+' 批未上传。';
+        if(totals.saved>0)loadRecall();
+        return;
+      }
+      mergeResult(result);
+    }
+  }catch(error){status.textContent='导入失败：'+error.message+'。';return;}
+  const detail=Object.keys(totals.reasons).map(code=>IMPORT_ERRORS[code]?IMPORT_ERRORS[code].replace('，未导入（无心率的记录暂不支持）。','').replace('，未导入。','').replace('，未导入（不修补）。',''):code).join('；');
+  status.textContent='导入完成：新增 '+totals.saved+' 条'+(totals.duplicate?'，'+totals.duplicate+' 条已在记忆里':'')+(totals.failed?'，'+totals.failed+' 个文件未导入（'+detail+'）':'')+(oversized.length?'，'+oversized.length+' 个文件超过 5 MB 未上传':'')+'。';
+  if(totals.saved>0)loadRecall();
+}
 $('import-pick').addEventListener('click',()=>$('import-file').click());
 $('import-file').addEventListener('change',async event=>{
   const files=Array.from(event.target.files||[]);
   event.target.value='';
   if(!files.length)return;
   const status=$('import-status');
-  if(files.length>20){status.textContent='一次最多导入 20 个文件，请分批选择。';return;}
   const total=files.reduce((sum,file)=>sum+file.size,0);
-  if(total>5*1024*1024){status.textContent=IMPORT_ERRORS.body_too_large;return;}
+  if(files.length>20||total>5*1024*1024){await importInBatches(files,status);return;}
   status.textContent='导入中…';
   try{
     const texts=await Promise.all(files.map(file=>file.text()));
@@ -1937,7 +1978,7 @@ const I18N_EN=Object.freeze({
   retry:'Retry uploading pending records', 'dl-json':'Download JSON backup', 'dl-gpx':'Download GPX backup',
   'gpx-note':'With recorded coordinates, the GPX is a real track (heart rate / cadence / power as extension values), importable into Strava, Xingzhe, or Garmin. Without coordinates it holds only the heart-rate timeline and gap markers and cannot be imported where a track is required. The two are never blended.',
   'import-pick':'Import GPX/TCX record', 'goto-import':'Import history (GPX/TCX)',
-  'import-note':'Hand Mark GPX/TCX files exported from Garmin/Strava/Xingzhe (heart rate required; up to 20 files, 5 MB total per batch). The source is honestly labelled as an import; files without heart rate are declined — nothing repaired, nothing guessed.',
+  'import-note':'Hand Mark GPX/TCX files exported from Garmin/Strava/Xingzhe (heart rate required; selections beyond 20 files or 5 MB upload in automatic batches, and no single file may exceed 5 MB). The source is honestly labelled as an import; files without heart rate are declined — nothing repaired, nothing guessed.',
   'track-live-init':'Track: not started', 'track-h':'Ride track',
   'track-empty':'Coordinates recorded during the ride are drawn here. Real fixes only; breaks stay open, never connected.',
   'track-enabled-label':'Record ride track (GPS, on-device only)',

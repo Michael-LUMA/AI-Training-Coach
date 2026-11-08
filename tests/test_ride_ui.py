@@ -96,6 +96,14 @@ sandbox.fetch=async(url,init={})=>{
     if(options.routeFail)return {ok:false,status:503,json:async()=>({error_code:'unavailable'})};
     return {ok:true,status:200,json:async()=>options.route || {route_status:'not_configured'}};
   }
+  if(url==='/api/coach/ride/import'){
+    if(options.importResponses&&options.importResponses.length){
+      const r=options.importResponses.shift();
+      return {ok:r.ok!==false,status:r.status||(r.ok===false?500:200),json:async()=>r.body};
+    }
+    const parsed=JSON.parse(init.body);const n=Array.isArray(parsed.data)?parsed.data.length:1;
+    return {ok:true,status:200,json:async()=>({saved:n,duplicate:0,failed:0,results:[]})};
+  }
   throw new Error('Unexpected request: '+url);
 };
 const context=vm.createContext(sandbox);
@@ -153,6 +161,51 @@ class RideMemoryUI(unittest.TestCase):
         self.assertFalse(result['hidden'])
         for text in ('我记得', '11月6日', '60分钟', '130 bpm', '记录还很少，这不算趋势。'):
             self.assertIn(text, result['text'])
+
+    def test_import_auto_batches_over_twenty_files(self):
+        result = self.run_js("""
+          const mk=n=>Array.from({length:n},(_,i)=>({name:'f'+i+'.gpx',size:100,text:async()=>'<gpx/>'}));
+          await $('import-file').listeners.change({target:{files:mk(25),value:'x'}});
+          const imports=_calls.filter(c=>c.url==='/api/coach/ride/import');
+          return {status:$('import-status').textContent,batches:imports.length,
+                  sizes:imports.map(c=>{const d=JSON.parse(c.body).data;return Array.isArray(d)?d.length:1;})};
+        """, history=[metadata()])
+        self.assertEqual(result['batches'], 2)
+        self.assertEqual(result['sizes'], [20, 5])
+        self.assertIn('新增 25 条', result['status'])
+
+    def test_import_auto_batches_by_size_and_skips_oversized(self):
+        result = self.run_js("""
+          const big=4*1024*1024;
+          const files=[{name:'a.gpx',size:big,text:async()=>'a'},{name:'b.gpx',size:big,text:async()=>'b'},
+                       {name:'c.gpx',size:big,text:async()=>'c'},{name:'huge.gpx',size:6*1024*1024,text:async()=>'h'}];
+          await $('import-file').listeners.change({target:{files:files,value:'x'}});
+          return {status:$('import-status').textContent,batches:_calls.filter(c=>c.url==='/api/coach/ride/import').length};
+        """, history=[metadata()])
+        self.assertEqual(result['batches'], 3)
+        self.assertIn('新增 3 条', result['status'])
+        self.assertIn('1 个文件超过 5 MB 未上传', result['status'])
+
+    def test_import_batch_failure_keeps_partial_progress_honest(self):
+        result = self.run_js("""
+          const mk=n=>Array.from({length:n},(_,i)=>({name:'f'+i+'.gpx',size:100,text:async()=>'<gpx/>'}));
+          await $('import-file').listeners.change({target:{files:mk(25),value:'x'}});
+          return {status:$('import-status').textContent,batches:_calls.filter(c=>c.url==='/api/coach/ride/import').length};
+        """, history=[metadata()],
+           importResponses=[{'body': {'saved': 20, 'duplicate': 0, 'failed': 0, 'results': []}},
+                            {'ok': False, 'status': 500, 'body': {'error_code': 'server_down'}}])
+        self.assertEqual(result['batches'], 2)
+        self.assertIn('第 2 批', result['status'])
+        self.assertIn('20 条保留在记忆里', result['status'])
+        self.assertIn('未上传', result['status'])
+
+    def test_import_single_oversized_file_declined_without_upload(self):
+        result = self.run_js("""
+          await $('import-file').listeners.change({target:{files:[{name:'h.gpx',size:6*1024*1024,text:async()=>'h'}],value:'x'}});
+          return {status:$('import-status').textContent,batches:_calls.filter(c=>c.url==='/api/coach/ride/import').length};
+        """, history=[metadata()])
+        self.assertEqual(result['batches'], 0)
+        self.assertIn('超过 5 MB', result['status'])
 
     def test_no_history_stays_hidden_and_debug_only(self):
         result = self.run_js("return {hidden:$('memory-card').hidden,spoken:_spoken,debug:_debug,text:$('memory-recall').textContent};")
