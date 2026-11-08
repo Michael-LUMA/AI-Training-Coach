@@ -135,7 +135,9 @@ class RideMemoryUI(unittest.TestCase):
 
     def test_initial_fetch_has_token_and_never_autoplays(self):
         result = self.run_js("return {calls:_calls,spoken:_spoken,hidden:$('memory-card').hidden,text:$('memory-recall').textContent};", history=[metadata()])
-        self.assertEqual([call['url'] for call in result['calls']], ['/api/coach/config', '/api/coach/ride/sessions'])
+        self.assertEqual([call['url'] for call in result['calls']],
+                         ['/api/coach/config', '/api/coach/ride/sessions',
+                          '/api/coach/config', '/api/coach/ride/notes'])
         self.assertEqual(result['calls'][1]['headers']['X-Coach-Token'], 'synthetic-ui-token')
         self.assertEqual(result['spoken'], [])
         self.assertFalse(result['hidden'])

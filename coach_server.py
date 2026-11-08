@@ -46,6 +46,7 @@ from ride_chat import build_ride_chat
 from ride_knowledge import build_knowledge_answer, load_cards
 from ride_live import LIVE_TEMPLATE, LiveSession, build_live_answer, build_live_speech
 from ride_nav import plan_route
+from ride_notes import NoteError, add_note, load_notes, remove_note
 from ride_weather import fetch_weather
 from ride_weekly import build_ride_weekly, aggregate_ride_weeks, split_week_sessions, weekly_template
 from ride_server import strict_json, dumps
@@ -65,6 +66,9 @@ RIDE_REVIEW = "/api/coach/ride/review"
 RIDE_WEEKLY = "/api/coach/ride/weekly"
 RIDE_ROUTE = "/api/coach/ride/route"
 RIDE_WEATHER = "/api/coach/ride/weather"
+RIDE_NOTES = "/api/coach/ride/notes"
+RIDE_NOTE = "/api/coach/ride/note"
+RIDE_NOTE_DELETE = "/api/coach/ride/note/delete"
 RIDE_CHAT = "/api/coach/ride/chat"
 RIDE_LIVE = "/api/coach/ride/live"
 
@@ -223,6 +227,11 @@ class App:
         return self._ride_dir
 
     @property
+    def notes_path(self):
+        """User-voiced memory lives beside the ride sessions, same data root."""
+        return self.ride_dir.parent / "ride_notes.json"
+
+    @property
     def billing(self):
         """Lazy billing metadata store, separate from credentials and waitlist."""
         if self._billing is None:
@@ -270,8 +279,8 @@ class App:
         if not public:
             token = headers.get("X-Coach-Token", "")
             require(type(token) is str and token.isascii() and secrets.compare_digest(token, self.token), "Session token required", "token_denied", 403)
-        allowed = ((method == "GET" and (parsed.path in ("/", "/privacy", "/terms", "/api/coach/config", "/api/coach/activities", "/ride", "/ride.webmanifest", "/icon.svg", RIDE_LIST) or font_path is not None)) or
-                   (method == "POST" and path in ("/api/coach/connect", "/api/coach/review", "/api/coach/review-l2", "/api/coach/demo-review", "/api/coach/waitlist", "/api/coach/weekly", RIDE_POST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE, RIDE_CHAT, RIDE_LIVE, RIDE_IMPORT, RIDE_WEATHER)))
+        allowed = ((method == "GET" and (parsed.path in ("/", "/privacy", "/terms", "/api/coach/config", "/api/coach/activities", "/ride", "/ride.webmanifest", "/icon.svg", RIDE_LIST, RIDE_NOTES) or font_path is not None)) or
+                   (method == "POST" and path in ("/api/coach/connect", "/api/coach/review", "/api/coach/review-l2", "/api/coach/demo-review", "/api/coach/waitlist", "/api/coach/weekly", RIDE_POST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE, RIDE_CHAT, RIDE_LIVE, RIDE_IMPORT, RIDE_WEATHER, RIDE_NOTE, RIDE_NOTE_DELETE)))
         require(allowed, "Endpoint not found", "not_found", 404)
         if method == "POST":
             require(headers.get("Transfer-Encoding") is None and headers.get("Content-Type") == "application/json", "Fixed-length JSON required", "invalid_body", 415)
@@ -286,7 +295,7 @@ class App:
 
     def dispatch(self, method, path, headers, body=b"", port=DEFAULT_PORT):
         length = self.preflight(method, path, headers, port)
-        if urlsplit(path).path in (RIDE_POST, RIDE_LIST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE, RIDE_CHAT, RIDE_LIVE, RIDE_IMPORT, RIDE_WEATHER):
+        if urlsplit(path).path in (RIDE_POST, RIDE_LIST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE, RIDE_CHAT, RIDE_LIVE, RIDE_IMPORT, RIDE_WEATHER, RIDE_NOTES, RIDE_NOTE, RIDE_NOTE_DELETE):
             self._ride_rate_limit(method)
         if method == "POST" and path == "/api/coach/billing/webhook":
             require(len(body) == length, "Incomplete request body", "invalid_body")
@@ -321,6 +330,9 @@ class App:
             parsed = urlsplit(path)
             if parsed.path == RIDE_LIST:
                 return self._ride_sessions(parsed.query)
+            if parsed.path == RIDE_NOTES:
+                require(not parsed.query, "Endpoint not found", "not_found", 404)
+                return self._list_notes()
             require(parsed.path == "/api/coach/activities", "Endpoint not found", "not_found", 404)
             try:
                 query = parse_qs(parsed.query, keep_blank_values=True, strict_parsing=True, max_num_fields=1)
@@ -347,6 +359,10 @@ class App:
             return self._route_ride(payload)
         if path == RIDE_WEATHER:
             return self._weather_ride(payload)
+        if path == RIDE_NOTE:
+            return self._add_note(payload)
+        if path == RIDE_NOTE_DELETE:
+            return self._delete_note(payload)
         if path == RIDE_WEEKLY:
             return self._weekly_ride(payload)
         if path == RIDE_REVIEW:
@@ -569,6 +585,13 @@ class App:
             # Usage profile: medians over the same honest scope (real sessions
             # only). Below three records Mark stays silent about "usual".
             profile = _usage_profile(entries)
+            # User-voiced notes: verbatim context for the answer. A corrupt
+            # note store degrades to no notes — the notes panel reports the
+            # error honestly, but one bad file never blocks a question.
+            try:
+                user_notes = [entry["text"] for entry in load_notes(self.notes_path)]
+            except NoteError:
+                user_notes = []
         # Two lanes, one door: personal-record questions try the private lane
         # first; everything else tries the grounded knowledge library. The
         # other lane is consulted once when the preferred one cannot answer.
@@ -605,7 +628,8 @@ class App:
                     recent_summaries=copy.deepcopy(recent),
                     activity_ordinal=ordinal if ordinal else None,
                     excluded_simulated=excluded_simulated, totals=totals, history=dialog,
-                    profile=profile, week=week, http_post=self.llm_post, **kw),
+                    profile=profile, week=week, notes=list(user_notes),
+                    http_post=self.llm_post, **kw),
                 question=question)
 
         def knowledge():
@@ -787,6 +811,40 @@ class App:
                                api_key=os.environ.get("AMAP_API_KEY"), http_get=self.nav_get)
         require(result["weather_status"] != "invalid_input", "Invalid coordinates")
         return result
+
+    def _list_notes(self):
+        """Every user-voiced note, oldest first; storage errors stay honest."""
+        with self._ride_lock:
+            try:
+                notes = load_notes(self.notes_path)
+            except NoteError as error:
+                status = 503 if error.code in ("storage_unavailable", "storage_corrupt") else 400
+                raise ActionError(error.code, str(error), status) from None
+        return {"notes": notes}
+
+    def _add_note(self, payload):
+        """Store one verbatim user note; the parent directory is created on demand."""
+        require(type(payload) is dict and set(payload) == {"text"}, "Expected text only")
+        with self._ride_lock:
+            require(not self.ride_dir.is_symlink(), "Ride storage unavailable", "storage_unavailable", 503)
+            self.ride_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+            try:
+                entry = add_note(self.notes_path, payload["text"])
+            except NoteError as error:
+                status = 503 if error.code in ("storage_unavailable", "storage_corrupt") else (
+                    409 if error.code == "note_limit" else 400)
+                raise ActionError(error.code, str(error), status) from None
+        return {"status": "saved", "id": entry["id"], "created_at": entry["created_at"]}
+
+    def _delete_note(self, payload):
+        require(type(payload) is dict and set(payload) == {"id"}, "Expected id only")
+        with self._ride_lock:
+            try:
+                return remove_note(self.notes_path, payload["id"])
+            except NoteError as error:
+                status = 404 if error.code == "not_found" else (
+                    503 if error.code in ("storage_unavailable", "storage_corrupt") else 400)
+                raise ActionError(error.code, str(error), status) from None
 
     def _ride_rate_limit(self, method):
         """Bound local disk traffic per single-user app, never an upstream quota.

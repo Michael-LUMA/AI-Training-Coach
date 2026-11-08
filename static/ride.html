@@ -100,6 +100,8 @@ h1 .grad{color:var(--accent)}
 #history-list button{display:block;width:100%;text-align:left;margin:6px 0;padding:10px 12px}
 #history-list button[aria-pressed=true]{border-color:var(--accent-text);font-weight:600}
 #history-list .tag{display:inline-block;margin-left:8px;padding:1px 7px;border:1px solid var(--line);border-radius:6px;font-size:11px;color:var(--faint)}
+#notes-list .note-row{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:6px 0;padding:8px 12px;border:1px solid var(--line);border-radius:9px}
+#notes-list .note-row button{flex:none;padding:2px 10px;font-size:12px}
 #voice-command{position:fixed;right:18px;bottom:18px;z-index:50;border-radius:999px;padding:14px 22px}
 #live-toggle{position:fixed;right:18px;bottom:84px;z-index:50;border-radius:999px;padding:12px 20px;opacity:.92}
 #live-toggle.on{font-weight:700;opacity:1}
@@ -210,6 +212,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px/1.75 var(--mono);max
 <div class="mapcol">
 <section id="memory-card" class="panel" hidden aria-labelledby="memory-heading"><h2 id="memory-heading" data-i18n="memory-h">Mark 的记忆</h2><p id="memory-recall"></p><p id="memory-source" class="warn" hidden></p><button id="memory-listen" type="button" class="secondary" data-i18n="listen">听 Mark 说</button></section>
 <section id="history-panel" class="panel" hidden aria-labelledby="history-heading"><h2 id="history-heading" data-i18n="history-h">历史记录</h2><p class="note" data-i18n="history-note">按开始时间倒序，最多显示最近 20 条；点击任意一条查看它的复盘与问答。来源（心率带/导入/模拟）逐条如实标注。</p><div id="history-list"></div></section>
+<section id="notes-panel" class="panel" aria-labelledby="notes-heading"><h2 id="notes-heading" data-i18n="notes-h">Mark 的备忘录</h2><p class="note" data-i18n="notes-note">你明确告诉 Mark 的事，原样记住、原样引用，最多 50 条；只在问答相关时才提起，不推断、不改写。存储在本服务，删除即消失。</p><div class="row"><input id="note-input" type="text" maxlength="140" placeholder="例如：我每周二四骑车" data-i18n-ph="note-ph"><button id="note-add" type="button" class="secondary" data-i18n="note-add">记住</button></div><p id="note-status" class="note" role="status" aria-live="polite"></p><div id="notes-list"></div></section>
 <section class="panel">
 <h2 data-i18n="summary-h">骑后一句话</h2>
 <p id="summary" class="summaryline" data-i18n="summary-init">结束后根据记录生成。没有数据的部分保持缺失。</p>
@@ -988,6 +991,50 @@ function selectHistory(memory){
   renderHistory(lastMemories||[]);
   void requestRideSpeech(memory);
 }
+// Verbatim memory: user-voiced notes, stored and quoted as-is. Rendering is a
+// pure enhancement — DOM-less harnesses skip it like the history list.
+function renderNotes(notes){
+  const list=$('notes-list');
+  if(!list || typeof document.createElement!=='function')return;
+  list.textContent='';
+  (notes||[]).forEach(note=>{
+    const row=document.createElement('div');row.className='note-row';
+    const text=document.createElement('span');text.textContent=note.text;
+    const del=document.createElement('button');del.type='button';del.className='secondary';del.textContent='删除';
+    del.addEventListener('click',()=>deleteNote(note.id));
+    row.appendChild(text);row.appendChild(del);list.appendChild(row);
+  });
+}
+async function loadNotes(){
+  try{
+    const token=await getToken();
+    const response=await fetch('/api/coach/ride/notes',{cache:'no-store',headers:{'X-Coach-Token':token}});
+    if(!response.ok)return;
+    const result=await response.json().catch(()=>null);
+    if(result && Array.isArray(result.notes))renderNotes(result.notes);
+  }catch(_){/* notes are an enhancement; the panel stays as-is */}
+}
+async function addNote(){
+  const input=$('note-input'), status=$('note-status');
+  const text=(input.value||'').trim();
+  if(!text)return;
+  status.textContent='';
+  try{
+    const token=await getToken();
+    const response=await fetch('/api/coach/ride/note',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify({text:text})});
+    const result=await response.json().catch(()=>null);
+    if(!response.ok){status.textContent=result && result.error_code==='note_limit' ? '备忘录已满（50 条），请先删除一条。' : '没记住（'+(result && result.error_code || ('HTTP '+response.status))+'）。';return;}
+    input.value='';
+    loadNotes();
+  }catch(error){status.textContent='没记住：'+error.message+'。';}
+}
+async function deleteNote(id){
+  try{
+    const token=await getToken();
+    await fetch('/api/coach/ride/note/delete',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify({id:id})});
+    loadNotes();
+  }catch(_){/* deletion failure leaves the note visible, honestly */}
+}
 async function loadRecall(){
   try {
     const memories=await fetchMemories();
@@ -995,6 +1042,7 @@ async function loadRecall(){
     renderWeekly(memories);
     renderGreeting(memories);
     renderHistory(memories);
+    loadNotes();
     if(!memories.length){console.debug(activePersona.recall_no_history);return;}
     const latestAvg=memories[0].summary && memories[0].summary.avg_hr;
     previousRideAvgHr=memoryNumber(latestAvg) ? latestAvg : null;
@@ -1797,6 +1845,8 @@ const IMPORT_ERRORS=Object.freeze({
   invalid_file:'文件解析失败，未导入。'
 });
 $('goto-import').addEventListener('click',()=>{const viewReview=$('view-review');if(viewReview)viewReview.checked=true;});
+$('note-add').addEventListener('click',addNote);
+$('note-input').addEventListener('keydown',event=>{if(event.key==='Enter')addNote();});
 $('import-pick').addEventListener('click',()=>$('import-file').click());
 $('import-file').addEventListener('change',async event=>{
   const files=Array.from(event.target.files||[]);
@@ -1876,6 +1926,8 @@ const I18N_EN=Object.freeze({
   'nav-plan':'Plan route', 'nav-clear':'Clear route', 'nav-mic':'Say it', 'nav-voice':'Voice reminder near turns (about 120 m ahead)',
   'memory-h':"Mark's memory", listen:'Hear Mark', listen2:'Hear Mark',
   'history-h':'History', 'history-note':'Newest first, up to the latest 20; tap any entry for its review and Q&A. The source (strap / import / simulated) is honestly tagged on every row.',
+  'notes-h':"Mark's notebook", 'notes-note':'Things you explicitly tell Mark are remembered and quoted verbatim, up to 50; they only come up when relevant to a question — never inferred from, never reworded. Stored on this service; deleting removes them for good.',
+  'note-ph':'e.g. I ride on Tuesdays and Thursdays', 'note-add':'Remember',
   'summary-h':'One line after the ride', 'summary-init':'Generated from the record after you finish. Whatever has no data stays missing.',
   'brain-h':'Mark thought it over',
   'chat-h':'Ask Mark', 'chat-send':'Ask', 'chat-ph':'Ask about this record…',
