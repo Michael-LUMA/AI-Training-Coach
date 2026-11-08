@@ -65,6 +65,8 @@ _PERSONAL_MARKERS = ("我", "这次", "上次", "最近", "今天", "昨天",
                      "这周", "本周", "这个月", "本月", "累计")
 _LIVE_SILENCE_S = 60.0      # 主动播报全局静默期：克制即智能
 _LIVE_FRESH_S = 30.0        # Three missed 10-second heartbeats make current facts unavailable.
+_CONV_TTL_S = 1800.0        # 对话记忆 30 分钟无活动自焚，只在内存，不落盘
+_CONV_MAX_TURNS = 3         # 只带最近 3 轮上下文：够接追问，不长尾泄露
 _LIVE_IDLE_S = 3 * 3600.0   # 实时会话空闲回收
 _LIVE_MAX_SESSIONS = 200    # 进程内存实时会话上限
 _LIVE_URGENT_TYPES = frozenset({"hr_high", "hr_low"})  # 安全事件直通，不受静默期约束
@@ -175,6 +177,10 @@ class App:
         self._knowledge_cards = None
         self._live = {}  # live_id -> [LiveSession, last_call_mono, last_seen_mono]
         self._live_lock = Lock()
+        # Dialog memory for follow-up questions: memory-only, TTL-bounded,
+        # never written to disk. conv_id -> [turns, last_seen_mono].
+        self._convs = {}
+        self._conv_lock = Lock()
 
     @property
     def knowledge_cards(self):
@@ -428,14 +434,17 @@ class App:
                 "fallback": result["fallback"], "usage": result["usage"]}
 
     def _chat_ride(self, payload):
-        """Stateless Q&A over stored sessions; cloud request outside the disk lock.
+        """Q&A over stored sessions; cloud request outside the disk lock.
 
         The question is data, never an instruction channel: bounded and validated
-        by build_ride_chat. No chat history is stored or sent upstream.
+        by build_ride_chat. Optional conv_id carries at most _CONV_MAX_TURNS
+        recent turns as context — memory-only, TTL-bounded, never persisted.
         """
         require(type(payload) is dict and set(payload) in ({"question"}, {"question", "session_id"},
-                                                        {"question", "live_id"}),
-                "Expected question and optional session_id or live_id")
+                                                        {"question", "live_id"}, {"question", "conv_id"},
+                                                        {"question", "session_id", "conv_id"},
+                                                        {"question", "live_id", "conv_id"}),
+                "Expected question and optional session_id, live_id or conv_id")
         live_id = payload.get("live_id")
         if live_id is not None:
             require(type(live_id) is str and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", live_id) is not None,
@@ -444,6 +453,12 @@ class App:
         if identifier is not None:
             require(type(identifier) is str and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", identifier) is not None,
                     "Invalid session_id")
+        conv_id = payload.get("conv_id")
+        if conv_id is not None:
+            require(type(conv_id) is str and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", conv_id) is not None,
+                    "Invalid conv_id")
+        dialog = self._dialog_read(conv_id)
+        question_for_record = payload["question"]
         with self._ride_lock:
             directory = self.ride_dir
             require(not directory.is_symlink(), "Ride storage unavailable", "storage_unavailable", 503)
@@ -530,9 +545,12 @@ class App:
             if live_facts is None:
                 return {"speech_status": "ok", "speech": LIVE_TEMPLATE,
                         "fallback": "template", "usage": None, "lane": "live"}
-            live = build_live_answer(question, live_facts, api_key=key, http_post=self.llm_post)
-            return {"speech_status": live["llm_status"], "speech": live["speech"],
-                    "fallback": live["fallback"], "usage": live["usage"], "lane": "live"}
+            live = build_live_answer(question, live_facts, history=dialog, api_key=key,
+                                     http_post=self.llm_post)
+            result = {"speech_status": live["llm_status"], "speech": live["speech"],
+                      "fallback": live["fallback"], "usage": live["usage"], "lane": "live"}
+            self._dialog_record(conv_id, question_for_record, result)
+            return result
         prefer_personal = any(marker in question for marker in _PERSONAL_MARKERS)
 
         def personal():
@@ -540,20 +558,51 @@ class App:
                 question, session=copy.deepcopy(memory) if memory is not None else None,
                 recent_summaries=copy.deepcopy(recent),
                 activity_ordinal=ordinal if ordinal else None,
-                excluded_simulated=excluded_simulated, totals=totals,
+                excluded_simulated=excluded_simulated, totals=totals, history=dialog,
                 api_key=key, http_post=self.llm_post)
 
         def knowledge():
             return "knowledge", build_knowledge_answer(
-                question, self.knowledge_cards, api_key=key, http_post=self.llm_post)
+                question, self.knowledge_cards, history=dialog,
+                api_key=key, http_post=self.llm_post)
 
         first, second = (personal, knowledge) if prefer_personal else (knowledge, personal)
         lane, result = first()
         if result["llm_status"] != "ok" and result["llm_status"] != "not_configured":
             lane, result = second()
-        return {"speech_status": result["llm_status"],
-                "speech": result["draft"]["speech"] if result["draft"] else None,
-                "fallback": result["fallback"], "usage": result["usage"], "lane": lane}
+        final = {"speech_status": result["llm_status"],
+                 "speech": result["draft"]["speech"] if result["draft"] else None,
+                 "fallback": result["fallback"], "usage": result["usage"], "lane": lane}
+        self._dialog_record(conv_id, question_for_record, final)
+        return final
+
+    def _dialog_read(self, conv_id):
+        """Recent turns for this conversation, or None when unknown/expired."""
+        if conv_id is None:
+            return None
+        now = time.monotonic()
+        with self._conv_lock:
+            for key in [key for key, entry in self._convs.items() if now - entry[1] >= _CONV_TTL_S]:
+                del self._convs[key]
+            entry = self._convs.get(conv_id)
+            if entry is None:
+                return None
+            entry[1] = now
+            return [dict(turn) for turn in entry[0]] or None
+
+    def _dialog_record(self, conv_id, question, result):
+        """Remember one answered turn; only successful speeches are remembered."""
+        if conv_id is None or result.get("speech_status") != "ok":
+            return
+        speech = result.get("speech")
+        if type(speech) is not str or not speech.strip():
+            return
+        now = time.monotonic()
+        with self._conv_lock:
+            entry = self._convs.get(conv_id)
+            turns = [] if entry is None else entry[0]
+            turns = (turns + [{"q": question, "a": speech}])[-_CONV_MAX_TURNS:]
+            self._convs[conv_id] = [turns, now]
 
     def _live_ride(self, payload):
         """In-ride companion: telemetry point in, bounded spoken calls out.

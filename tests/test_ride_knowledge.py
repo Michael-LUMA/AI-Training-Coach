@@ -148,6 +148,24 @@ class KnowledgeAnswerTests(unittest.TestCase):
     def test_template_snapshot(self):
         self.assertEqual(know.knowledge_template(), '这个我还没学过，等我的知识库收录了再聊。')
 
+    def test_history_projects_into_facts(self):
+        post = transport('踏频是曲柄每分钟转动的圈数。（来源：通用运动常识）')
+        history = [{'q': '踏频是什么？', 'a': '曲柄每分钟转动的圈数。'}]
+        result = know.build_knowledge_answer('那为什么不是车速？', self.cards, history=history,
+                                             api_key='synthetic-key', http_post=post)
+        self.assertEqual(result['llm_status'], 'ok')
+        facts = json.loads(json.loads(post.call_args.args[0].data)['messages'][1]['content'])
+        self.assertEqual(facts['recent_dialog'], history)
+
+    def test_invalid_history_rejected_without_upstream(self):
+        post = Mock(side_effect=AssertionError('no network'))
+        for history in ([{'q': '问', 'a': '答'}] * 4, [{'q': '问'}], '问'):
+            with self.subTest(history=repr(history)[:40]):
+                result = know.build_knowledge_answer('踏频是什么？', self.cards, history=history,
+                                                     api_key='synthetic-key', http_post=post)
+                self.assertEqual(result['llm_status'], 'rejected_bad_schema')
+        post.assert_not_called()
+
     def test_upstream_failures_map_to_fallback(self):
         for post in (Mock(return_value=(500, {}, b'{}')),
                      Mock(return_value=(200, {}, b'not json')),

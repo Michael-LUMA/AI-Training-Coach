@@ -43,6 +43,9 @@ facts 可能含 totals：sessions_count 是累计记录次数、duration_min 是
 distance_km 是累计公里（为 null 就完全不提）；totals.month 是本月
 （sessions 次数、duration_min 分钟、distance_km 公里）。总量只陈述数值，
 禁止推断训练效果，禁止『坚持得不错』类评价。
+facts 可能含 recent_dialog（我与用户的最近几轮问答，旧到新）：
+用于理解「那为什么」「这次呢」等追问的指代；recent_dialog 里的数字只供
+语境参考，回答里的数字仍必须来自 facts 本体。
 固定句式（按问题里的触发词选对应句式，照用不改，只替换数字，
 数字必须来自 facts；一句问题只用一种句式，不混用）：
 - 最近单次：「最近这次平均心率128 bpm，记录了30分钟。」
@@ -105,6 +108,27 @@ def _check_question(question):
             or any(ord(c) < 32 or ord(c) == 127 for c in question)):
         raise ValueError('invalid question')
     return question
+
+
+def _check_history(history):
+    """Recent turns as bounded context data. At most 3, oldest first.
+
+    History travels inside facts so it can clarify follow-ups; it never
+    registers numbers — verification still binds speech to current facts.
+    """
+    if type(history) is not list or len(history) > 3:
+        raise ValueError('invalid history')
+    turns = []
+    for turn in history:
+        if type(turn) is not dict or set(turn) != {'q', 'a'}:
+            raise ValueError('invalid history turn')
+        q, a = turn['q'], turn['a']
+        if (type(q) is not str or not 1 <= len(q) <= 200
+                or type(a) is not str or not 1 <= len(a) <= 300
+                or any(ord(c) < 32 or ord(c) == 127 for c in q + a)):
+            raise ValueError('invalid history turn')
+        turns.append({'q': q, 'a': a})
+    return turns
 
 
 def _history_facts(recent_summaries, activity_ordinal, excluded_simulated):
@@ -185,6 +209,7 @@ def build_ride_chat(question, session: dict | None = None,
                     activity_ordinal: int | None = None,
                     excluded_simulated: int | None = None, *,
                     totals: dict | None = None,
+                    history: list | None = None,
                     api_key: str | None = None, http_post=None) -> dict:
     """Answer one bounded Chinese question, or return an honest template fallback.
 
@@ -198,7 +223,9 @@ def build_ride_chat(question, session: dict | None = None,
             (status, headers, bytes). No retry; production adapter blocks redirects.
     Returns:
         llm_status/draft/usage/fallback, same shape as build_ride_review.
-        Every rejected draft is discarded entirely. No chat history is sent.
+        Every rejected draft is discarded entirely. Optional history carries at
+        most 3 recent turns as context data; it never registers numbers and is
+        never persisted — the server holds it in memory only, TTL-bounded.
     Example:
         >>> build_ride_chat('这次心率多少？', api_key=None)['llm_status']
         'not_configured'
@@ -223,6 +250,8 @@ def build_ride_chat(question, session: dict | None = None,
             return _result('ok', None, '这个我没记到。')
         if facts.get('source') == 'simulated':
             facts['speech_rule'] = '本次是合成演示，speech 必须以「模拟记录：」开头'
+        if history is not None:
+            facts['recent_dialog'] = _check_history(history)
         facts['question'] = question
         payload = {'model': MODEL, 'max_tokens': MAX_TOKENS,
                    'response_format': {'type': 'json_object'},

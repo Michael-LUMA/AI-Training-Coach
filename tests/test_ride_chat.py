@@ -513,3 +513,148 @@ class ChatTotalsTests(unittest.TestCase):
 
 if __name__=='__main__':
     unittest.main()
+
+
+class ChatDialogHistoryTests(unittest.TestCase):
+    """Optional bounded dialog context: projected, validated, never registering numbers."""
+
+    def chat(self, question='这次心率多少？', **kwargs):
+        kwargs.setdefault('api_key', 'synthetic-key')
+        kwargs.setdefault('session', memory())
+        return ride_chat.build_ride_chat(question, **kwargs)
+
+    def test_history_projects_into_facts(self):
+        post = transport()
+        history = [{'q': '我心率多少？', 'a': '平均心率120 bpm。'},
+                   {'q': '为什么？', 'a': '只记录了1分钟。'}]
+        result = self.chat(history=history, http_post=post)
+        self.assertEqual(result['llm_status'], 'ok')
+        self.assertEqual(facts_of(post)['recent_dialog'], history)
+
+    def test_no_history_omits_recent_dialog(self):
+        post = transport()
+        self.assertEqual(self.chat(http_post=post)['llm_status'], 'ok')
+        self.assertNotIn('recent_dialog', facts_of(post))
+
+    def test_empty_history_projects_as_empty_dialog(self):
+        post = transport()
+        self.assertEqual(self.chat(history=[], http_post=post)['llm_status'], 'ok')
+        self.assertEqual(facts_of(post)['recent_dialog'], [])
+
+    def test_invalid_history_rejected_without_upstream(self):
+        post = Mock(side_effect=AssertionError('no network'))
+        cases = ([{'q': '问' * 201, 'a': '答'}], [{'q': '问', 'a': '答' * 301}],
+                 [{'q': '问'}], [{'q': '问', 'a': '答', 'x': 1}],
+                 [{'q': '', 'a': '答'}], [{'q': '问', 'a': ''}],
+                 [{'q': '问\n', 'a': '答'}], [{'q': '问', 'a': '答\x7f'}],
+                 [{'q': '问', 'a': '答'}] * 4, '问', 42, [{'q': 1, 'a': '答'}],
+                 [['问', '答']])
+        for history in cases:
+            with self.subTest(history=repr(history)[:40]):
+                result = self.chat(history=history, http_post=post)
+                self.assertEqual(result['llm_status'], 'rejected_bad_schema')
+        post.assert_not_called()
+
+    def test_history_numbers_never_register(self):
+        # 999 exists only inside the dialog context; quoting it must fail verification.
+        post = transport('这次平均心率999 bpm。')
+        history = [{'q': '我心率多少？', 'a': '刚才是999 bpm。'}]
+        result = self.chat(history=history, http_post=post)
+        self.assertEqual(result['llm_status'], 'rejected_unverifiable_number')
+
+    def test_history_not_mutated_and_boundaries_accepted(self):
+        history = [{'q': '问' * 200, 'a': '答' * 300}] * 3
+        snapshot = copy.deepcopy(history)
+        post = transport()
+        result = self.chat(history=history, http_post=post)
+        self.assertEqual(result['llm_status'], 'ok')
+        self.assertEqual(history, snapshot)
+        self.assertEqual(facts_of(post)['recent_dialog'], snapshot)
+
+
+class ChatConversationTests(unittest.TestCase):
+    """Server-side short memory: per conv_id, RAM-only, TTL-bounded, ok-turns only."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
+        self.post = transport()
+        self.app = coach_server.App(store=SimpleNamespace(path=Path(self.temp.name) / 'coach.sqlite3'),
+                                    llm_post=self.post)
+        self.env = patch.dict(os.environ, {'DASHSCOPE_API_KEY': ''})
+        self.env.start(); self.addCleanup(self.env.stop)
+
+    def request(self, path, payload, headers=None):
+        body = json.dumps(payload, ensure_ascii=False).encode()
+        default = {'Host': '127.0.0.1:8794', 'Origin': 'http://127.0.0.1:8794',
+                   'Content-Type': 'application/json', 'Content-Length': str(len(body)),
+                   'X-Coach-Token': self.app.token}
+        default.update(headers or {})
+        return self.app.dispatch('POST', path, default, body)
+
+    def save(self):
+        return self.request('/api/coach/ride/session', memory())
+
+    def ask(self, question, conv_id='conv-1'):
+        with patch.dict(os.environ, {'DASHSCOPE_API_KEY': 'synthetic-key'}):
+            return self.request('/api/coach/ride/chat',
+                                {'question': question, 'session_id': 'current', 'conv_id': conv_id})
+
+    def last_facts(self):
+        return json.loads(json.loads(self.post.call_args.args[0].data)['messages'][1]['content'])
+
+    def test_bad_conv_id_rejected_before_any_work(self):
+        for bad in ('conv id', '中文', '-x', 'x' * 65, '', 123, ['conv-1'], None):
+            if bad is None:
+                continue  # absence is fine; None as a value is a schema error below
+            with self.subTest(conv_id=repr(bad)):
+                with self.assertRaises(ActionError) as error:
+                    self.request('/api/coach/ride/chat', {'question': '心率？', 'conv_id': bad})
+                self.assertEqual(error.exception.status, 400)
+        self.post.assert_not_called()
+
+    def test_followup_carries_recent_dialog_and_isolates_conversations(self):
+        self.save()
+        first = self.ask('这次心率多少？')
+        self.assertEqual((first['speech_status'], first['lane']), ('ok', 'personal'))
+        second = self.ask('这次呢？')
+        self.assertEqual(second['speech_status'], 'ok')
+        self.assertEqual(self.last_facts()['recent_dialog'],
+                         [{'q': '这次心率多少？', 'a': first['speech']}])
+        # A different conversation sees nothing.
+        third = self.ask('这次呢？', conv_id='conv-2')
+        self.assertEqual(third['speech_status'], 'ok')
+        self.assertNotIn('recent_dialog', self.last_facts())
+
+    def test_only_successful_answers_are_remembered(self):
+        self.save()
+        self.post.return_value = transport('心率999。').return_value
+        result = self.ask('这次心率多少？')
+        self.assertNotEqual(result['speech_status'], 'ok')
+        self.assertNotIn('conv-1', self.app._convs)
+
+    def test_dialog_truncates_to_three_turns(self):
+        self.save()
+        for index in range(5):
+            self.assertEqual(self.ask(f'这次心率多少？第{index}问')['speech_status'], 'ok')
+        turns = self.app._convs['conv-1'][0]
+        self.assertEqual(len(turns), 3)
+        self.assertEqual(turns[0]['q'], '这次心率多少？第2问')
+
+    def test_idle_dialog_self_destructs(self):
+        self.save()
+        self.assertEqual(self.ask('这次心率多少？')['speech_status'], 'ok')
+        self.assertIn('conv-1', self.app._convs)
+        # Age the entry past the TTL; the next read sweeps it before use.
+        self.app._convs['conv-1'][1] -= coach_server._CONV_TTL_S + 1
+        self.assertIsNone(self.app._dialog_read('conv-1'))
+        self.assertNotIn('conv-1', self.app._convs)
+        # The follow-up question then carries no dialog context.
+        self.assertEqual(self.ask('这次呢？')['speech_status'], 'ok')
+        self.assertNotIn('recent_dialog', self.last_facts())
+
+    def test_memory_only_never_touches_disk(self):
+        self.save()
+        self.assertEqual(self.ask('这次心率多少？')['speech_status'], 'ok')
+        self.assertIn('conv-1', self.app._convs)
+        stored = [path.name for path in self.app.ride_dir.glob('*')]
+        self.assertEqual(stored, ['current.json'])

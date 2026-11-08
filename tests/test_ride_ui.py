@@ -1315,8 +1315,25 @@ class ChatCardUI(RideMemoryUI):
           return {answer:$('chat-answer').textContent,body:call?JSON.parse(call.body):null,shown:!$('chat-card').hidden};
         """, chat={'speech_status':'ok','speech':'这次平均心率120。','fallback':None,'usage':None})
         self.assertEqual(result['answer'], '这次平均心率120。')
-        self.assertEqual(result['body'], {'question': '这次心率多少？'})
+        self.assertEqual(result['body']['question'], '这次心率多少？')
+        self.assertRegex(result['body']['conv_id'], r'^conv-[A-Za-z0-9_-]{8,64}$')
+        self.assertEqual(set(result['body']), {'question', 'conv_id'})
         self.assertTrue(result['shown'])
+
+    def test_conv_id_stable_per_page_and_followup_ready(self):
+        result = self.run_js("""
+          $('chat-input').value='这次心率多少？';
+          await $('chat-send').click();
+          await _flush();
+          $('chat-input').value='为什么？';
+          await $('chat-send').click();
+          await _flush();
+          const ids=_calls.filter(c=>c.url==='/api/coach/ride/chat').map(c=>JSON.parse(c.body).conv_id);
+          return ids;
+        """, chat={'speech_status':'ok','speech':'这次平均心率120。','fallback':None,'usage':None})
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0], result[1])
+        self.assertRegex(result[0], r'^conv-')
 
     def test_empty_question_never_sends(self):
         result = self.run_js("""
@@ -1350,7 +1367,8 @@ class ChatCardUI(RideMemoryUI):
         for text in ('问 Mark', '问问这次记录…', 'chat_fallback',
                      '这个我现在答不上来，等我记到更多数据再聊。',
                      'chat-input', 'chat-send', 'chat-answer', 'chat-card', 'ride-persona/19',
-                     'chat-mic', 'chat-listen', 'chat_listening', '在听…', '听回答'):
+                     'chat-mic', 'chat-listen', 'chat_listening', '在听…', '听回答',
+                     '最近 3 轮问答暂存于服务器内存', '30 分钟无活动自动销毁', '不落盘'):
             with self.subTest(text=text):
                 self.assertIn(text, self.html)
 
@@ -1376,7 +1394,8 @@ class ChatCardUI(RideMemoryUI):
         self.assertEqual(result['micText'], '在听…')
         self.assertEqual(result['micAfter'], '说')
         self.assertEqual(result['input'], '这次心率多少')
-        self.assertEqual(result['body'], {'question': '这次心率多少'})
+        self.assertEqual(result['body']['question'], '这次心率多少')
+        self.assertRegex(result['body']['conv_id'], r'^conv-')
         self.assertEqual(result['answer'], '这次平均心率120。')
 
     def test_interim_transcript_not_sent_until_final(self):
@@ -1470,7 +1489,8 @@ class ChatCardUI(RideMemoryUI):
         """, sr=True, chat={'speech_status':'ok','speech':'这次平均心率120。','fallback':None,'usage':None})
         self.assertEqual(result['answer'], '这次平均心率120。')
         self.assertTrue(result['shown'])
-        self.assertEqual(result['body'], {'question': '我心率多少'})
+        self.assertEqual(result['body']['question'], '我心率多少')
+        self.assertRegex(result['body']['conv_id'], r'^conv-')
         self.assertEqual(result['spoken'], ['这次平均心率120。'])
 
     def test_typed_question_stays_silent(self):

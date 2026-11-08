@@ -207,7 +207,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px/1.75 var(--mono);max
 <h2 data-i18n="summary-h">骑后一句话</h2>
 <p id="summary" class="summaryline" data-i18n="summary-init">结束后根据记录生成。没有数据的部分保持缺失。</p>
 <section id="brain-card" hidden aria-labelledby="brain-heading"><h3 id="brain-heading" data-i18n="brain-h">Mark 想了想</h3><p id="brain-speech"></p><button id="brain-listen" type="button" class="secondary" data-i18n="listen2">听 Mark 说</button></section>
-<section id="chat-card" hidden aria-labelledby="chat-heading"><h3 id="chat-heading" data-i18n="chat-h">问 Mark</h3><div class="row"><input id="chat-input" type="text" maxlength="200" placeholder="问问这次记录…" data-i18n-ph="chat-ph"><button id="chat-send" type="button" class="secondary" data-i18n="chat-send">问</button><button id="chat-mic" type="button" class="secondary" data-i18n="chat-mic">说</button></div><div class="row"><p id="chat-answer" aria-live="polite"></p><button id="chat-listen" type="button" class="secondary" hidden data-i18n="chat-listen">听回答</button></div></section>
+<section id="chat-card" hidden aria-labelledby="chat-heading"><h3 id="chat-heading" data-i18n="chat-h">问 Mark</h3><div class="row"><input id="chat-input" type="text" maxlength="200" placeholder="问问这次记录…" data-i18n-ph="chat-ph"><button id="chat-send" type="button" class="secondary" data-i18n="chat-send">问</button><button id="chat-mic" type="button" class="secondary" data-i18n="chat-mic">说</button></div><div class="row"><p id="chat-answer" aria-live="polite"></p><button id="chat-listen" type="button" class="secondary" hidden data-i18n="chat-listen">听回答</button></div><p class="note" data-i18n="chat-note">为支持追问，最近 3 轮问答暂存于服务器内存并随当前问题一起发送给大模型；30 分钟无活动自动销毁，不落盘，服务重启即焚。刷新本页即开始新对话。</p></section>
 <p id="memory-compare" aria-live="polite" hidden></p>
 <p id="compare-source" class="warn" hidden></p>
 <p id="save-status" class="note" role="status" aria-live="polite" data-i18n="save-init">本片存储为 ephemeral：重启或重新部署可能丢失，请保留下载备份。</p>
@@ -308,6 +308,9 @@ let crankPrev = null, latestCad = null, latestPwr = null;
 let startedMs = 0, startedMono = 0, previous = null, lastSignal = null, gapOpen = false;
 let outsideSince = null, outsideKind = null, lastAlert = -Infinity, alerts = 0;
 let timer = null, simulator = null, lastSession = null, target = null;
+// Page-scoped conversation id for short follow-up memory (max 3 turns, server RAM only,
+// 30 min idle self-destruct, never persisted). A refresh starts a fresh conversation.
+const CONV_ID = (window.crypto && crypto.randomUUID) ? 'conv-' + crypto.randomUUID() : 'conv-' + Math.random().toString(36).slice(2, 12) + Date.now().toString(36);
 let totals = {below:0, within:0, above:0};
 let recallText = '', recallSpoken = false, comparisonRequest = 0;
 let brainSpeech = '', brainRequest = 0, chatRequest = 0;
@@ -844,7 +847,7 @@ async function askMark(options){
   const request=++chatRequest;
   $('chat-card').hidden=false;
   try {
-    const body={question:question};
+    const body={question:question,conv_id:CONV_ID};
     if(active && liveOn && liveId)body.live_id=liveId;
     else if(lastSession && lastSession.id)body.session_id=lastSession.id;
     const response=await fetch('/api/coach/ride/chat',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify(body)});
@@ -1544,6 +1547,7 @@ const I18N_EN=Object.freeze({
   compat:"Android Chrome supports Web Bluetooth; iOS Safari does not. Requires HTTPS or a localhost secure context. A phone cannot reach a computer's 127.0.0.1 address.",
   'fall-h':'Possible fall', 'fall-ok':"I'm OK, don't alarm",
   'conn-init':'Not connected', 'zone-init':'No target zone set', 'aux-init':'No power/cadence meter',
+  'chat-note':'To support follow-up questions, your last 3 Q&A turns are kept in server memory and sent to the model with the current question. They self-destruct after 30 idle minutes, are never written to disk, and vanish on restart. Reloading this page starts a new conversation.',
   'profile-h':'Heart-rate profile', 'profile-empty':'Once you start, your heart-rate profile is drawn here. Real samples only; gaps stay empty, never interpolated.',
   'timeline-h':'Raw timeline', 'timeline-note':'Only the latest 60 real samples. Gaps are marked, never interpolated or backfilled. More than 5 seconds without a reading also marks a signal gap.',
   'setup-h':'Set up recording',

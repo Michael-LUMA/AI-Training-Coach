@@ -22,7 +22,7 @@ from llm_review import (ENDPOINT, MAX_RESPONSE_BYTES, TIMEOUT_S,
 MODEL = "qwen-plus"
 from ride_brain import (MAX_TOKENS, _FORBIDDEN, _NUM, _UNITS,
                         _normalized_numbers, _result)
-from ride_chat import _check_question
+from ride_chat import _check_history, _check_question
 
 KNOWLEDGE_TEMPLATE = '这个我还没学过，等我的知识库收录了再聊。'
 SYSTEM_PROMPT = """你是 Mark，只用给定知识卡片内容回答用户问题。
@@ -31,6 +31,7 @@ SYSTEM_PROMPT = """你是 Mark，只用给定知识卡片内容回答用户问�
 数字（包括中文数字）必须来自命中卡片的 body 原文，并保持数值及单位含义。
 禁止训练处方和医疗诊断；公开人群指南只能作为指南介绍，不可变成个人计划。
 涉及伤病一律说「停止运动，找医生看看」，不得推断病因或给用药建议。
+recent_dialog 是最近几轮问答，仅供理解追问的指代，回答内容仍只能来自卡片。
 一两句，最多三句，口语化；结尾用「（来源：卡片source）」标明实际卡片的
 source 原文，不输出占位符；引用多个来源时用顿号连接。
 只输出 JSON {"speech":"..."}，speech 非空且最多300字，不要额外字段。
@@ -128,7 +129,7 @@ def _has_source(speech, cards):
                for group in permutations(sources, size))
 
 
-def build_knowledge_answer(question, cards, *, api_key=None, http_post=None):
+def build_knowledge_answer(question, cards, *, history=None, api_key=None, http_post=None):
     """Retrieve locally, send only matched cards, and discard rejected drafts."""
     try:
         question = _check_question(question)
@@ -145,6 +146,8 @@ def build_knowledge_answer(question, cards, *, api_key=None, http_post=None):
     try:
         numbers = _card_numbers(matched)
         facts = {'question': question, 'cards': matched}
+        if history is not None:
+            facts['recent_dialog'] = _check_history(history)
         payload = {'model': MODEL, 'max_tokens': MAX_TOKENS,
                    'response_format': {'type': 'json_object'},
                    'messages': [{'role': 'system', 'content': SYSTEM_PROMPT},
