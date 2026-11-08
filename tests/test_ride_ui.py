@@ -235,6 +235,58 @@ class RideMemoryUI(unittest.TestCase):
         else:
             self.assertNotIn('本周', result['text'])
 
+    def test_greeting_opens_last_week_on_monday_or_sunday_evening(self):
+        # Last week in "days ago" is (d, d+7) with d = days since this
+        # Monday (0..6), so only the narrow band 6-7 days ago is inside
+        # last week on every weekday. 6.5 days = 156h sits safely inside.
+        result = self.run_js("""
+          const mk=(ageH)=>({id:'a'+ageH,started_at:new Date(Date.now()-ageH*3600e3).toISOString(),summary:{avg_hr:130,duration_s:2700},source:'ble_gatt_0x180d'});
+          renderGreeting([mk(156),mk(158)]);
+          const now=new Date();
+          const trigger=now.getDay()===1||(now.getDay()===0&&now.getHours()>=18);
+          return {text:$('greeting').textContent,trigger:trigger};
+        """)
+        if result['trigger']:
+            self.assertIn('上周你骑了2次，一共90分钟。', result['text'])
+        else:
+            self.assertNotIn('上周', result['text'])
+
+    def test_greeting_last_week_omits_minutes_when_durations_missing(self):
+        result = self.run_js("""
+          const mk=(ageH)=>({id:'a'+ageH,started_at:new Date(Date.now()-ageH*3600e3).toISOString(),summary:{},source:'ble_gatt_0x180d'});
+          renderGreeting([mk(156),mk(158)]);
+          const now=new Date();
+          const trigger=now.getDay()===1||(now.getDay()===0&&now.getHours()>=18);
+          return {text:$('greeting').textContent,trigger:trigger};
+        """)
+        if result['trigger']:
+            self.assertIn('上周你骑了2次。', result['text'])
+            self.assertNotIn('上周你骑了2次，一共', result['text'])
+        else:
+            self.assertNotIn('上周', result['text'])
+
+    def test_greeting_no_last_week_line_without_last_week_rides(self):
+        # Rides 20+ days ago are never inside last week; the opener stays
+        # silent even on a trigger day.
+        result = self.run_js("""
+          const mk=(ageH)=>({id:'a'+ageH,started_at:new Date(Date.now()-ageH*3600e3).toISOString(),summary:{avg_hr:130,duration_s:3600},source:'ble_gatt_0x180d'});
+          renderGreeting([mk(20*24),mk(21*24)]);
+          return $('greeting').textContent;
+        """)
+        self.assertNotIn('上周', result)
+
+    def test_greeting_last_week_ignores_simulated_sessions(self):
+        # Two simulated rides last week plus one real recent ride: the real
+        # ride may itself fall in last week when the test runs on a Monday,
+        # so assert the simulated pair never inflates the count.
+        result = self.run_js("""
+          const mk=(ageH,source)=>({id:'a'+ageH,started_at:new Date(Date.now()-ageH*3600e3).toISOString(),summary:{avg_hr:130,duration_s:2700},source:source});
+          renderGreeting([mk(156,'simulated'),mk(158,'simulated'),mk(13,'ble_gatt_0x180d')]);
+          return $('greeting').textContent;
+        """)
+        self.assertNotIn('上周你骑了2次', result)
+        self.assertNotIn('上周你骑了3次', result)
+
     def test_greeting_mentions_usual_start_hour_with_three_sessions(self):
         result = self.run_js("""
           const mk=(ageH,hour)=>{const d=new Date(Date.now()-ageH*3600e3);d.setHours(hour,0,0,0);return {id:'a'+ageH,started_at:d.toISOString(),summary:{avg_hr:130,duration_s:3600},source:'ble_gatt_0x180d'};};
