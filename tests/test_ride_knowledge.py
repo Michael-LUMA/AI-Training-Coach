@@ -21,10 +21,10 @@ def transport(speech='踏频是曲柄每分钟转动的圈数，和车速不是�
 
 
 class KnowledgeCardLibraryTests(unittest.TestCase):
-    def test_shipped_library_loads_thirty_valid_cards(self):
+    def test_shipped_library_loads_eighty_valid_cards(self):
         cards = know.load_cards(CARDS_PATH)
-        self.assertEqual(len(cards), 30)
-        self.assertEqual(len({card['id'] for card in cards}), 30)
+        self.assertEqual(len(cards), 80)
+        self.assertEqual(len({card['id'] for card in cards}), 80)
 
     def test_load_cards_rejects_bad_files(self):
         import tempfile
@@ -52,6 +52,18 @@ class KnowledgeRetrieveTests(unittest.TestCase):
     def test_retrieve_hits_and_misses(self):
         self.assertEqual(retrieve_ids('踏频是什么？', self.cards)[0], 'cadence-basics')
         self.assertEqual(retrieve_ids('量子力学', self.cards), [])
+
+    def test_retrieve_covers_new_domains(self):
+        expected = {
+            '岔气怎么办': 'run-side-stitch',
+            '登山杖有用吗': 'hike-poles',
+            '跑后要不要拉伸': 'recovery-stretch',
+            '能量胶什么时候吃': 'gear-energy-gel',
+            '夜跑怎么更安全': 'gear-reflective',
+        }
+        for question, top_id in expected.items():
+            with self.subTest(question=question):
+                self.assertEqual(retrieve_ids(question, self.cards)[0], top_id)
 
     def test_retrieve_is_deterministic(self):
         first = retrieve_ids('骑行怎么补水？', self.cards)
