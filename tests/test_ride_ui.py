@@ -163,6 +163,64 @@ class RideMemoryUI(unittest.TestCase):
         self.assertIn('145 bpm', result)
         self.assertIn('11月6日', result)
 
+    def test_greeting_after_two_days_away(self):
+        result = self.run_js("""
+          const mk=ageH=>({id:'a',started_at:new Date(Date.now()-ageH*3600e3).toISOString(),summary:{avg_hr:130,duration_s:3600},source:'ble_gatt_0x180d'});
+          renderGreeting([mk(50)]);
+          return {hidden:$('greeting').hidden,text:$('greeting').textContent};
+        """)
+        self.assertFalse(result['hidden'])
+        self.assertIn('2天没见。', result['text'])
+        self.assertIn('记录了60分钟', result['text'])
+        self.assertIn('130 bpm', result['text'])
+        self.assertTrue(result['text'].endswith('今天出门吗？'), result['text'])
+
+    def test_greeting_silent_under_twelve_hours(self):
+        result = self.run_js("""
+          const mk=ageH=>({id:'a',started_at:new Date(Date.now()-ageH*3600e3).toISOString(),summary:{avg_hr:130,duration_s:3600},source:'ble_gatt_0x180d'});
+          renderGreeting([mk(3)]);
+          return {hidden:$('greeting').hidden,text:$('greeting').textContent};
+        """)
+        self.assertTrue(result['hidden'])
+        self.assertEqual(result['text'], '')
+
+    def test_greeting_hours_phrasing_same_day(self):
+        result = self.run_js("""
+          const mk=ageH=>({id:'a',started_at:new Date(Date.now()-ageH*3600e3).toISOString(),summary:{avg_hr:130,duration_s:3600},source:'ble_gatt_0x180d'});
+          renderGreeting([mk(15)]);
+          return $('greeting').textContent;
+        """)
+        self.assertIn('15个小时没见。', result)
+
+    def test_greeting_long_absence_says_still_here(self):
+        result = self.run_js("""
+          const mk=ageH=>({id:'a',started_at:new Date(Date.now()-ageH*3600e3).toISOString(),summary:{avg_hr:130,duration_s:3600},source:'ble_gatt_0x180d'});
+          renderGreeting([mk(24*10)]);
+          return $('greeting').textContent;
+        """)
+        self.assertIn('10天没见了，我还在。', result)
+
+    def test_greeting_ignores_simulated_and_empty_history(self):
+        result = self.run_js("""
+          const mk=(ageH,source)=>({id:'a',started_at:new Date(Date.now()-ageH*3600e3).toISOString(),summary:{avg_hr:130,duration_s:3600},source:source});
+          renderGreeting([mk(50,'simulated')]);
+          const simHidden=$('greeting').hidden;
+          renderGreeting([]);
+          return {sim:simHidden,empty:$('greeting').hidden};
+        """)
+        self.assertTrue(result['sim'])
+        self.assertTrue(result['empty'])
+
+    def test_greeting_omits_missing_metrics(self):
+        result = self.run_js("""
+          const mk=ageH=>({id:'a',started_at:new Date(Date.now()-ageH*3600e3).toISOString(),summary:{},source:'ble_gatt_0x180d'});
+          renderGreeting([mk(50)]);
+          return $('greeting').textContent;
+        """)
+        self.assertNotIn('null', result)
+        self.assertNotIn('分钟', result)
+        self.assertEqual(result, '2天没见。今天出门吗？')
+
     def test_explicit_listen_and_first_start_are_user_gated(self):
         result = self.run_js("await $('start-ride').click(); return {spoken:_spoken,version:session.persona_version};", history=[metadata()], simulate=True)
         self.assertEqual(len(result['spoken']), 1)

@@ -194,6 +194,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px/1.75 var(--mono);max
 <div class="row"><label><span data-i18n="nav-dest">目的地（地址或地名）</span><input id="nav-destination" type="text" maxlength="100" placeholder="例如：奥林匹克森林公园南园" data-i18n-ph="nav-ph"></label></div>
 <div class="row"><button id="nav-plan" type="button" class="secondary" data-i18n="nav-plan">规划骑行路线</button><button id="nav-mic" type="button" class="secondary" data-i18n="nav-mic">说目的地</button><button id="nav-clear" type="button" class="secondary" hidden data-i18n="nav-clear">清除路线</button></div>
 <p id="nav-status" class="note" role="status" aria-live="polite"></p>
+<p id="greeting" class="note" role="status" hidden></p>
 <pre id="nav-steps" aria-label="路线步骤"></pre>
 <div class="row"><label class="check"><input id="nav-voice" type="checkbox" checked><span data-i18n="nav-voice">接近转向时语音提醒（约 120 米前）</span></label></div>
 </section>
@@ -242,6 +243,13 @@ const PERSONA = Object.freeze({
   version:'ride-persona/19', name:'Mark', above:'心率超过你设的上限了。', below:'心率低于你设的下限了。', disconnected:'心率信号断了，我看不到读数。', short:'记录太短，我还总结不了。',
   recall:parts=>'我记得上次'+parts.join('，')+'。记录还很少，这不算趋势。',
   recall_no_history:'我还没有可回放的历史记录。',
+  // Revisit greeting: text-only on page load (never auto-speaks), honest about
+  // elapsed time, silent when the last real session is fresher than 12 hours,
+  // and never built on simulated records.
+  greeting_hours:(h)=>h+'个小时没见。',
+  greeting_days:(n)=>n+'天没见。',
+  greeting_long:(n)=>n+'天没见了，我还在。',
+  greeting_tail:'今天出门吗？',
   compare_better:(label,amount,unit)=>'我看到'+label+'比上次'+(unit==='分钟' ? '少' : '低')+amount+unit+'。',
   compare_worse:(label,amount,unit)=>'我看到'+label+'比上次'+(unit==='分钟' ? '多' : '高')+amount+unit+'。',
   compare_flat:(label,current,previous,unit)=>'我看到'+label+'变化不超过3%（本次'+current+unit+'，上次'+previous+unit+'）。',
@@ -842,10 +850,27 @@ async function listenWeekly(){
   // A requested weekly playback must not interrupt live riding alerts.
   if(!active)speak(text);
 }
+// Mark notices absence, from local history only. The greeting reports elapsed
+// time plus the same bounded recall facts; it asks a question, never prescribes.
+function renderGreeting(memories){
+  const el=$('greeting');if(!el)return;
+  const real=memories.filter(m=>m && m.source!=='simulated');
+  const latest=real[0];
+  const age=latest ? Date.now()-memoryTime(latest) : NaN;
+  if(!Number.isFinite(age) || age<12*3600e3){el.hidden=true;return;}
+  const days=Math.floor(age/86400e3);
+  const head=days>=7 ? activePersona.greeting_long(days) : days>=1 ? activePersona.greeting_days(days) : activePersona.greeting_hours(Math.floor(age/3600e3));
+  const summary=latest.summary || {}, parts=[];
+  if(memoryNumber(summary.duration_s))parts.push('记录了'+memoryValue(summary.duration_s/60)+'分钟');
+  if(memoryNumber(summary.avg_hr))parts.push('样本平均心率'+memoryValue(summary.avg_hr)+' bpm');
+  el.textContent=head+(parts.length ? '上次'+parts.join('，')+'。' : '')+activePersona.greeting_tail;
+  el.hidden=false;
+}
 async function loadRecall(){
   try {
     const memories=await fetchMemories();
     renderWeekly(memories);
+    renderGreeting(memories);
     if(!memories.length){console.debug(activePersona.recall_no_history);return;}
     const latestAvg=memories[0].summary && memories[0].summary.avg_hr;
     previousRideAvgHr=memoryNumber(latestAvg) ? latestAvg : null;
