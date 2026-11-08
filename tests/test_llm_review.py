@@ -126,6 +126,25 @@ class LLMReviewTests(unittest.TestCase):
                 self.assertEqual(self.build(draft_fixture(text))["llm_status"], "ok")
         self.assert_fallback(self.build(draft_fixture("Power was 175.4 W.")), "rejected_unverifiable_number")
 
+    def test_exact_ties_accepted_in_both_rounding_directions(self):
+        # 175.25 -> 175.2 (ties-to-even / truncation) is as truthful as 175.3.
+        self.review["facts"]["metrics"]["average_power_w"]["value"] = 175.25
+        for text in ("Power was 175.2 W.", "Power was 175.3 W.", "Power was 175W."):
+            with self.subTest(text=text):
+                self.assertEqual(self.build(draft_fixture(text))["llm_status"], "ok")
+
+    def test_integer_ties_accepted_in_both_directions(self):
+        self.review["facts"]["metrics"]["average_power_w"]["value"] = 174.5
+        for text in ("Power was 174W.", "Power was 175W."):
+            with self.subTest(text=text):
+                self.assertEqual(self.build(draft_fixture(text))["llm_status"], "ok")
+
+    def test_beyond_half_a_unit_remains_fabrication(self):
+        self.review["facts"]["metrics"]["average_power_w"]["value"] = 175.26
+        self.assert_fallback(self.build(draft_fixture("Power was 175.2 W.")), "rejected_unverifiable_number")
+        self.review["facts"]["metrics"]["average_power_w"]["value"] = 174.51
+        self.assert_fallback(self.build(draft_fixture("Power was 173W.")), "rejected_unverifiable_number")
+
     def test_scientific_notation_cannot_relax_integer_precision(self):
         for text in ("Power was 1.8e2 W.", "Power was 18e1 W.", "Power was .18e3 W."):
             with self.subTest(text=text):

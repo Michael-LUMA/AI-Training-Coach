@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Callable, Mapping
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP, localcontext
+from decimal import Decimal, InvalidOperation, localcontext
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
@@ -189,6 +189,7 @@ def _verified_text(text: str, numbers: list) -> bool:
             return False
         # Scientific notation must not relax integer precision (175 != 1.8e2).
         quantum = Decimal(1).scaleb(min(0, claimed.as_tuple().exponent))
+        half = quantum / 2
         found = False
         for value, source_unit in numbers:
             if unit is None:
@@ -197,7 +198,11 @@ def _verified_text(text: str, numbers: list) -> bool:
                 equivalent = value * Decimal(_UNITS[source_unit][1]) / Decimal(_UNITS[unit][1])
             else:
                 continue
-            if equivalent.quantize(quantum, rounding=ROUND_HALF_UP) == claimed:
+            # Any standard rounding of the fact at the claim's precision is
+            # accepted: |claim - fact| <= half a quantum covers round-half-up,
+            # round-half-even and truncation at exact ties (175.25 -> 175.2 or
+            # 175.3 alike). Anything beyond half a unit remains fabrication.
+            if abs(equivalent - claimed) <= half:
                 found = True
                 break
         if not found:
@@ -228,7 +233,8 @@ def build_llm_review(review: dict, *, api_key: str | None,
         >>> build_llm_review({'facts': {}}, api_key=None)['llm_status']
         'not_configured'
 
-    Digit claims use Decimal same-precision rounding and unit-aware conversions.
+    Digit claims use Decimal unit-aware conversions; any standard rounding of a
+    fact at the claim's precision verifies (ties accepted in both directions).
     Existing fact_refs (including list indices) are checked as paths, not claims.
     This is a numeric/schema guard, NOT proof of semantic or medical safety.
     """
