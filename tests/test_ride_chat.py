@@ -105,9 +105,22 @@ class ChatFactsTests(unittest.TestCase):
 
     def test_empty_history_facts_are_reachable_i_dont_know(self):
         post=transport('这个我没记到。')
-        result=self.chat(question='我上周爬升多少？',session=None,http_post=post)
+        result=self.chat(question='我上周骑了多久？',session=None,http_post=post)
         self.assertEqual(result['llm_status'],'ok')
-        self.assertEqual(facts_of(post),{'question':'我上周爬升多少？'})
+        self.assertEqual(facts_of(post),{'question':'我上周骑了多久？'})
+
+    def test_missing_sensor_metric_short_circuits_without_llm(self):
+        post=transport('平均踏频92转。')
+        result=self.chat(question='我这次的平均踏频是多少？',session=None,http_post=post)
+        self.assertEqual(result['llm_status'],'ok')
+        self.assertEqual(result['draft'],{'speech':'这个我没记到。'})
+        post.assert_not_called()
+
+    def test_missing_metric_gate_unit_levels(self):
+        self.assertTrue(ride_chat._missing_metric_answer('我这次踏频多少？',{'summary':{'duration_s':60}}))
+        self.assertFalse(ride_chat._missing_metric_answer('我这次踏频多少？',{'summary':{'avg_cadence':88}}))
+        self.assertFalse(ride_chat._missing_metric_answer('我该怎么练踏频？',{'summary':{}}))
+        self.assertFalse(ride_chat._missing_metric_answer('我心率多少？',{'summary':{}}))
 
     def test_no_chat_history_in_payload(self):
         post=transport()

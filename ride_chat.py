@@ -38,6 +38,21 @@ facts 可能含 totals：sessions_count 是累计记录次数、duration_min 是
 distance_km 是累计公里（为 null 就完全不提）；totals.month 是本月
 （sessions 次数、duration_min 分钟、distance_km 公里）。总量只陈述数值，
 禁止推断训练效果，禁止『坚持得不错』类评价。
+固定句式（按问题里的触发词选对应句式，照用不改，只替换数字，
+数字必须来自 facts；一句问题只用一种句式，不混用）：
+- 最近单次：「最近这次平均心率128 bpm，记录了30分钟。」
+- 累计总量：「累计记录了360分钟、120公里。」（单位为 null 的项整项不提）
+- 本月：「本月记录了4次、90分钟、30公里。」
+- 触发词「多少公里、目标、骑多远」→「我只记录已有骑行，不能替你制定明天的骑行目标。」
+- 触发词「心率多高、强度、骑多久、怎么练、变强」→「我只能复述已记录的数据，不能制定运动强度和时长。」
+- 触发词「病、有病、异常、要不要去医院」→「骑行记录不能判断是否患病，我只能说明已记录的数据。」
+- 触发词「药、剂量、毫克、吃什么」→「我不能提供用药和剂量信息，只能复述已有记录。」
+- 估算诱导（VO2max、FTP 等没记到的指标）→「这个我没记到。」
+被问没记到的指标时，speech 只能是「这个我没记到。」这一句，
+其中不得出现任何数字（含中文数字），不附带其他句子。
+问题明确问的指标为 null 时，回答必须明确说该项「没记到」（如
+「这个我没记到距离」），不能只报其他指标假装没问。
+拒绝处方/医疗/用药时只说对应句式本身，不复述心率等记录数字。
 只输出 JSON {"speech":"..."}，speech 非空且最多300字，不要额外字段。
 """
 
@@ -45,6 +60,37 @@ distance_km 是累计公里（为 null 就完全不提）；totals.month 是本�
 def chat_template():
     """Honest local fallback line; also mirrored by the client."""
     return TEMPLATE
+
+
+# 诚实短路：问题明确指向的传感指标在 facts 里完全缺失时，不走 LLM，
+# 直接答「这个我没记到。」——问什么没什么，杜绝模型现场编造。
+_METRIC_KEYS = (('踏频', ('avg_cadence',)),
+                ('功率', ('avg_power', 'max_power')),
+                ('爬升', ('ascent_m',)),
+                ('海拔', ('ascent_m',)),
+                ('卡路里', ('calories',)),
+                ('热量', ('calories',)))
+_PRESCRIPTION_MARKERS = ('该', '应该', '怎么办', '怎么练', '目标', '建议', '计划',
+                         '病', '药', '医院')
+
+
+def _has_metric_number(node, keys):
+    if type(node) is dict:
+        for key, value in node.items():
+            if key in keys and type(value) in (int, float):
+                return True
+            if _has_metric_number(value, keys):
+                return True
+    elif type(node) is list:
+        return any(_has_metric_number(item, keys) for item in node)
+    return False
+
+
+def _missing_metric_answer(question, facts):
+    if any(marker in question for marker in _PRESCRIPTION_MARKERS):
+        return False
+    matched = [keys for word, keys in _METRIC_KEYS if word in question]
+    return bool(matched) and all(not _has_metric_number(facts, keys) for keys in matched)
 
 
 def _check_question(question):
@@ -167,6 +213,9 @@ def build_ride_chat(question, session: dict | None = None,
         if totals is not None:
             facts['totals'], extra = _totals_facts(totals)
             numbers.extend(extra)
+        if _missing_metric_answer(question, facts):
+            # 问什么没什么：诚实短路，不问模型，省一次上行也杜绝编造。
+            return _result('ok', None, '这个我没记到。')
         if facts.get('source') == 'simulated':
             facts['speech_rule'] = '本次是合成演示，speech 必须以「模拟记录：」开头'
         facts['question'] = question
