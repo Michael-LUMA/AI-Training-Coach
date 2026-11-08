@@ -1139,6 +1139,8 @@ function routeVoiceIntent(text){
   if(suffix&&suffix[1].trim().length>=2)return{kind:'nav',destination:suffix[1].trim()};
   const remember=cleaned.match(/^(?:帮我)?(?:记住|记一下|记着)(.+)$/);
   if(remember&&remember[1].trim())return{kind:'note',text:remember[1].trim()};
+  const forget=cleaned.match(/^(?:帮我)?(?:忘掉|删掉|删除)(.+)$/);
+  if(forget&&forget[1].trim())return{kind:'forget',text:forget[1].trim()};
   return{kind:'qa',question:cleaned};
 }
 function answerVoice(){
@@ -1148,6 +1150,8 @@ function answerVoice(){
       $('nav-destination').value=intent.destination;planNav();
     }else if(intent.kind==='note'){
       void voiceNote(intent.text);
+    }else if(intent.kind==='forget'){
+      void voiceForget(intent.text);
     }else if(intent.kind==='qa'){
       $('chat-card').hidden=false;$('chat-input').value=intent.question;askMark({speak:true});
     }
@@ -1158,6 +1162,26 @@ function answerVoice(){
 async function voiceNote(text){
   const ok=await addNote(text);
   const msg=ok?'记住了：'+text:($('note-status').textContent||'没记住，请稍后再试。');
+  $('chat-card').hidden=false;$('chat-answer').textContent=msg;$('chat-listen').hidden=false;
+  speak(msg);
+}
+// Voice-forget: deletion is destructive, so it only fires on exactly one
+// substring match; zero or ambiguous matches delete nothing and say so.
+async function voiceForget(text){
+  let msg;
+  try{
+    const token=await getToken();
+    const response=await fetch('/api/coach/ride/notes',{cache:'no-store',headers:{'X-Coach-Token':token}});
+    const result=response.ok?await response.json().catch(()=>null):null;
+    const matches=(result&&Array.isArray(result.notes)?result.notes:[]).filter(note=>typeof note.text==='string'&&note.text.includes(text));
+    if(matches.length===0){msg='没找到相关的备忘录，什么都没删。';}
+    else if(matches.length>1){msg='有 '+matches.length+' 条都沾边，没说准哪条，一条都没删。';}
+    else{
+      const del=await fetch('/api/coach/ride/note/delete',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify({id:matches[0].id})});
+      msg=del.ok?'已忘掉：'+matches[0].text:'没删掉，请稍后再试。';
+      if(del.ok)loadNotes();
+    }
+  }catch(_){msg='没删掉，请稍后再试。';}
   $('chat-card').hidden=false;$('chat-answer').textContent=msg;$('chat-listen').hidden=false;
   speak(msg);
 }

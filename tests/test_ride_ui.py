@@ -1906,6 +1906,46 @@ class ChatCardUI(RideMemoryUI):
         self.assertIn('140 字', result['answer'])
         self.assertFalse(result['called'])
 
+    def test_voice_forget_deletes_unique_match_and_speaks_it(self):
+        result = self.run_js("""
+          await $('voice-command').click();
+          const r=_sr[0];
+          const res=[{transcript:'忘掉周二四'}];res.isFinal=true;
+          r.onresult({resultIndex:0,results:[res]});
+          r.onend();
+          await _flush();await _flush();await _flush();
+          const del=_calls.find(c=>c.url==='/api/coach/ride/note/delete');
+          return {answer:$('chat-answer').textContent,spoken:_spoken,
+                  body:del?JSON.parse(del.body):null};
+        """, sr=True, notes=[{'id':'n7','text':'我每周二四骑车','created_at':'2026-11-09T00:00:00Z'}])
+        self.assertEqual(result['body'], {'id': 'n7'})
+        self.assertEqual(result['answer'], '已忘掉：我每周二四骑车')
+        self.assertEqual(result['spoken'], ['已忘掉：我每周二四骑车'])
+
+    def test_voice_forget_ambiguous_and_missing_delete_nothing(self):
+        result = self.run_js("""
+          await $('voice-command').click();
+          const r=_sr[0];
+          const res=[{transcript:'忘掉骑车'}];res.isFinal=true;
+          r.onresult({resultIndex:0,results:[res]});
+          r.onend();
+          await _flush();await _flush();await _flush();
+          const first=$('chat-answer').textContent;
+          await $('voice-command').click();
+          const r2=_sr[1];
+          const res2=[{transcript:'忘掉不存在的约定'}];res2.isFinal=true;
+          r2.onresult({resultIndex:0,results:[res2]});
+          r2.onend();
+          await _flush();await _flush();await _flush();
+          return {first,second:$('chat-answer').textContent,
+                  deletes:_calls.filter(c=>c.url==='/api/coach/ride/note/delete').length};
+        """, sr=True, notes=[{'id':'n1','text':'我每周二四骑车','created_at':'2026-11-09T00:00:00Z'},
+                             {'id':'n2','text':'骑车前检查胎压','created_at':'2026-11-09T00:00:00Z'}])
+        self.assertIn('2 条都沾边', result['first'])
+        self.assertIn('一条都没删', result['first'])
+        self.assertIn('没找到', result['second'])
+        self.assertEqual(result['deletes'], 0)
+
     def test_typed_question_stays_silent(self):
         result = self.run_js("""
           $('chat-input').value='我心率多少';
