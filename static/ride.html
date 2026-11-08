@@ -97,6 +97,7 @@ h1 .grad{color:var(--accent)}
 .panel.alert{border:1px solid rgba(229,72,77,.55);background:rgba(229,72,77,.05)}
 .countdown{font:800 64px/1 var(--sans);margin:0 0 8px;font-variant-numeric:tabular-nums;color:var(--route)}
 .row{display:flex;gap:14px;flex-wrap:wrap;margin:12px 0}
+#voice-command{position:fixed;right:18px;bottom:18px;z-index:50;border-radius:999px;padding:14px 22px}
 label{display:grid;gap:6px;flex:1;font-size:12.5px;font-weight:600;min-width:140px;color:#B9C3CE}
 label.check{display:flex;flex-direction:row;align-items:center;gap:10px;flex:none;color:var(--ink);font-size:13px}
 input,select,button{font:inherit}
@@ -229,11 +230,12 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px/1.75 var(--mono);max
 <p><span data-i18n="f4">MARK · 骑行工作台 · Early access · </span><a href="?simulate=1" data-i18n="f5">打开模拟模式</a></p>
 </footer>
 </main>
+<button id="voice-command" type="button" data-i18n="voice-cmd">对 Mark 说话</button>
 <script>
 'use strict';
 // Device adapter only: ride_memory.py owns the reusable versioned memory contract.
 const PERSONA = Object.freeze({
-  version:'ride-persona/17', name:'Mark', above:'心率超过你设的上限了。', below:'心率低于你设的下限了。', disconnected:'心率信号断了，我看不到读数。', short:'记录太短，我还总结不了。',
+  version:'ride-persona/18', name:'Mark', above:'心率超过你设的上限了。', below:'心率低于你设的下限了。', disconnected:'心率信号断了，我看不到读数。', short:'记录太短，我还总结不了。',
   recall:parts=>'我记得上次'+parts.join('，')+'。记录还很少，这不算趋势。',
   recall_no_history:'我还没有可回放的历史记录。',
   compare_better:(label,amount,unit)=>'我看到'+label+'比上次'+(unit==='分钟' ? '少' : '低')+amount+unit+'。',
@@ -286,7 +288,7 @@ const PERSONA = Object.freeze({
   chat_title:'问 Mark', chat_placeholder:'问问这次记录…', chat_send:'问',
   chat_fallback:'这个我现在答不上来，等我记到更多数据再聊。',
   chat_mic:'说', chat_listening:'在听…', chat_listen:'听回答',
-  nav_mic:'说目的地'
+  nav_mic:'说目的地', voice_command:'对 Mark 说话'
 });
 const SERVICE = 0x180D, CHARACTERISTIC = 0x2A37;
 const CSC_SERVICE = 0x1816, CSC_MEASUREMENT = 0x2A5B, POWER_SERVICE = 0x1818, POWER_MEASUREMENT = 0x2A63;
@@ -827,7 +829,7 @@ async function requestRideSpeech(memory){
   }catch(_){ /* Quiet, honest fallback: existing template is never removed. */ }
 }
 // Q&A never speaks: the answer is text only, fallback is the honest local line.
-async function askMark(){
+async function askMark(options){
   const question=($('chat-input').value||'').trim();
   if(!question)return;
   const request=++chatRequest;
@@ -845,16 +847,39 @@ async function askMark(){
       $('chat-answer').textContent=activePersona.chat_fallback;
     }
     $('chat-listen').hidden=!$('chat-answer').textContent;
+    if(options&&options.speak&&$('chat-answer').textContent)speak($('chat-answer').textContent);
   }catch(_){
     if(request!==chatRequest)return;
     $('chat-answer').textContent=activePersona.chat_fallback;
     $('chat-listen').hidden=false;
+    if(options&&options.speak)speak($('chat-answer').textContent);
   }
+}
+// One voice entry: Mark routes the sentence himself. Conservative by design —
+// anything that is not an explicit navigation command stays a data question.
+function routeVoiceIntent(text){
+  const cleaned=(typeof text==='string'?text:'').replace(/^(?:mark|马克)[，,。.\s]*/i,'').trim();
+  if(!cleaned)return{kind:'empty'};
+  const prefix=cleaned.match(/^(?:带我去|导航到|导航去|我想去|我要去|怎么去|如何去)(.+)$/);
+  if(prefix&&prefix[1].trim())return{kind:'nav',destination:prefix[1].trim()};
+  const suffix=cleaned.match(/^(.+?)(?:怎么走|怎么去|如何去|的导航|导航)$/);
+  if(suffix&&suffix[1].trim().length>=2)return{kind:'nav',destination:suffix[1].trim()};
+  return{kind:'qa',question:cleaned};
+}
+function answerVoice(){
+  listenInto($('chat-input'),$('voice-command'),activePersona.voice_command,(text)=>{
+    const intent=routeVoiceIntent(text);
+    if(intent.kind==='nav'){
+      $('nav-destination').value=intent.destination;planNav();
+    }else if(intent.kind==='qa'){
+      $('chat-card').hidden=false;$('chat-input').value=intent.question;askMark({speak:true});
+    }
+  });
 }
 // Ears of the assistant: one tap to talk, transcript lands in the box and sends.
 // SpeechRecognition is a progressive enhancement — no support, no button.
 const SpeechEngine=window.SpeechRecognition||window.webkitSpeechRecognition;
-if(!SpeechEngine){$('chat-mic').hidden=true;$('nav-mic').hidden=true;}
+if(!SpeechEngine){$('chat-mic').hidden=true;$('nav-mic').hidden=true;$('voice-command').hidden=true;}
 function listenInto(input,button,label,onFinal){
   if(!SpeechEngine)return;
   if(button._rec){try{button._rec.stop();}catch(_){/* double-stop is harmless */}return;}
@@ -1383,7 +1408,8 @@ function finishRide(reason=''){
   const retained=retain(memory); void upload(memory,retained);
 }
 $('ride-weekly-listen').addEventListener('click',listenWeekly);
-$('chat-send').addEventListener('click',askMark);
+$('chat-send').addEventListener('click',()=>askMark());
+$('voice-command').addEventListener('click',answerVoice);
 $('chat-mic').addEventListener('click',toggleMic);
 $('chat-listen').addEventListener('click',()=>{const text=$('chat-answer').textContent;if(text)speak(text);});
 $('nav-plan').addEventListener('click',planNav);
@@ -1489,7 +1515,7 @@ const I18N_EN=Object.freeze({
   'summary-h':'One line after the ride', 'summary-init':'Generated from the record after you finish. Whatever has no data stays missing.',
   'brain-h':'Mark thought it over',
   'chat-h':'Ask Mark', 'chat-send':'Ask', 'chat-ph':'Ask about this record…',
-  'chat-mic':'Speak', 'chat-listen':'Hear it',
+  'chat-mic':'Speak', 'chat-listen':'Hear it', 'voice-cmd':'Talk to Mark',
   'save-init':'Server storage is ephemeral: restarts or redeploys may lose it. Keep a downloaded backup.',
   retry:'Retry uploading pending records', 'dl-json':'Download JSON backup', 'dl-gpx':'Download GPX backup',
   'gpx-note':'With recorded coordinates, the GPX is a real track (heart rate / cadence / power as extension values), importable into Strava, Xingzhe, or Garmin. Without coordinates it holds only the heart-rate timeline and gap markers and cannot be imported where a track is required. The two are never blended.',
