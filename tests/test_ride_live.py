@@ -240,43 +240,58 @@ class LiveEndpointTests(unittest.TestCase):
     def chat(self, payload):
         return self.request('/api/coach/ride/chat', payload)
 
+    def test_activity_selects_scene_config(self):
+        body = {'live_id': 'h1', 'activity': 'hike', 'point': self.point(T0)}
+        self.request('/api/coach/ride/live', body)
+        near = self.request('/api/coach/ride/live',
+                            {'live_id': 'h1', 'activity': 'hike', 'point': self.point(T0 + 600.0, km_east=1.5)})
+        self.assertEqual(near, {'calls': []})  # hike 里程碑 2km，1.5km 不报
+        hit = self.request('/api/coach/ride/live',
+                           {'live_id': 'h1', 'activity': 'hike', 'point': self.point(T0 + 900.0, km_east=2.2)})
+        self.assertEqual(hit['events'], ['distance_milestone'])
+        self.assertIn('走了2公里', hit['calls'][0]['speech'])
+        with self.assertRaises(ActionError) as error:
+            self.request('/api/coach/ride/live',
+                         {'live_id': 'x1', 'activity': 'swim', 'point': self.point(T0)})
+        self.assertEqual(error.exception.status, 400)
+
     def test_live_lane_answers_present_metrics(self):
         point = {**self.point(T0), 'hr': 152, 'hr_upper': 160, 'hr_lower': 90}
         self.request('/api/coach/ride/live', {'live_id': 'ride1', 'point': point})
-        self.app.llm_post = transport('现在心率152。')
+        self.app.llm_post = transport('\u73b0\u5728\u5fc3\u7387152\u3002')
         with patch.dict(os.environ, {'DASHSCOPE_API_KEY': 'synthetic-key'}):
-            result = self.chat({'question': '我现在心率多少？', 'live_id': 'ride1'})
+            result = self.chat({'question': '\u6211\u73b0\u5728\u5fc3\u7387\u591a\u5c11\uff1f', 'live_id': 'ride1'})
         self.assertEqual(result['lane'], 'live')
         self.assertEqual(result['speech_status'], 'ok')
-        self.assertEqual(result['speech'], '现在心率152。')
+        self.assertEqual(result['speech'], '\u73b0\u5728\u5fc3\u7387152\u3002')
 
     def test_live_lane_short_circuits_missing_metrics(self):
         self.request('/api/coach/ride/live', {'live_id': 'ride1', 'point': self.point(T0)})
         with patch.dict(os.environ, {'DASHSCOPE_API_KEY': 'synthetic-key'}):
-            result = self.chat({'question': '我现在心率多少？', 'live_id': 'ride1'})
+            result = self.chat({'question': '\u6211\u73b0\u5728\u5fc3\u7387\u591a\u5c11\uff1f', 'live_id': 'ride1'})
         self.assertEqual(result['lane'], 'live')
         self.assertEqual(result['speech_status'], 'ok')
-        self.assertEqual(result['speech'], '这个我现在看不到。')
+        self.assertEqual(result['speech'], '\u8fd9\u4e2a\u6211\u73b0\u5728\u770b\u4e0d\u5230\u3002')
         self.post.assert_not_called()
 
     def test_live_lane_answers_deterministically_without_key(self):
         point = {**self.point(T0), 'hr': 152}
         self.request('/api/coach/ride/live', {'live_id': 'ride1', 'point': point})
-        result = self.chat({'question': '我现在心率多少？', 'live_id': 'ride1'})
+        result = self.chat({'question': '\u6211\u73b0\u5728\u5fc3\u7387\u591a\u5c11\uff1f', 'live_id': 'ride1'})
         self.assertEqual(result['lane'], 'live')
         self.assertEqual(result['speech_status'], 'ok')
-        self.assertEqual(result['speech'], '现在心率152。')
+        self.assertEqual(result['speech'], '\u73b0\u5728\u5fc3\u7387152\u3002')
         self.post.assert_not_called()
 
     def test_live_lane_requires_marker_and_valid_id(self):
         self.request('/api/coach/ride/live', {'live_id': 'ride1', 'point': self.point(T0)})
         with patch.dict(os.environ, {'DASHSCOPE_API_KEY': 'synthetic-key'}):
-            result = self.chat({'question': '踏频是什么？', 'live_id': 'ride1'})
-        self.assertIn(result['lane'], ('personal', 'knowledge'))  # 无实时标记 → 走原双道
+            result = self.chat({'question': '\u8e0f\u9891\u662f\u4ec0\u4e48\uff1f', 'live_id': 'ride1'})
+        self.assertIn(result['lane'], ('personal', 'knowledge'))  # \u65e0\u5b9e\u65f6\u6807\u8bb0 \u2192 \u8d70\u539f\u53cc\u9053
         for bad in ('../x', [], 'x' * 65):
             with self.subTest(bad=bad):
                 with self.assertRaises(ActionError) as error:
-                    self.chat({'question': '我现在心率多少？', 'live_id': bad})
+                    self.chat({'question': '\u6211\u73b0\u5728\u5fc3\u7387\u591a\u5c11\uff1f', 'live_id': bad})
                 self.assertEqual(error.exception.status, 400)
 
 
@@ -641,7 +656,7 @@ class LiveAnswerTests(unittest.TestCase):
         self.assertEqual(payload['messages'][0],
                          {'role': 'system', 'content': ride_live.LIVE_SYSTEM_PROMPT})
         self.assertEqual(json.loads(payload['messages'][1]['content']),
-                         {'question': question, 'live_facts': facts})
+                         {'question': question, 'live_facts': {**facts, 'activity': 'ride'}})
         self.assertEqual(payload['response_format'], {'type': 'json_object'})
         self.assertEqual(post.call_args.kwargs, {'timeout': ride_live.TIMEOUT_S})
         for facts, speech in (
@@ -799,3 +814,69 @@ class LiveAnswerTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SceneConfigTests(unittest.TestCase):
+    M = M_PER_DEG_LNG
+
+    def feed_scene(self, activity, count, speed=4.0, alt_step=0.0):
+        session = ride_live.LiveSession(activity)
+        events = []
+        for i in range(count):
+            point = {'t': T0 + i * 10.0, 'lat': LAT,
+                     'lng': LNG + i * 10.0 * speed / self.M, 'speed_mps': speed}
+            if alt_step:
+                point['alt'] = 100.0 + i * alt_step
+            events.extend(session.ingest(point))
+        return session, events
+
+    def test_hike_two_km_milestone_not_one(self):
+        _, events = self.feed_scene('hike', 15)   # ~0.6 km
+        self.assertNotIn('distance_milestone', [e['type'] for e in events])
+        _, events = self.feed_scene('hike', 60)   # ~2.4 km
+        self.assertEqual([e['km'] for e in events if e['type'] == 'distance_milestone'], [2])
+
+    def test_hike_climb_thresholds_lower(self):
+        _, events = self.feed_scene('hike', 40, speed=1.5, alt_step=1.0)  # 400s, +40m
+        self.assertIn('climb_start', [e['type'] for e in events])
+        # 同坡度下 ride（阈值 15m/5m）不触发而 hike（10m/3m）触发 → 阈值确实分场景
+        _, ride_events = self.feed_scene('ride', 40, speed=1.5, alt_step=1.0)
+        self.assertNotIn('climb_start', [e['type'] for e in ride_events])
+
+    def test_run_one_km_milestone(self):
+        _, events = self.feed_scene('run', 30)    # ~1.2 km
+        self.assertEqual([e['km'] for e in events if e['type'] == 'distance_milestone'], [1])
+
+    def test_unknown_activity_rejected(self):
+        with self.assertRaises(ValueError):
+            ride_live.LiveSession('swim')
+
+    def test_hike_template_uses_walk_verb(self):
+        session, events = self.feed_scene('hike', 60)
+        milestones = [e for e in events if e['type'] == 'distance_milestone']
+        result = ride_live.build_live_speech(milestones, session.facts())
+        self.assertIn('走了2公里', result['speech'])
+
+    def test_run_pace_deterministic_answer(self):
+        result = ride_live.build_live_answer('我现在配速多少？',
+                                             {'speed_mps': 3.0, 'activity': 'run'})
+        self.assertEqual(result['llm_status'], 'ok')
+        self.assertEqual(result['speech'], '现在配速5.6分钟每公里。')
+
+    def test_hike_distance_deterministic_answer(self):
+        result = ride_live.build_live_answer('我现在走了多远？',
+                                             {'distance_m': 3400.0, 'activity': 'hike'})
+        self.assertEqual(result['llm_status'], 'ok')
+        self.assertEqual(result['speech'], '现在走了3.4公里。')
+
+    def test_invalid_activity_in_facts_rejected(self):
+        session, events = self.feed_scene('ride', 60, speed=10.0)
+        milestones = [e for e in events if e['type'] == 'distance_milestone']
+        facts = dict(session.facts())
+        facts['activity'] = 'fly'
+        result = ride_live.build_live_speech(milestones, facts)
+        self.assertEqual(result['llm_status'], 'rejected_bad_schema')
+
+    def test_facts_carry_activity(self):
+        session, _ = self.feed_scene('hike', 3)
+        self.assertEqual(session.facts()['activity'], 'hike')

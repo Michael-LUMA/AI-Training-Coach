@@ -558,8 +558,10 @@ class App:
         cloud request happens after state update. Anti-spam is the product:
         at most one spoken call per live session per _LIVE_SILENCE_S.
         """
-        require(type(payload) is dict and set(payload) == {"live_id", "point"},
+        require(type(payload) is dict and set(payload) in ({"live_id", "point"}, {"live_id", "point", "activity"}),
                 "Expected live_id and point")
+        activity = payload.get("activity", "ride")
+        require(type(activity) is str and activity in ("ride", "hike", "run"), "Invalid activity")
         live_id = payload["live_id"]
         require(type(live_id) is str and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", live_id) is not None,
                 "Invalid live_id")
@@ -574,7 +576,7 @@ class App:
                     eldest = sorted(self._live.items(), key=lambda item: item[1][2])[:overflow]
                     for key, _ in eldest:
                         del self._live[key]
-                self._live[live_id] = [LiveSession(), None, now]
+                self._live[live_id] = [LiveSession(activity), None, now]
             entry = self._live[live_id]
             entry[2] = now
             session, last_call = entry[0], entry[1]

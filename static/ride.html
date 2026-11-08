@@ -905,7 +905,7 @@ async function liveBeat(){
     if(typeof navOffRoute!=='undefined'&&navRoute)point.off_route=navOffRoute===true;
     if(previous&&typeof previous.hr==='number'&&Number.isInteger(previous.hr)&&previous.hr>=20&&previous.hr<=240)point.hr=previous.hr;
     if(target&&Number.isFinite(target.lower)&&Number.isFinite(target.upper)){point.hr_lower=target.lower;point.hr_upper=target.upper;}
-    const response=await fetch('/api/coach/ride/live',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify({live_id:liveId,point})});
+    const response=await fetch('/api/coach/ride/live',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify({live_id:liveId,activity:currentActivity(),point})});
     if(!liveOn||!active)return;
     const data=await response.json().catch(()=>null);
     if(data&&typeof data==='object')liveOkAt=performance.now();
