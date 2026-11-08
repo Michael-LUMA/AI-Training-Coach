@@ -471,5 +471,47 @@ class RideWeeklyBrowserTests(unittest.TestCase):
         self.assertNotIn('innerHTML', self.html)
 
 
+class RideWeeklyProfileTests(unittest.TestCase):
+    """Usage-profile facts inside the weekly draft: registered and verified."""
+
+    def test_profile_projection_and_verified_speech(self):
+        post = transport('你的通常是一次60分钟。')
+        result = weekly.build_ride_weekly(
+            [memory()], [], profile={'sessions': 5, 'usual_start_hour': 20, 'usual_duration_min': 60},
+            api_key='synthetic-key', http_post=post)
+        self.assertEqual(result['llm_status'], 'ok')
+        facts = json.loads(json.loads(post.call_args.args[0].data)['messages'][1]['content'])
+        self.assertEqual(facts['profile'], {'sessions': 5, 'usual_start_hour': 20,
+                                            'usual_duration_min': 60})
+        self.assertIn('profile', weekly.SYSTEM_PROMPT)
+
+    def test_unregistered_profile_number_rejected(self):
+        post = transport('你的通常是一次90分钟。')
+        result = weekly.build_ride_weekly(
+            [memory()], [], profile={'sessions': 5, 'usual_start_hour': 20, 'usual_duration_min': 60},
+            api_key='synthetic-key', http_post=post)
+        self.assertEqual(result['llm_status'], 'rejected_unverifiable_number')
+        self.assertIsNone(result['draft'])
+
+    def test_invalid_profile_rejected_without_upstream(self):
+        post = Mock(side_effect=AssertionError('no network'))
+        for profile in ({'sessions': 2, 'usual_start_hour': 20, 'usual_duration_min': 60},
+                        {'sessions': 5, 'usual_start_hour': 24, 'usual_duration_min': 60},
+                        {'sessions': 5, 'usual_start_hour': 20},
+                        'profile'):
+            with self.subTest(profile=repr(profile)):
+                result = weekly.build_ride_weekly([memory()], [], profile=profile,
+                                                  api_key='synthetic-key', http_post=post)
+                self.assertEqual(result['llm_status'], 'rejected_bad_schema')
+        post.assert_not_called()
+
+    def test_none_profile_leaves_no_trace(self):
+        post = transport('这周骑了1次，记录60分钟。')
+        result = weekly.build_ride_weekly([memory()], [], api_key='synthetic-key', http_post=post)
+        self.assertEqual(result['llm_status'], 'ok')
+        facts = json.loads(json.loads(post.call_args.args[0].data)['messages'][1]['content'])
+        self.assertNotIn('profile', facts)
+
+
 if __name__ == '__main__':
     unittest.main()

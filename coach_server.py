@@ -61,6 +61,25 @@ RIDE_WEEKLY = "/api/coach/ride/weekly"
 RIDE_ROUTE = "/api/coach/ride/route"
 RIDE_CHAT = "/api/coach/ride/chat"
 RIDE_LIVE = "/api/coach/ride/live"
+
+
+def _usage_profile(entries):
+    """Median start hour/duration over (when, summary) pairs of real sessions.
+
+    Below three sessions Mark stays silent about "usual" rather than guessing;
+    the caller decides which sessions are real and in scope. Local-clock hours.
+    """
+    if len(entries) < 3:
+        return None
+    hours = sorted(when.astimezone().hour for when, _ in entries)
+    durations = sorted(summary["duration_s"] / 60 for _, summary in entries
+                       if type(summary.get("duration_s")) in (int, float) and summary["duration_s"] > 0)
+    median_min = durations[(len(durations) - 1) // 2] if durations else None
+    return {"sessions": len(entries),
+            "usual_start_hour": hours[(len(entries) - 1) // 2],
+            "usual_duration_min": (None if median_min is None else
+                                   int(median_min) if median_min == int(median_min)
+                                   else round(median_min, 1))}
 DEFAULT_PORT = 8794
 _PERSONAL_MARKERS = ("我", "这次", "上次", "最近", "今天", "昨天",
                      "这周", "本周", "这个月", "本月", "累计")
@@ -538,17 +557,7 @@ class App:
                         "distance_km": _kilometers(week_entries) if week_entries else None}
             # Usage profile: medians over the same honest scope (real sessions
             # only). Below three records Mark stays silent about "usual".
-            profile = None
-            if len(entries) >= 3:
-                hours = sorted(when.astimezone().hour for when, _ in entries)
-                durations = sorted(summary["duration_s"] / 60 for _, summary in entries
-                                   if type(summary.get("duration_s")) in (int, float) and summary["duration_s"] > 0)
-                median_min = durations[(len(durations) - 1) // 2] if durations else None
-                profile = {"sessions": len(entries),
-                           "usual_start_hour": hours[(len(entries) - 1) // 2],
-                           "usual_duration_min": (None if median_min is None else
-                                                  int(median_min) if median_min == int(median_min)
-                                                  else round(median_min, 1))}
+            profile = _usage_profile(entries)
         # Two lanes, one door: personal-record questions try the private lane
         # first; everything else tries the grounded knowledge library. The
         # other lane is consulted once when the preferred one cannot answer.
@@ -731,10 +740,13 @@ class App:
                     continue
             current, previous = split_week_sessions(stored, start)
             facts = aggregate_ride_weeks(current, previous)
+            profile = _usage_profile(
+                [(datetime.fromisoformat(m["started_at"].replace("Z", "+00:00")), m["summary"])
+                 for m in stored if m.get("source") != "simulated"])
         # Provider receives detached validated records, never the locked files.
         result = llm_router.run(
             'weekly',
-            lambda **kw: build_ride_weekly(current, previous,
+            lambda **kw: build_ride_weekly(current, previous, profile=profile,
                                            http_post=self.llm_post, **kw))
         speech = (result["draft"]["speech"] if result["llm_status"] == "ok" else
                   weekly_template({**facts["week"], "source": facts["source"]}, facts["previous_week"]))

@@ -16,6 +16,7 @@ from llm_review import (ENDPOINT, MODEL, TIMEOUT_S, MAX_RESPONSE_BYTES,
                         _http_post, _json, _usage)
 from ride_brain import (_normalized_numbers, _verified_text, _FORBIDDEN,
                         SYSTEM_PROMPT as RIDE_PROMPT, MAX_TOKENS, _result)
+from ride_chat import _profile_facts
 from ride_memory import validate_session, RideMemoryError
 
 # Weekly facts never contain weekly averages (averaging per-ride means is
@@ -38,6 +39,10 @@ avg_hr 是逐次样本均值，不能再求均值或当成全周平均心率。
 时长用 total_duration_min / duration_diff_min；不要发明日期、趋势或效果。
 只陈述次数、时长、逐次心率及已给出的差值，不建议训练量、强度或频率。
 避免“一共”“一次”等隐含数字修辞，除非其中数字也有事实依据。
+facts 可能含 profile：长期画像（sessions 样本次数、usual_start_hour 通常
+出门时刻、usual_duration_min 通常时长分钟，至少 3 次真实记录才出现）。
+可与本周对照陈述数值（如「你的通常是一次 60 分钟」），
+禁止评价「更努力」「偷懒」「规律」；为 null 的项完全不提。
 """
 
 
@@ -156,7 +161,8 @@ def _registered_numbers(facts):
 
 def build_ride_weekly(week_sessions: list[dict], prev_week_sessions: list[dict], *,
                       api_key: str | None = None, http_post=None,
-                      endpoint: str | None = None, model: str | None = None) -> dict:
+                      endpoint: str | None = None, model: str | None = None,
+                      profile: dict | None = None) -> dict:
     """Generate a verified Chinese weekly draft, or an explicit template fallback.
 
     Args:
@@ -175,6 +181,9 @@ def build_ride_weekly(week_sessions: list[dict], prev_week_sessions: list[dict],
     try:
         facts = aggregate_ride_weeks(week_sessions, prev_week_sessions)
         numbers = _registered_numbers(facts)
+        if profile is not None:
+            facts['profile'], extra = _profile_facts(profile)
+            numbers.extend(extra)
     except (RideMemoryError, ValueError, TypeError, OverflowError, InvalidOperation, RecursionError):
         return _result('rejected_bad_schema')
     if facts['week']['count'] == 0:
