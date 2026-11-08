@@ -97,6 +97,9 @@ h1 .grad{color:var(--accent)}
 .panel.alert{border:1px solid rgba(229,72,77,.55);background:rgba(229,72,77,.05)}
 .countdown{font:800 64px/1 var(--sans);margin:0 0 8px;font-variant-numeric:tabular-nums;color:var(--route)}
 .row{display:flex;gap:14px;flex-wrap:wrap;margin:12px 0}
+#history-list button{display:block;width:100%;text-align:left;margin:6px 0;padding:10px 12px}
+#history-list button[aria-pressed=true]{border-color:var(--accent-text);font-weight:600}
+#history-list .tag{display:inline-block;margin-left:8px;padding:1px 7px;border:1px solid var(--line);border-radius:6px;font-size:11px;color:var(--faint)}
 #voice-command{position:fixed;right:18px;bottom:18px;z-index:50;border-radius:999px;padding:14px 22px}
 #live-toggle{position:fixed;right:18px;bottom:84px;z-index:50;border-radius:999px;padding:12px 20px;opacity:.92}
 #live-toggle.on{font-weight:700;opacity:1}
@@ -206,6 +209,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px/1.75 var(--mono);max
 <div class="sheetgrid">
 <div class="mapcol">
 <section id="memory-card" class="panel" hidden aria-labelledby="memory-heading"><h2 id="memory-heading" data-i18n="memory-h">Mark 的记忆</h2><p id="memory-recall"></p><p id="memory-source" class="warn" hidden></p><button id="memory-listen" type="button" class="secondary" data-i18n="listen">听 Mark 说</button></section>
+<section id="history-panel" class="panel" hidden aria-labelledby="history-heading"><h2 id="history-heading" data-i18n="history-h">历史记录</h2><p class="note" data-i18n="history-note">按开始时间倒序，最多显示最近 20 条；点击任意一条查看它的复盘与问答。来源（心率带/导入/模拟）逐条如实标注。</p><div id="history-list"></div></section>
 <section class="panel">
 <h2 data-i18n="summary-h">骑后一句话</h2>
 <p id="summary" class="summaryline" data-i18n="summary-init">结束后根据记录生成。没有数据的部分保持缺失。</p>
@@ -341,7 +345,7 @@ let auxDevice = null, auxCadChar = null, auxPwrChar = null, auxConnecting = fals
 let crankPrev = null, latestCad = null, latestPwr = null;
 let startedMs = 0, startedMono = 0, previous = null, lastSignal = null, gapOpen = false;
 let outsideSince = null, outsideKind = null, lastAlert = -Infinity, alerts = 0;
-let timer = null, simulator = null, lastSession = null, target = null;
+let timer = null, simulator = null, lastSession = null, target = null, selectedHistory = null;
 // Page-scoped conversation id for short follow-up memory (max 3 turns, server RAM only,
 // 30 min idle self-destruct, never persisted). A refresh starts a fresh conversation.
 const CONV_ID = (window.crypto && crypto.randomUUID) ? 'conv-' + crypto.randomUUID() : 'conv-' + Math.random().toString(36).slice(2, 12) + Date.now().toString(36);
@@ -944,12 +948,53 @@ function renderGreeting(memories){
     +(parts.length ? '上次'+parts.join('，')+'。' : '')+activePersona.greeting_tail;
   el.hidden=false;
 }
+// History list: every remembered session (strap / imported / simulated,
+// each honestly tagged), newest first. Selecting one makes it the review
+// and chat target; downloads stay bound to the last full in-page record.
+function historyLine(memory){
+  const date=new Date(memoryTime(memory)), summary=memory.summary || {};
+  const parts=[(date.getMonth()+1)+'月'+date.getDate()+'日'];
+  if(memoryNumber(summary.duration_s))parts.push(Math.round(summary.duration_s/60)+'分钟');
+  if(memoryNumber(summary.avg_hr))parts.push('均心率'+Math.round(summary.avg_hr));
+  if(memoryNumber(summary.distance_m))parts.push((summary.distance_m/1000).toFixed(1)+'公里');
+  return parts.join(' · ');
+}
+function historyTag(source){
+  return source==='simulated' ? '模拟' : (source==='imported_gpx'||source==='imported_tcx') ? '导入' : '';
+}
+function renderHistory(memories){
+  const panel=$('history-panel'), list=$('history-list');
+  if(!panel || !list || typeof document.createElement!=='function')return;
+  list.textContent='';
+  if(!memories.length){panel.hidden=true;return;}
+  memories.forEach(memory=>{
+    const button=document.createElement('button');
+    button.type='button';button.className='secondary';
+    button.setAttribute('aria-pressed', selectedHistory && selectedHistory.id===memory.id ? 'true' : 'false');
+    button.textContent=historyLine(memory);
+    const tag=historyTag(memory.source);
+    if(tag){const span=document.createElement('span');span.className='tag';span.textContent=tag;button.appendChild(span);}
+    button.addEventListener('click',()=>selectHistory(memory));
+    list.appendChild(button);
+  });
+  panel.hidden=false;
+}
+function selectHistory(memory){
+  selectedHistory=memory;
+  recallText=recallMemory(memory);
+  const notice=sourceNotice([memory]);
+  $('memory-recall').textContent=recallText;$('memory-source').textContent=notice;$('memory-source').hidden=!notice;
+  $('memory-card').hidden=false;$('chat-card').hidden=false;
+  renderHistory(lastMemories||[]);
+  void requestRideSpeech(memory);
+}
 async function loadRecall(){
   try {
     const memories=await fetchMemories();
     lastMemories=memories;
     renderWeekly(memories);
     renderGreeting(memories);
+    renderHistory(memories);
     if(!memories.length){console.debug(activePersona.recall_no_history);return;}
     const latestAvg=memories[0].summary && memories[0].summary.avg_hr;
     previousRideAvgHr=memoryNumber(latestAvg) ? latestAvg : null;
@@ -987,13 +1032,14 @@ function speakMark(){
   return brainSpeech ? speak(brainSpeech) : speakRecall();
 }
 async function requestRideSpeech(memory){
-  if(active || !lastSession || lastSession.id!==memory.id)return;
+  const target=()=>selectedHistory||lastSession;
+  if(active || !target() || target().id!==memory.id)return;
   const request=++brainRequest;
   try {
     const response=await fetch('/api/coach/ride/review',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify({session_id:memory.id})});
     if(!response.ok)return;
     const result=await response.json();
-    if(request!==brainRequest || active || !lastSession || lastSession.id!==memory.id)return;
+    if(request!==brainRequest || active || !target() || target().id!==memory.id)return;
     if(result.speech_status!=='ok' || result.fallback!==null || typeof result.speech!=='string' || !result.speech.trim() || result.speech.length>300)return;
     brainSpeech=(memory.source==='simulated' ? activePersona.simulated+'。' : '')+result.speech;
     $('brain-heading').textContent=activePersona.thinking;$('brain-speech').textContent=brainSpeech;$('brain-card').hidden=false;
@@ -1008,7 +1054,7 @@ async function askMark(options){
   try {
     const body={question:question,conv_id:CONV_ID};
     if(active && liveOn && liveId)body.live_id=liveId;
-    else if(lastSession && lastSession.id)body.session_id=lastSession.id;
+    else {const reviewTarget=selectedHistory||lastSession;if(reviewTarget && reviewTarget.id)body.session_id=reviewTarget.id;}
     const response=await fetch('/api/coach/ride/chat',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify(body)});
     if(!response.ok)throw new Error('chat unavailable');
     const result=await response.json();
@@ -1681,7 +1727,7 @@ function finishRide(reason=''){
   const viewReview=$('view-review');if(viewReview)viewReview.checked=true;
   $('end-ride').disabled=true;$('reconnect').disabled=true;$('start-ride').disabled=false;$('lower').disabled=$('upper').disabled=false;$('goal-min').disabled=$('goal-km').disabled=false;$('milestone-interval').disabled=$('fuel-interval').disabled=false;$('activity-select').disabled=false;
   const text=summarize(memory,goal);$('summary').textContent=text;if(memory.coach_notes.length<200)memory.coach_notes.push(text);speak(text,'summary',speechKind==='fuel');
-  lastSession=memory;$('chat-card').hidden=false;$('download-session').disabled=false;$('download-gpx').disabled=false;$('connection').textContent='记录已结束';state(reason || '记录结束。平均值为实际样本算术平均，不推断训练效果。');
+  lastSession=memory;selectedHistory=null;$('chat-card').hidden=false;$('download-session').disabled=false;$('download-gpx').disabled=false;$('connection').textContent='记录已结束';state(reason || '记录结束。平均值为实际样本算术平均，不推断训练效果。');
   const retained=retain(memory); void upload(memory,retained);
 }
 $('ride-weekly-listen').addEventListener('click',listenWeekly);
@@ -1829,6 +1875,7 @@ const I18N_EN=Object.freeze({
   'nav-dest':'Destination (address or place name)', 'nav-ph':'e.g. Olympic Forest Park South Gate',
   'nav-plan':'Plan route', 'nav-clear':'Clear route', 'nav-mic':'Say it', 'nav-voice':'Voice reminder near turns (about 120 m ahead)',
   'memory-h':"Mark's memory", listen:'Hear Mark', listen2:'Hear Mark',
+  'history-h':'History', 'history-note':'Newest first, up to the latest 20; tap any entry for its review and Q&A. The source (strap / import / simulated) is honestly tagged on every row.',
   'summary-h':'One line after the ride', 'summary-init':'Generated from the record after you finish. Whatever has no data stays missing.',
   'brain-h':'Mark thought it over',
   'chat-h':'Ask Mark', 'chat-send':'Ask', 'chat-ph':'Ask about this record…',
