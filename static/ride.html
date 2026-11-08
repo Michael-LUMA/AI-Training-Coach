@@ -320,7 +320,15 @@ const OUTSIDE_DWELL_MS = 10000, ALERT_COOLDOWN_MS = 60000, STALE_MS = 5000, MAX_
 const DEMO = new URLSearchParams(location.search).get('demo') === '1';
 const SIMULATED = new URLSearchParams(location.search).get('simulate') === '1' || DEMO;
 const DEMO_DURATION_S = 2700, DEMO_PLAYBACK_S = 90, DEMO_STEP_S = DEMO_DURATION_S / DEMO_PLAYBACK_S;
+// Rest-stop hold: the demo stands still at script 25:00-29:00 (playback 50-58s)
+// so the stop-care line can fire inside the 90-second playback, then resumes
+// without a position jump. Playback 40s carries the demo goal's halfway call
+// and playback 60s the 30-minute milestone, so the hold sits between them.
+const DEMO_HOLD_START_S = 1500, DEMO_HOLD_END_S = 1740;
 const DEMO_DEFAULT_TARGET = Object.freeze({lower:100, upper:140});
+// Fictional 40-minute demo goal: halfway at script 20:00, near-done at 36:00,
+// settled as completed at the 45-minute script end. Demonstrates the loop.
+const DEMO_DEFAULT_GOAL = Object.freeze({minutes:40, km:null});
 const $ = id => document.getElementById(id);
 let token = '', session = null, active = false, connecting = false, device = null, characteristic = null;
 let auxDevice = null, auxCadChar = null, auxPwrChar = null, auxConnecting = false;
@@ -433,7 +441,10 @@ function noteAndSpeak(text,kind='other'){
   lastCoachSpeech=performance.now();speak(text,kind);
 }
 function coachCanSpeak(now=performance.now()){
-  return now-lastCoachSpeech>=COACH_SPEECH_GAP_MS && !('speechSynthesis' in window && window.speechSynthesis.speaking);
+  // Demo playback compresses 30 script-seconds into one real second, so the
+  // minimum pause between utterances compresses with it: same script-time gap.
+  const gap=demoPlaying ? COACH_SPEECH_GAP_MS/DEMO_STEP_S : COACH_SPEECH_GAP_MS;
+  return now-lastCoachSpeech>=gap && !('speechSynthesis' in window && window.speechSynthesis.speaking);
 }
 function remindFuel(){
   if(!active || liveOn || !fuelStepS || elapsedSeconds()<nextFuelSeconds || !coachCanSpeak())return;
@@ -609,14 +620,18 @@ function onTrackFix(position){
   const alt=typeof coords.altitude==='number' && Number.isFinite(coords.altitude) ? coords.altitude : null;
   const spd=typeof coords.speed==='number' && Number.isFinite(coords.speed) && coords.speed>=0 && coords.speed<=30 ? coords.speed : 0;
   lastFix={lat:coords.latitude,lng:coords.longitude,alt,acc,spd,mono:performance.now()};
-  // Movement = displacement beyond GPS jitter; it resets the stop-care episode.
-  if(prevTrackFix){
-    const moved=haversineM(prevTrackFix.lng,prevTrackFix.lat,lastFix.lng,lastFix.lat);
-    const jitter=Math.max(10,prevTrackFix.acc===Infinity?50:prevTrackFix.acc,lastFix.acc===Infinity?50:lastFix.acc);
-    if(moved>=jitter)lastMoveAt=lastFix.mono;
-  }
-  prevTrackFix=lastFix;
+  trackMovement(lastFix);
   drawTrackLive();
+}
+// Movement = displacement beyond GPS jitter; it resets the stop-care episode.
+// Shared by real geolocation fixes and the simulated demo track.
+function trackMovement(fix){
+  if(prevTrackFix){
+    const moved=haversineM(prevTrackFix.lng,prevTrackFix.lat,fix.lng,fix.lat);
+    const jitter=Math.max(10,prevTrackFix.acc===Infinity?50:prevTrackFix.acc,fix.acc===Infinity?50:fix.acc);
+    if(moved>=jitter)lastMoveAt=fix.mono;
+  }
+  prevTrackFix=fix;
 }
 function trackAttach(point){
   if($('track-enabled').checked===false || !lastFix)return;
@@ -1127,7 +1142,9 @@ function remindStopCare(){
   if(!active || lastMoveAt===null || !lastFix || !coachCanSpeak())return;
   const now=performance.now();
   if(now-lastFix.mono>60000)return;          // GPS gone quiet: no claim about stopping
-  if(now-lastMoveAt<180000)return;           // still moving, or paused only briefly
+  // Demo playback runs 30x: the same three script-minutes fit six real seconds.
+  const stillWindow=demoPlaying ? 180000/DEMO_STEP_S : 180000;
+  if(now-lastMoveAt<stillWindow)return;      // still moving, or paused only briefly
   if(stopNotifiedAt!==null && stopNotifiedAt>=lastMoveAt)return;  // already said it
   stopNotifiedAt=now;
   noteAndSpeak(activePersona.stop_notice,'other');
@@ -1431,9 +1448,12 @@ function tickDemo(){
   if(lastSignal!==null && performance.now()-lastSignal>STALE_MS)markGap();
   demoStep+=1;demoElapsed=Math.min(DEMO_DURATION_S,demoStep*DEMO_STEP_S);
   demoFeedAux(demoElapsed);
-  // Simulated loop track: fictional ellipse, source stays 'simulated' end to end.
-  const angle=2*Math.PI*(demoElapsed/DEMO_DURATION_S);
+  // Simulated loop track: fictional ellipse, source stays 'simulated' end to
+  // end. The rest-stop hold freezes the angle, then the lap resumes seamlessly.
+  const movingElapsed=demoElapsed<DEMO_HOLD_START_S ? demoElapsed : demoElapsed<DEMO_HOLD_END_S ? DEMO_HOLD_START_S : demoElapsed-(DEMO_HOLD_END_S-DEMO_HOLD_START_S);
+  const angle=2*Math.PI*(movingElapsed/DEMO_DURATION_S);
   lastFix={lat:39.9921+0.008*Math.cos(angle),lng:116.3974+0.012*Math.sin(angle),alt:55+35*Math.sin(angle*4),acc:5,mono:performance.now()};
+  trackMovement(lastFix);
   receiveHR(demoHeartRate(demoElapsed));
   const minutes=Math.floor(demoElapsed/60), seconds=demoElapsed%60;
   $('elapsed').textContent=String(minutes).padStart(2,'0')+':'+String(seconds).padStart(2,'0')+' · SIMULATED / 30×';
@@ -1448,9 +1468,11 @@ function startDemo(){
     const ending=Math.min(Math.floor(bounds.upper),within+4);
     demoProfile=[[0,95],[180,high],[780,high],[960,within],[2400,within],[2700,ending]];
     demoPlaying=true;demoElapsed=0;demoStep=0;
-    begin({target:bounds,source:'simulated',samplesHz:1/DEMO_STEP_S});
+    const configuredGoal=readGoal(), demoGoal=configuredGoal || {...DEMO_DEFAULT_GOAL};
+    begin({target:bounds,source:'simulated',samplesHz:1/DEMO_STEP_S,goal:demoGoal});
     $('simulated-banner').textContent='SIMULATED · 合成45分钟剧本，30×快进；不是实际运动记录';
-    $('demo-target').textContent=(configured ? '演示使用你填写的范围：' : '演示专用虚构阈值：')+bounds.lower+'–'+bounds.upper+' bpm；不是个人训练区间，真实 BLE 仍只使用输入框原值。';
+    $('demo-target').textContent=(configured ? '演示使用你填写的范围：' : '演示专用虚构阈值：')+bounds.lower+'–'+bounds.upper+' bpm；不是个人训练区间，真实 BLE 仍只使用输入框原值。'
+      +(configuredGoal ? '演示同时使用你填写的目标。' : '演示专用虚构目标40分钟，仅展示过半/临近播报与骑后结算；目标本身只留在本浏览器。');
     $('demo-target').hidden=false;
     state('SIMULATED · 前台播放通常90秒，后台挂起可能延长；剧本时间用于记录，越区等待和冷却仍按实际播放时间。');
     speak(activePersona.simulated+'。开始演示记录。');

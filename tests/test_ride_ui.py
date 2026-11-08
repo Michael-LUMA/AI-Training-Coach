@@ -552,6 +552,35 @@ class RideMemoryUI(unittest.TestCase):
         self.assertEqual(a['series'][6]['hr'],162);self.assertEqual(a['series'][32]['hr'],135)
         self.assertIn('你填写的范围',a['notice'])
 
+    def test_demo_rest_stop_speaks_stop_care_once(self):
+        # The script stands still at playback 50-58s; the scaled three
+        # script-minute window lets the stop-care line fire near playback 56s.
+        result=self.run_js("""
+          $('demo-start').click();await _advance(90000);
+          return {spoken:_spoken};
+        """,demo=True)
+        stops=[t for t in result['spoken'] if '你停了几分钟了' in t]
+        self.assertEqual(len(stops),1)
+
+    def test_demo_goal_loop_announces_and_settles(self):
+        result=self.run_js("""
+          $('demo-start').click();await _advance(90000);
+          return {spoken:_spoken,summary:$('summary').textContent,notice:$('demo-target').textContent};
+        """,demo=True)
+        self.assertIn('时间过半，还剩20分钟到目标。',result['spoken'])
+        self.assertIn('快完成了，还剩4分钟。',result['spoken'])
+        self.assertIn('时间目标40分钟，实际45分钟，完成。',result['summary'])
+        self.assertIn('虚构目标40分钟',result['notice'])
+
+    def test_demo_custom_goal_is_respected(self):
+        result=self.run_js("""
+          $('goal-min').value='30';$('demo-start').click();await _advance(90000);
+          return {spoken:_spoken,summary:$('summary').textContent,notice:$('demo-target').textContent};
+        """,demo=True)
+        self.assertIn('时间过半，还剩15分钟到目标。',result['spoken'])
+        self.assertIn('时间目标30分钟，实际45分钟，完成。',result['summary'])
+        self.assertIn('你填写的目标',result['notice'])
+
     def test_demo_early_stop_is_partial_not_fabricated_full_ride(self):
         result=self.run_js("""
           $('demo-start').click();await _advance(10000);$('end-ride').click();await _flush();
