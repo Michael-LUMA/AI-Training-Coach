@@ -59,7 +59,7 @@ v3 optional extensions (records without them remain valid v3):
   value; when the track has coordinates but no alt pair, ascent_m must be
   absent or null. On privacy-stripped uploads (no track) ascent_m is kept
   as a nonnegative number or opted out to null.
-* session may add activity: "ride" or "hike" (default ride when absent).
+* session may add activity: "ride", "hike" or "run" (default ride when absent).
   It is a declared scene label, never inferred from speed or terrain.
 
 No HTTP, BLE, TTS, filesystem writes, model calls, diagnosis or prescriptions.
@@ -82,7 +82,7 @@ MAX_NOTE_CHARS = 2000
 EARTH_RADIUS_M = 6371000.0  # Matches the recording client's haversine constant.
 MAX_PLAUSIBLE_SPEED_MPS = 70.0  # Generous physical ceiling, never a claim.
 SOURCES = frozenset({"ble_gatt_0x180d", "simulated"})
-ACTIVITIES = frozenset({"ride", "hike"})
+ACTIVITIES = frozenset({"ride", "hike", "run"})
 MIN_ALT_M = -500.0
 MAX_ALT_M = 9000.0
 _FIELDS = frozenset({"schema_version", "id", "started_at", "ended_at", "samples_hz",

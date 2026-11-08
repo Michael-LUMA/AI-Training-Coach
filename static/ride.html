@@ -131,7 +131,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px/1.75 var(--mono);max
 </head>
 <body>
 <div id="simulated-banner" hidden role="status">SIMULATED · 合成心率演示，不是真实骑行记录</div>
-<nav class="titlebar"><a class="brand" href="/"><span class="logo" aria-hidden="true"></span><span data-i18n="brand">MARK · 骑行</span></a><span class="scenes" aria-label="场景"><span class="scene active" data-i18n="scene-ride">骑行</span><span class="scene soon"><span data-i18n="scene-hike">徒步</span><i data-i18n="scene-soon">即将</i></span><span class="scene soon"><span data-i18n="scene-office">办公</span><i data-i18n="scene-soon">即将</i></span></span><span class="sheetno">RIDE OS · EARLY ACCESS</span><a href="/privacy">Privacy</a><a href="/terms">Terms</a><button id="lang-toggle" type="button" class="lang" aria-label="Switch language">EN</button></nav>
+<nav class="titlebar"><a class="brand" href="/"><span class="logo" aria-hidden="true"></span><span data-i18n="brand">MARK · 骑行</span></a><span class="scenes" aria-label="场景"><span class="scene active" data-i18n="scene-ride">骑行</span><span class="scene active" data-i18n="scene-hike">徒步</span><span class="scene active" data-i18n="scene-run">跑步</span><span class="scene soon"><span data-i18n="scene-office">办公</span><i data-i18n="scene-soon">即将</i></span></span><span class="sheetno">RIDE OS · EARLY ACCESS</span><a href="/privacy">Privacy</a><a href="/terms">Terms</a><button id="lang-toggle" type="button" class="lang" aria-label="Switch language">EN</button></nav>
 <main class="sheet">
 <header class="masthead">
 <h1><span data-i18n="h1a">记录此刻，</span><br><span class="grad" data-i18n="h1b">不替你做判断。</span></h1>
@@ -170,8 +170,8 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px/1.75 var(--mono);max
 <p id="demo-notice" class="warn" hidden></p>
 <p id="demo-target" class="note" hidden></p>
 <button id="demo-start" type="button" hidden>看 Mark 演示</button>
-<div class="row"><label><span data-i18n="activity-label">场景</span><select id="activity-select"><option value="ride" selected data-i18n="activity-ride">骑行</option><option value="hike" data-i18n="activity-hike">徒步</option></select></label></div>
-<p class="note" data-i18n="activity-note">场景只改变 Mark 的措辞和记录里的场景标签，数据契约与隐私规则完全一致；徒步导航与坡度播报在开发中。</p>
+<div class="row"><label><span data-i18n="activity-label">场景</span><select id="activity-select"><option value="ride" selected data-i18n="activity-ride">骑行</option><option value="hike" data-i18n="activity-hike">徒步</option><option value="run" data-i18n="activity-run">跑步</option></select></label></div>
+<p class="note" data-i18n="activity-note">场景只改变 Mark 的措辞和记录里的场景标签，数据契约与隐私规则完全一致；骑行与徒步支持语音导航，跑步导航规划中按步行路线。</p>
 <div class="row"><label><span data-i18n="lower-label">自定义下限（bpm，可留空）</span><input id="lower" type="number" min="0" max="65535" step="1" inputmode="numeric" placeholder="由你填写" data-i18n-ph="bounds-ph"></label><label><span data-i18n="upper-label">自定义上限（bpm，可留空）</span><input id="upper" type="number" min="0" max="65535" step="1" inputmode="numeric" placeholder="由你填写" data-i18n-ph="bounds-ph"></label></div>
 <p class="note" data-i18n="bounds-note">上下限须同时填写或同时留空；仅为你设定的提醒阈值，不是医学安全范围。不根据年龄、LTHR 或演示值猜测训练区间。</p>
 <div class="row"><label class="check"><input id="crash-detect" type="checkbox"><span data-i18n="crash-label">跌倒检测（实验）</span></label></div>
@@ -631,9 +631,13 @@ const I18N_TEXT={
 const HIKE_PERSONA=Object.freeze({...PERSONA,version:'hike-persona/1',
   milestone:(minutes)=>'走了'+minutes+'分钟了。',
   fuel:(minutes)=>'走了'+minutes+'分钟了，喝口水、补点吃的。'});
+const RUN_PERSONA=Object.freeze({...PERSONA,version:'run-persona/1',
+  milestone:(minutes)=>'跑了'+minutes+'分钟了。',
+  fuel:(minutes)=>'跑了'+minutes+'分钟了，喝口水、补点能量。'});
+const SCENE_PERSONAS=Object.freeze({ride:PERSONA,hike:HIKE_PERSONA,run:RUN_PERSONA});
 let activePersona=PERSONA;
-function currentActivity(){const el=$('activity-select');return el && el.value==='hike' ? 'hike' : 'ride';}
-function applyActivity(){activePersona=currentActivity()==='hike' ? HIKE_PERSONA : PERSONA;}
+function currentActivity(){const el=$('activity-select');const v=el?el.value:'ride';return v==='hike'||v==='run' ? v : 'ride';}
+function applyActivity(){activePersona=SCENE_PERSONAS[currentActivity()] || PERSONA;}
 let navRoute=null, navWatch=null, navVoice=true, navPlanning=false;
 let navOffRoute=false, navOffRouteSnooze=0;
 function navStatus(text){$('nav-status').textContent=text;}
@@ -668,7 +672,7 @@ async function planNav(){
     if(!coords || typeof coords.longitude!=='number' || typeof coords.latitude!=='number'){navStatus(activePersona.nav_geo_failed);return;}
     const converted=wgs84ToGcj02(coords.longitude,coords.latitude);
     if(!token)await getToken();
-    const response=await fetch('/api/coach/ride/route',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify({origin:converted[0].toFixed(6)+','+converted[1].toFixed(6),destination_address:destination,mode:currentActivity()==='hike'?'walking':'bicycling'})});
+    const response=await fetch('/api/coach/ride/route',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify({origin:converted[0].toFixed(6)+','+converted[1].toFixed(6),destination_address:destination,mode:currentActivity()==='ride'?'bicycling':'walking'})});
     const result=await response.json().catch(()=>null);
     if(!response.ok || !result || typeof result.route_status!=='string'){navStatus(activePersona.nav_upstream);return;}
     if(result.route_status!=='ok'){navStatus(PERSONA['nav_'+result.route_status] || activePersona.nav_upstream);return;}
@@ -1462,7 +1466,7 @@ $('track-enabled').addEventListener('change',()=>{trackPrefsSave();if(active){if
 $('track-upload-none').addEventListener('change',trackPrefsSave);
 $('track-clip').addEventListener('change',trackPrefsSave);
 $('activity-select').addEventListener('change',()=>{applyActivity();try{localStorage.setItem('luma.activity',currentActivity());}catch(_){}});
-try{const savedActivity=localStorage.getItem('luma.activity');if(savedActivity==='hike')$('activity-select').value='hike';}catch(_){}
+try{const savedActivity=localStorage.getItem('luma.activity');if(savedActivity==='hike'||savedActivity==='run')$('activity-select').value=savedActivity;}catch(_){}
 applyActivity();
 trackPrefsLoad();drawTrackLive();
 window.addEventListener('devicemotion', onDeviceMotion);
@@ -1524,10 +1528,10 @@ loadSpeechPrefs();
 // querySelectorAll (offline test harness) never enter this path.
 const I18N_EN=Object.freeze({
   brand:'MARK · Ride',
-  'scene-ride':'Ride', 'scene-hike':'Hike', 'scene-office':'Work', 'scene-soon':'soon',
+  'scene-ride':'Ride', 'scene-hike':'Hike', 'scene-run':'Run', 'scene-office':'Work', 'scene-soon':'soon',
   'view-live':'Ride', 'view-review':'Review',
-  'activity-label':'Scene', 'activity-ride':'Ride', 'activity-hike':'Hike',
-  'activity-note':'The scene only changes Mark’s wording and the activity label in the record; the data contract and privacy rules are identical. Hiking navigation and grade callouts are in development.',
+  'activity-label':'Scene', 'activity-ride':'Ride', 'activity-hike':'Hike', 'activity-run':'Run',
+  'activity-note':'The scene only changes Mark’s wording and the activity label in the record; the data contract and privacy rules are identical. Ride and hike support voice navigation; run routes are planned as walking.',
   eyebrow:'AI sports companion · one mind, many bodies',
   h1a:'Record the moment.', h1b:'No calls made for you.',
   lede:"I'm Mark. Direct heart-rate-strap connection, on-device voice, your own threshold alerts. No target zone, no inference, no zone alerts.",

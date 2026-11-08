@@ -35,7 +35,7 @@ facts 还可能含 distance_m（单位米）与 avg_speed_mps/max_speed_mps（�
 max_speed_kmh（公里/小时）；为 null 或字段缺失就完全不提，禁止估算。
 facts 还可能含 ascent_m（单位米，累计爬升，口语用 display 里的整数）；
 为 null 或字段缺失就完全不提，禁止估算。
-facts 里的 activity 是场景标签（ride=骑行，hike=徒步），措辞必须与场景
+facts 里的 activity 是场景标签（ride=骑行，hike=徒步，run=跑步），措辞必须与场景
 一致：徒步说"走了"，不说"骑了"；爬升只在有 display.ascent_m 时可提。
 facts 可能出现 zone_share 与 pw_hr_decoupling_pct：
 zone_share 是心率区间时间占比（%），只在出现时陈述数值，禁止解读为训练效果；
@@ -231,7 +231,7 @@ def _facts(session, previous_summary, recent_summaries=None,
         display['ascent_m']=int(climb)
         numbers.append((climb,'m'))
     facts['activity']=memory.get('activity','ride')
-    display['activity_label']='徒步' if facts['activity']=='hike' else '骑行'
+    display['activity_label']={'hike':'徒步','run':'跑步'}.get(facts['activity'],'骑行')
     target=summary.get('zone_target');times=summary.get('time_in_zone_s')
     duration=summary.get('duration_s')
     if target is not None and times is not None and duration is not None and duration>0:

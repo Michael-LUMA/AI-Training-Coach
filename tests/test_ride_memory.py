@@ -359,9 +359,10 @@ class RideMemoryV3Tests(unittest.TestCase):
         self.reject(stripped)
 
     def test_v3_activity_label_optional_and_bounded(self):
-        value = self.v3(); value['activity'] = 'hike'
-        self.assertEqual(validate_session(value), value)
-        for bad in ('run', '', 1, None):
+        for good in ('hike', 'run'):
+            value = self.v3(); value['activity'] = good
+            with self.subTest(good=good): self.assertEqual(validate_session(value), value)
+        for bad in ('swim', '', 1, None):
             value = self.v3(); value['activity'] = bad
             with self.subTest(bad=bad): self.reject(value)
         v2 = self.v3(); v2['schema_version'] = 'luma-ride-memory/2'
