@@ -226,16 +226,58 @@ class LiveEndpointTests(unittest.TestCase):
         self.request('/api/coach/ride/live', {'live_id': 'ride1', 'point': self.point(T0)})
         milestone = self.request('/api/coach/ride/live',
                                  {'live_id': 'ride1', 'point': self.point(T0 + 600.0, km_east=5.1)})
-        self.assertEqual(len(milestone['calls']), 1)  # 静默期从此刻起算
+        self.assertEqual(len(milestone['calls']), 1)  # \u9759\u9ed8\u671f\u4ece\u6b64\u523b\u8d77\u7b97
         point = {**self.point(T0 + 610.0, km_east=5.1),
                  'hr': 150, 'hr_upper': 140, 'hr_lower': 90}
         self.request('/api/coach/ride/live', {'live_id': 'ride1', 'point': point})
-        point = {**point, 't': T0 + 621.0}  # 越限持续 11 秒，处于静默期内
+        point = {**point, 't': T0 + 621.0}  # \u8d8a\u9650\u6301\u7eed 11 \u79d2\uff0c\u5904\u4e8e\u9759\u9ed8\u671f\u5185
         result = self.request('/api/coach/ride/live', {'live_id': 'ride1', 'point': point})
         self.assertEqual(result['events'], ['hr_high'])
-        self.assertEqual(len(result['calls']), 1)  # 安全事件直通
+        self.assertEqual(len(result['calls']), 1)  # \u5b89\u5168\u4e8b\u4ef6\u76f4\u901a
         self.assertTrue(result['calls'][0]['urgent'])
         self.assertIn('150', result['calls'][0]['speech'])
+
+    def chat(self, payload):
+        return self.request('/api/coach/ride/chat', payload)
+
+    def test_live_lane_answers_present_metrics(self):
+        point = {**self.point(T0), 'hr': 152, 'hr_upper': 160, 'hr_lower': 90}
+        self.request('/api/coach/ride/live', {'live_id': 'ride1', 'point': point})
+        self.app.llm_post = transport('现在心率152。')
+        with patch.dict(os.environ, {'DASHSCOPE_API_KEY': 'synthetic-key'}):
+            result = self.chat({'question': '我现在心率多少？', 'live_id': 'ride1'})
+        self.assertEqual(result['lane'], 'live')
+        self.assertEqual(result['speech_status'], 'ok')
+        self.assertEqual(result['speech'], '现在心率152。')
+
+    def test_live_lane_short_circuits_missing_metrics(self):
+        self.request('/api/coach/ride/live', {'live_id': 'ride1', 'point': self.point(T0)})
+        with patch.dict(os.environ, {'DASHSCOPE_API_KEY': 'synthetic-key'}):
+            result = self.chat({'question': '我现在心率多少？', 'live_id': 'ride1'})
+        self.assertEqual(result['lane'], 'live')
+        self.assertEqual(result['speech_status'], 'ok')
+        self.assertEqual(result['speech'], '这个我现在看不到。')
+        self.post.assert_not_called()
+
+    def test_live_lane_answers_deterministically_without_key(self):
+        point = {**self.point(T0), 'hr': 152}
+        self.request('/api/coach/ride/live', {'live_id': 'ride1', 'point': point})
+        result = self.chat({'question': '我现在心率多少？', 'live_id': 'ride1'})
+        self.assertEqual(result['lane'], 'live')
+        self.assertEqual(result['speech_status'], 'ok')
+        self.assertEqual(result['speech'], '现在心率152。')
+        self.post.assert_not_called()
+
+    def test_live_lane_requires_marker_and_valid_id(self):
+        self.request('/api/coach/ride/live', {'live_id': 'ride1', 'point': self.point(T0)})
+        with patch.dict(os.environ, {'DASHSCOPE_API_KEY': 'synthetic-key'}):
+            result = self.chat({'question': '踏频是什么？', 'live_id': 'ride1'})
+        self.assertIn(result['lane'], ('personal', 'knowledge'))  # 无实时标记 → 走原双道
+        for bad in ('../x', [], 'x' * 65):
+            with self.subTest(bad=bad):
+                with self.assertRaises(ActionError) as error:
+                    self.chat({'question': '我现在心率多少？', 'live_id': bad})
+                self.assertEqual(error.exception.status, 400)
 
 
 class LiveEventExtensionTests(unittest.TestCase):
@@ -571,6 +613,188 @@ class LiveHeartRateTests(unittest.TestCase):
         result = ride_live.build_live_speech([{'type': 'unknown'}], live_facts())
         self.assertEqual(result['llm_status'], 'rejected_bad_schema')
         self.assertIs(result['urgent'], False)
+
+
+
+class LiveAnswerTests(unittest.TestCase):
+    def assert_answer(self, result, status, speech=None, usage=None):
+        self.assertEqual(result, {
+            'llm_status': status,
+            'speech': ride_live.LIVE_TEMPLATE if speech is None else speech,
+            'usage': usage,
+            'fallback': None if status == 'ok' else 'template',
+        })
+
+    def test_heart_rate_answer_passes_and_only_live_facts_are_sent(self):
+        question = '\u6211\u73b0\u5728\u5fc3\u7387\u591a\u5c11\uff1f'
+        speech = '\u73b0\u5728\u5fc3\u7387152\u3002'
+        facts = {**live_facts(), 'hr': 152, 'hr_upper': 160, 'hr_lower': 100}
+        before = dict(facts)
+        post = transport(speech)
+        result = ride_live.build_live_answer(
+            question, facts, api_key='synthetic-key', http_post=post)
+        self.assert_answer(result, 'ok', speech, {'prompt_tokens': 11, 'completion_tokens': 12})
+        self.assertEqual(facts, before)
+        post.assert_called_once()
+        request = post.call_args.args[0]
+        payload = json.loads(request.data)
+        self.assertEqual(payload['messages'][0],
+                         {'role': 'system', 'content': ride_live.LIVE_SYSTEM_PROMPT})
+        self.assertEqual(json.loads(payload['messages'][1]['content']),
+                         {'question': question, 'live_facts': facts})
+        self.assertEqual(payload['response_format'], {'type': 'json_object'})
+        self.assertEqual(post.call_args.kwargs, {'timeout': ride_live.TIMEOUT_S})
+        for facts, speech in (
+                ({'hr': 152.9}, '\u73b0\u5728\u5fc3\u7387152 bpm\u3002'),
+                ({'distance_m': 5001, 'duration_s': 510},
+                 '\u9a91\u4e865\u516c\u91cc\uff0c\u7528\u65f68.5\u5206\u949f\u3002')):
+            with self.subTest(facts=facts):
+                result = ride_live.build_live_answer(
+                    '\u6211\u9a91\u5f97\u600e\u4e48\u6837\uff1f', facts,
+                    api_key='synthetic-key', http_post=transport(speech))
+                self.assert_answer(result, 'ok', speech,
+                                   {'prompt_tokens': 11, 'completion_tokens': 12})
+
+    def test_missing_metrics_short_circuit_before_key_and_transport(self):
+        for question, facts in (
+                ('\u5fc3\u7387\u591a\u5c11\uff1f', live_facts()),
+                ('\u5fc3\u8df3\u591a\u5c11\uff1f', {'hr_upper': 160, 'hr_lower': 100}),
+                ('\u8ddd\u79bb\u591a\u5c11\uff1f', {}),
+                ('\u9a91\u4e86\u591a\u8fdc\uff1f', {}),
+                ('\u9a91\u4e86\u51e0\u516c\u91cc\uff1f', {}),
+                ('\u5fc3\u7387\u548c\u8ddd\u79bb\uff1f', {'hr': 152})):
+            for key in (None, 'synthetic-key'):
+                with self.subTest(question=question, key=key):
+                    post = Mock()
+                    result = ride_live.build_live_answer(
+                        question, facts, api_key=key, http_post=post)
+                    self.assert_answer(result, 'ok')
+                    post.assert_not_called()
+
+    def test_speed_missing_short_circuits_but_average_and_current_speed_pass(self):
+        for word in ('\u901f\u5ea6', '\u591a\u5feb', '\u914d\u901f'):
+            with self.subTest(word=word):
+                post = Mock()
+                result = ride_live.build_live_answer(
+                    word + '\uff1f', {'distance_m': 5001},
+                    api_key='synthetic-key', http_post=post)
+                self.assert_answer(result, 'ok')
+                post.assert_not_called()
+        for facts, speech in (
+                ({'avg_speed_kmh': 35.3}, '\u5747\u901f35.3\u516c\u91cc\u6bcf\u5c0f\u65f6\u3002'),
+                ({'avg_speed_kmh': 0}, '\u5747\u901f0 km/h\u3002'),
+                ({'speed_mps': 0}, '\u73b0\u5728\u901f\u5ea60 km/h\u3002'),
+                ({'speed_mps': 10}, '\u73b0\u5728\u901f\u5ea636 km/h\u3002'),
+                ({'speed_mps': 7.23}, '\u73b0\u5728\u901f\u5ea626.0\u516c\u91cc/\u5c0f\u65f6\u3002'),
+                ({'speed_mps': 7.23}, '\u73b0\u5728\u901f\u5ea67.23\u7c73\u6bcf\u79d2\u3002')):
+            with self.subTest(facts=facts, speech=speech):
+                post = transport(speech)
+                result = ride_live.build_live_answer(
+                    '\u6211\u901f\u5ea6\u591a\u5c11\uff1f', facts,
+                    api_key='synthetic-key', http_post=post)
+                self.assert_answer(result, 'ok', speech,
+                                   {'prompt_tokens': 11, 'completion_tokens': 12})
+                post.assert_called_once()
+
+    def test_no_key_returns_template_without_transport(self):
+        for key in (None, '', '   '):
+            with self.subTest(key=key):
+                post = Mock()
+                result = ride_live.build_live_answer(
+                    '\u73b0\u5728\u600e\u4e48\u6837\uff1f', {'hr': 152}, api_key=key, http_post=post)
+                self.assert_answer(result, 'not_configured')
+                post.assert_not_called()
+
+    def test_no_key_deterministic_metric_answers(self):
+        post = Mock()
+        cases = (('\u6211\u73b0\u5728\u5fc3\u7387\u591a\u5c11\uff1f', {'hr': 152.0}, '\u73b0\u5728\u5fc3\u7387152\u3002'),
+                 ('\u6211\u73b0\u5728\u901f\u5ea6\u591a\u5feb\uff1f', {'speed_mps': 10.0}, '\u73b0\u5728\u901f\u5ea636\u516c\u91cc\u6bcf\u5c0f\u65f6\u3002'),
+                 ('\u6211\u73b0\u5728\u9a91\u4e86\u591a\u8fdc\uff1f', {'distance_m': 5200.0}, '\u73b0\u5728\u9a91\u4e865.2\u516c\u91cc\u3002'),
+                 ('\u6211\u73b0\u5728\u9a91\u4e86\u591a\u4e45\uff1f', {'duration_s': 1500.0}, '\u73b0\u5728\u9a91\u4e8625\u5206\u949f\u3002'))
+        for question, facts, speech in cases:
+            with self.subTest(question=question):
+                result = ride_live.build_live_answer(question, facts, http_post=post)
+                self.assertEqual(result['llm_status'], 'ok')
+                self.assertEqual(result['speech'], speech)
+                post.assert_not_called()
+        for key in (False, 123, 'bad key', 'x' * 4097):
+            with self.subTest(invalid_key=key):
+                post = Mock()
+                result = ride_live.build_live_answer(
+                    '\u73b0\u5728\u600e\u4e48\u6837\uff1f', {}, api_key=key, http_post=post)
+                self.assert_answer(result, 'error_upstream')
+                post.assert_not_called()
+
+    def test_fabricated_numbers_and_bad_drafts_fall_back(self):
+        for speech in ('\u5fc3\u7387999\u3002', '\u5fc3\u7387999 bpm\u3002',
+                       '\u5fc3\u7387152\u7c73\u3002', '\u5fc3\u7387\u4e5d\u767e\u4e5d\u5341\u4e5d\u3002'):
+            with self.subTest(speech=speech):
+                result = ride_live.build_live_answer(
+                    '\u5fc3\u7387\u591a\u5c11\uff1f', {'hr': 152},
+                    api_key='synthetic-key', http_post=transport(speech))
+                self.assert_answer(result, 'rejected_unverifiable_number',
+                                   usage={'prompt_tokens': 11, 'completion_tokens': 12})
+        for draft in ({'speech': ''}, {'speech': ' '}, {'speech': 152},
+                      {'speech': 'x' * 61}, {'speech': 'bad\ntext'},
+                      {'speech': '\u597d\u3002\u597d\u3002\u597d\u3002'},
+                      {'speech': '\u597d\u3002', 'urgent': True}):
+            with self.subTest(draft=draft):
+                result = ride_live.build_live_answer(
+                    '\u73b0\u5728\u600e\u4e48\u6837\uff1f', {'hr': 152},
+                    api_key='synthetic-key', http_post=transport(draft=draft))
+                self.assert_answer(result, 'rejected_bad_schema',
+                                   usage={'prompt_tokens': 11, 'completion_tokens': 12})
+
+    def test_upstream_failures_return_template(self):
+        for post, usage in (
+                (Mock(side_effect=URLError('down')), None),
+                (Mock(side_effect=TimeoutError('timeout')), None),
+                (Mock(return_value=None), None),
+                (Mock(return_value=(200, {}, b'not json')), None),
+                (Mock(return_value=(200, {}, b'[]')), None),
+                (Mock(return_value=(200, {}, b'{"error":"down"}')), None),
+                (Mock(return_value=(200, {}, b'x' * (ride_live.MAX_RESPONSE_BYTES + 1))), None),
+                (transport(status=503), {'prompt_tokens': 11, 'completion_tokens': 12})):
+            with self.subTest(post=post):
+                result = ride_live.build_live_answer(
+                    '\u5fc3\u7387\u591a\u5c11\uff1f', {'hr': 152},
+                    api_key='synthetic-key', http_post=post)
+                self.assert_answer(result, 'error_upstream', usage=usage)
+
+    def test_invalid_questions_and_facts_raise_value_error(self):
+        post = Mock()
+        for question in (None, 123, '', ' ', '\t', 'x' * 201,
+                         'bad\x00text', 'bad\ntext', 'bad\x7ftext'):
+            with self.subTest(question=question), self.assertRaises(ValueError):
+                ride_live.build_live_answer(
+                    question, {}, api_key='synthetic-key', http_post=post)
+        for facts in (None, [], 'facts', {'paused': 0}, {'paused': None}):
+            with self.subTest(facts=facts), self.assertRaises(ValueError):
+                ride_live.build_live_answer('q', facts, http_post=post)
+        for field in ('distance_m', 'duration_s', 'avg_speed_kmh',
+                      'hr', 'hr_upper', 'hr_lower', 'speed_mps'):
+            for value in (-1, float('nan'), float('inf'), float('-inf'),
+                          True, False, None, '152', 10 ** 1000):
+                with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                    ride_live.build_live_answer('q', {field: value}, http_post=post)
+        post.assert_not_called()
+        for question in ('q', 'x' * 200):
+            for paused in (False, True):
+                with self.subTest(boundary=question, paused=paused):
+                    result = ride_live.build_live_answer(question, {'paused': paused, 'hr': 0})
+                    self.assert_answer(result, 'not_configured')
+
+    def test_training_advice_and_forbidden_wording_are_rejected(self):
+        for speech, status in (
+                ('\u5efa\u8bae\u4f60\u628a\u5fc3\u7387\u538b\u5230130', 'rejected_unverifiable_number'),
+                ('\u5fc3\u7387152\uff0c\u5efa\u8bae\u4f60\u51cf\u901f\u3002', 'rejected_unsafe_speech'),
+                ('\u5fc3\u7387152\uff0c\u72b6\u6001\u63d0\u5347\u3002', 'rejected_unsafe_speech')):
+            with self.subTest(speech=speech):
+                result = ride_live.build_live_answer(
+                    '\u5fc3\u7387\u591a\u5c11\uff1f', {'hr': 152},
+                    api_key='synthetic-key', http_post=transport(speech))
+                self.assert_answer(result, status,
+                                   usage={'prompt_tokens': 11, 'completion_tokens': 12})
 
 
 if __name__ == '__main__':

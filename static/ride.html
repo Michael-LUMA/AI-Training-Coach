@@ -842,6 +842,7 @@ async function askMark(options){
   try {
     const body={question:question};
     if(lastSession && lastSession.id)body.session_id=lastSession.id;
+    if(liveOn && liveId)body.live_id=liveId;
     const response=await fetch('/api/coach/ride/chat',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify(body)});
     if(!response.ok)throw new Error('chat unavailable');
     const result=await response.json();

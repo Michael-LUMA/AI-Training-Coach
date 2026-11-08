@@ -42,7 +42,7 @@ from ride_memory import validate_session, RideMemoryError
 from ride_brain import build_ride_review
 from ride_chat import build_ride_chat
 from ride_knowledge import build_knowledge_answer, load_cards
-from ride_live import LiveSession, build_live_speech
+from ride_live import LiveSession, build_live_answer, build_live_speech
 from ride_nav import plan_route
 from ride_weekly import build_ride_weekly, aggregate_ride_weeks, split_week_sessions, weekly_template
 from ride_server import strict_json, dumps
@@ -67,6 +67,7 @@ _LIVE_SILENCE_S = 60.0      # 主动播报全局静默期：克制即智能
 _LIVE_IDLE_S = 3 * 3600.0   # 实时会话空闲回收
 _LIVE_MAX_SESSIONS = 200    # 进程内存实时会话上限
 _LIVE_URGENT_TYPES = frozenset({"hr_high", "hr_low"})  # 安全事件直通，不受静默期约束
+_LIVE_MARKERS = ("现在", "当前", "这会", "此刻", "实时", "刚刚")  # 问「当下」进实时道
 
 
 class CoachStore:
@@ -431,8 +432,13 @@ class App:
         The question is data, never an instruction channel: bounded and validated
         by build_ride_chat. No chat history is stored or sent upstream.
         """
-        require(type(payload) is dict and set(payload) in ({"question"}, {"question", "session_id"}),
-                "Expected question and optional session_id")
+        require(type(payload) is dict and set(payload) in ({"question"}, {"question", "session_id"},
+                                                        {"question", "live_id"}),
+                "Expected question and optional session_id or live_id")
+        live_id = payload.get("live_id")
+        if live_id is not None:
+            require(type(live_id) is str and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", live_id) is not None,
+                    "Invalid live_id")
         identifier = payload.get("session_id")
         if identifier is not None:
             require(type(identifier) is str and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", identifier) is not None,
@@ -508,8 +514,22 @@ class App:
         # first; everything else tries the grounded knowledge library. The
         # other lane is consulted once when the preferred one cannot answer.
         question = payload["question"]
-        prefer_personal = any(marker in question for marker in _PERSONAL_MARKERS)
         key = os.environ.get("DASHSCOPE_API_KEY")
+        if live_id is not None and any(marker in question for marker in _LIVE_MARKERS):
+            with self._live_lock:
+                entry = self._live.get(live_id)
+            if entry is not None:
+                session = entry[0]
+                live_facts = session.facts()
+                if len(entry) > 3 and type(entry[3]) is dict:
+                    for name in ("hr", "hr_upper", "hr_lower", "speed_mps"):
+                        if name in entry[3]:
+                            live_facts[name] = entry[3][name]
+                live = build_live_answer(question, live_facts, api_key=key, http_post=self.llm_post)
+                if live["llm_status"] == "ok":
+                    return {"speech_status": "ok", "speech": live["speech"],
+                            "fallback": live["fallback"], "usage": live["usage"], "lane": "live"}
+        prefer_personal = any(marker in question for marker in _PERSONAL_MARKERS)
 
         def personal():
             return "personal", build_ride_chat(
@@ -558,8 +578,12 @@ class App:
             entry = self._live[live_id]
             entry[2] = now
             session, last_call = entry[0], entry[1]
+        entry_point = dict(payload["point"])
         try:
-            events = session.ingest(payload["point"])
+            events = session.ingest(entry_point)
+            with self._live_lock:
+                if live_id in self._live:
+                    self._live[live_id].append(entry_point)
         except ValueError:
             raise ActionError("invalid_json", "Invalid telemetry point", 400) from None
         urgent = any(event.get("type") in _LIVE_URGENT_TYPES for event in events)
