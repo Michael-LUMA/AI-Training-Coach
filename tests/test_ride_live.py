@@ -318,7 +318,7 @@ class LiveEndpointTests(unittest.TestCase):
         self.request('/api/coach/ride/live', {'live_id': 'ride1', 'point': self.point(T0)})
         with patch.dict(os.environ, {'DASHSCOPE_API_KEY': 'synthetic-key'}):
             result = self.chat({'question': '\u8e0f\u9891\u662f\u4ec0\u4e48\uff1f', 'live_id': 'ride1'})
-        self.assertIn(result['lane'], ('personal', 'knowledge'))  # \u65e0\u5b9e\u65f6\u6807\u8bb0 \u2192 \u8d70\u539f\u53cc\u9053
+        self.assertIn(result['lane'], ('personal', 'knowledge', 'general'))  # \u65e0\u5b9e\u65f6\u6807\u8bb0 \u2192 \u8d70\u539f\u53cc\u9053
         for bad in ('../x', [], 'x' * 65):
             with self.subTest(bad=bad):
                 with self.assertRaises(ActionError) as error:

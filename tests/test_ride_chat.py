@@ -407,16 +407,16 @@ class ChatEndpointTests(unittest.TestCase):
         with patch.dict(os.environ,{'DASHSCOPE_API_KEY':'synthetic-key'}):
             result=self.request('/api/coach/ride/chat',{'question':'聊聊怎么练'})
         self.assertEqual((result['speech_status'],result['lane']),('rejected_unsafe_speech','general'))
-        # A rejected draft never crosses lanes: the right lane found material
-        # but failed honesty checks; the other lane would only non-sequitur.
+        # 个人道的核验拒稿绝不跨道：用户数据诚实是底线，别的道只会编造。
         self.post.return_value=transport('心率999。').return_value
         with patch.dict(os.environ,{'DASHSCOPE_API_KEY':'synthetic-key'}):
             result=self.request('/api/coach/ride/chat',{'question':'我这次心率多少？'})
         self.assertEqual((result['speech_status'],result['lane']),('rejected_unverifiable_number','personal'))
+        # 知识卡的核验拒稿回退通用道：通用道答问题本身（自带安全门），不碰坏卡。
         self.post.return_value=transport('踏频一般是90转。（来源：通用运动常识）').return_value
         with patch.dict(os.environ,{'DASHSCOPE_API_KEY':'synthetic-key'}):
             result=self.request('/api/coach/ride/chat',{'question':'踏频是什么？'})
-        self.assertEqual((result['speech_status'],result['lane']),('rejected_unverifiable_number','knowledge'))
+        self.assertEqual((result['speech_status'],result['lane']),('ok','general'))
         # Transport failure still consults the other lane exactly once.
         self.post.return_value=(500,{},b'{}')
         with patch.dict(os.environ,{'DASHSCOPE_API_KEY':'synthetic-key'}):

@@ -757,16 +757,20 @@ class App:
         # Cross-lane fallback only when the first lane genuinely has nothing:
         # transport failure or no matching card. A verification rejection means
         # the right lane found material but the draft failed honesty checks —
-        # the other lane cannot fix that and only produces non-sequitur answers.
-        # A knowledge miss goes to the general lane (open chat, safety gates on),
-        # not to the personal lane, which would have nothing to say either.
+        # the personal lane never falls back (user data honesty is absolute),
+        # but a knowledge-card rejection falls to the general lane: it answers
+        # the question itself with its own safety gates, not the broken card.
+        _KNOWLEDGE_FALLBACK = ("no_knowledge", "rejected_unverifiable_number",
+                               "rejected_bad_schema", "rejected_unsafe_speech")
         if prefer_personal:
             lane, result = personal()
             if result["llm_status"] in ("upstream_error", "no_knowledge"):
                 lane, result = knowledge()
+                if result["llm_status"] in _KNOWLEDGE_FALLBACK:
+                    lane, result = general()
         else:
             lane, result = knowledge()
-            if result["llm_status"] == "no_knowledge":
+            if result["llm_status"] in _KNOWLEDGE_FALLBACK:
                 lane, result = general()
             elif result["llm_status"] == "upstream_error":
                 lane, result = personal()
