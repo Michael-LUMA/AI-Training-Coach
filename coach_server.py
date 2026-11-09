@@ -99,6 +99,15 @@ def _usage_profile(entries):
 DEFAULT_PORT = 8794
 _PERSONAL_MARKERS = ("我", "这次", "上次", "最近", "今天", "昨天",
                      "这周", "本周", "这个月", "本月", "累计")
+# 记录词：自称词必须与记录词同时出现才进个人记录道——否则「今天星期几」
+# 「帮我写周报」这类开放问题会被误路由，得到「我没记到」的傻子回答。
+_RECORD_WORDS = ("心率", "踏频", "功率", "配速", "速度", "均速", "里程", "公里",
+                 "千米", "骑", "跑步", "跑了", "徒步", "训练", "运动", "消耗",
+                 "卡路里", "爬坡", "爬升", "海拔", "天气", "路线", "记录",
+                 "状态", "几次", "多久", "多远", "多快", "多长", "出门",
+                 "膝盖", "旧伤", "受伤")
+# 求教词：「怎么练/是什么/为什么」是知识问题，不是记录问题。
+_ADVICE_MARKERS = ("怎么练", "怎么提高", "如何", "是什么", "为什么", "什么意思", "区别", "教程")
 _LIVE_SILENCE_S = 60.0      # 主动播报全局静默期：克制即智能
 _LIVE_FRESH_S = 30.0        # Three missed 10-second heartbeats make current facts unavailable.
 _CONV_TTL_S = 1800.0        # 对话记忆 30 分钟无活动自焚，只在内存，不落盘
@@ -687,7 +696,10 @@ class App:
                       "fallback": live["fallback"], "usage": live["usage"], "lane": "live"}
             self._dialog_record(conv_id, question_for_record, result)
             return result
-        prefer_personal = nav_intent or any(marker in question for marker in _PERSONAL_MARKERS)
+        prefer_personal = nav_intent or (
+            any(marker in question for marker in _PERSONAL_MARKERS)
+            and any(word in question for word in _RECORD_WORDS)
+            and not any(marker in question for marker in _ADVICE_MARKERS))
 
         def personal():
             return "personal", llm_router.run(
