@@ -183,13 +183,13 @@ function speak(text){
   if(!text)return;
   const seq=++voiceSeq;
   if(currentAudio){try{currentAudio.pause();}catch(_){/* */}}
-  if('speechSynthesis' in window)window.speechSynthesis.cancel();
-  const fallback=()=>{
-    if(seq!==voiceSeq)return;
-    if(!('speechSynthesis' in window))return;
-    const u=new SpeechSynthesisUtterance(text);u.lang='zh-CN';window.speechSynthesis.speak(u);
-  };
-  if(!ttsAvailable||!token){fallback();return;}
+  if('speechSynthesis' in window){
+    window.speechSynthesis.cancel();
+    const u=new SpeechSynthesisUtterance(text);u.lang='zh-CN';u.rate=1.08;u.pitch=1.0;
+    window.speechSynthesis.speak(u);
+    return;
+  }
+  if(!ttsAvailable||!token)return;
   (async()=>{
     try{
       const r=await Promise.race([
@@ -202,17 +202,37 @@ function speak(text){
       const a=new Audio(d.audio_url);currentAudio=a;
       a.onended=a.onerror=()=>{if(currentAudio===a)currentAudio=null;};
       await a.play();
-    }catch(_){fallback();}
+    }catch(_){/* 静默：语音是加分项，文字永远在 */}
   })();
 }
 /* ================= 消息渲染 ================= */
 const LANE_NAME={personal:'翻了你的记录',knowledge:'查了运动知识库',general:'自由聊',live:'看了实时数据',planner:'检索了历史'};
+let typeSeq=0;
+function typewrite(bubble,text){
+  const seq=++typeSeq;
+  const step=Math.max(1,Math.ceil(text.length/50));
+  let i=0;
+  const tick=()=>{
+    if(seq!==typeSeq){bubble.textContent=text;scrollDown();return;}
+    i=Math.min(text.length,i+step);
+    bubble.textContent=text.slice(0,i);
+    scrollDown();
+    if(i<text.length)setTimeout(tick,16);
+  };
+  tick();
+}
 function addMsg(role,text,opts){
   opts=opts||{};
   const div=node('div','msg '+role);
   if(role==='mark')div.appendChild(node('div','avatar'));
   const col=node('div');
-  col.appendChild(node('div','bubble',text));
+  if(role==='mark'){
+    const bubble=node('div','bubble');
+    col.appendChild(bubble);
+    typewrite(bubble,text);
+  }else{
+    col.appendChild(node('div','bubble',text));
+  }
   if(role==='mark'){
     const meta=node('div','meta');
     if(opts.tag==='live')meta.appendChild(node('span','lane tag-live','运动中·主动播报'));
@@ -360,6 +380,7 @@ let sending=false;
 async function send(){
   const q=$('input').value.trim();
   if(!q||sending)return;
+  typeSeq++;
   sending=true;$('input').value='';autogrow();
   addMsg('user',q);
   const routeMatch=q.match(RE_ROUTE);
@@ -468,16 +489,25 @@ function hav(a,b,c2,d){const R=6371000,r=Math.PI/180;
   return 2*R*Math.asin(Math.sqrt(h));}
 /* ================= 语音输入 ================= */
 const SpeechEngine=window.SpeechRecognition||window.webkitSpeechRecognition;
-function wavFromChunks(chunks,rate){
-  let length=0;for(const c of chunks)length+=c.length;
-  const pcm=new Int16Array(length);let o=0;
-  for(const c of chunks)for(let i=0;i<c.length;i++){const s=Math.max(-1,Math.min(1,c[i]));pcm[o++]=s<0?Math.round(s*0x8000):Math.round(s*0x7FFF);}
-  const buf=new ArrayBuffer(44+pcm.length*2),v=new DataView(buf);
+function resampleTo16k(chunks,rate){
+  let len=0;for(const c of chunks)len+=c.length;
+  const src=new Float32Array(len);let o=0;
+  for(const c of chunks){src.set(c,o);o+=c.length;}
+  if(rate===16000)return src;
+  const ratio=rate/16000,outLen=Math.floor(len/ratio),out=new Float32Array(outLen);
+  for(let i=0;i<outLen;i++){const p=i*ratio,i0=Math.floor(p),f=p-i0;
+    out[i]=i0+1<len?src[i0]*(1-f)+src[i0+1]*f:src[i0];}
+  return out;
+}
+function wavFromPcm(pcm,rate){
+  const n=pcm.length;
+  const buf=new ArrayBuffer(44+n*2),v=new DataView(buf);
   const w=(at,s)=>{for(let i=0;i<s.length;i++)v.setUint8(at+i,s.charCodeAt(i));};
-  w(0,'RIFF');v.setUint32(4,36+pcm.length*2,true);w(8,'WAVE');w(12,'fmt ');
+  w(0,'RIFF');v.setUint32(4,36+n*2,true);w(8,'WAVE');w(12,'fmt ');
   v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
   v.setUint32(24,rate,true);v.setUint32(28,rate*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);
-  w(36,'data');v.setUint32(40,pcm.length*2,true);
+  w(36,'data');v.setUint32(40,n*2,true);
+  for(let i=0;i<n;i++){const s=Math.max(-1,Math.min(1,pcm[i]));v.setInt16(44+i*2,s<0?s*0x8000:s*0x7FFF,true);}
   return new Blob([buf],{type:'audio/wav'});
 }
 let micSession=null;
@@ -485,6 +515,8 @@ function micStop(){
   const btn=$('mic');
   if(!micSession)return;
   const s=micSession;micSession=null;
+  window.removeEventListener('pointerup',micStop);
+  window.removeEventListener('pointercancel',micStop);
   btn.classList.remove('listening');
   $('status-text').textContent='识别中…';
   Promise.resolve(s.stop()).finally(()=>{$('status-text').textContent='在线';});
@@ -493,25 +525,48 @@ async function micStart(){
   const btn=$('mic');
   if(micSession)return;
   if(asrAvailable&&navigator.mediaDevices&&(window.AudioContext||window.webkitAudioContext)){
+    let stream2=null,released=false;
+    const earlyRelease=()=>{released=true;};
+    window.addEventListener('pointerup',earlyRelease,{once:true});
     try{
-      const stream2=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,sampleRate:16000}});
-      if(micSession===null&&btn.classList.contains('listening')){/* already started elsewhere */}
-      const ctx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:16000});
+      stream2=await navigator.mediaDevices.getUserMedia({audio:true});
+    }catch(e){
+      window.removeEventListener('pointerup',earlyRelease);
+      const name=e&&e.name||'';
+      if(name==='NotAllowedError'||name==='SecurityError')
+        addMsg('mark','麦克风权限被拒了。点地址栏左边的小锁，把麦克风改成允许，再刷新页面。');
+      else if(name==='NotFoundError')
+        addMsg('mark','没找到麦克风设备，检查一下耳机或麦克风插好了吗。');
+      else
+        addMsg('mark','麦克风打不开（'+(name||'未知原因')+'），先打字吧。');
+      return;
+    }
+    if(released){stream2.getTracks().forEach(t=>t.stop());return;}
+    window.removeEventListener('pointerup',earlyRelease);
+    try{
+      const ctx=new (window.AudioContext||window.webkitAudioContext)();
       const src=ctx.createMediaStreamSource(stream2);
       const proc=ctx.createScriptProcessor(4096,1,1);
       const chunks=[];
       proc.onaudioprocess=e=>chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
       src.connect(proc);proc.connect(ctx.destination);
       btn.classList.add('listening');
-      $('status-text').textContent='正在听…';
+      const t0=Date.now();
+      $('status-text').textContent='正在听… 0s';
+      const tick=setInterval(()=>{$('status-text').textContent='正在听… '+((Date.now()-t0)/1000).toFixed(0)+'s';},500);
+      window.addEventListener('pointerup',micStop);
+      window.addEventListener('pointercancel',micStop);
       const rate=ctx.sampleRate;
       micSession={stop:async()=>{
+        clearInterval(tick);
         try{proc.disconnect();src.disconnect();await ctx.close();}catch(_){/* */}
         stream2.getTracks().forEach(t=>t.stop());
-        if(chunks.length<4)return;  /* 太短当误触 */
+        const secs=chunks.length*4096/rate;
+        if(secs<0.4){$('status-text').textContent='太短了，按住说完再松手';return;}
         try{
           const t=await getToken();
-          const r=await fetch('/api/coach/ride/asr',{method:'POST',headers:{'Content-Type':'audio/wav','X-Coach-Token':t},body:wavFromChunks(chunks,rate)});
+          const pcm=resampleTo16k(chunks,rate);
+          const r=await fetch('/api/coach/ride/asr',{method:'POST',headers:{'Content-Type':'audio/wav','X-Coach-Token':t},body:wavFromPcm(pcm,16000)});
           const d=await r.json();
           const text=d&&d.asr_status==='ok'&&typeof d.text==='string'?d.text.trim():'';
           if(text){$('input').value=text;autogrow();send();}
@@ -520,7 +575,8 @@ async function micStart(){
       }};
       return;
     }catch(_){
-      addMsg('mark','麦克风权限没开，浏览器地址栏左边可以开；不开也行，打字我一样懂。');
+      stream2.getTracks().forEach(t=>t.stop());
+      addMsg('mark','音频初始化失败，换个浏览器（推荐 Chrome）或打字吧。');
       return;
     }
   }
@@ -562,7 +618,6 @@ $('input').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.pre
 $('send').onclick=send;
 const micBtn=$('mic');
 micBtn.addEventListener('pointerdown',e=>{e.preventDefault();micStart();});
-for(const ev of ['pointerup','pointercancel','pointerleave'])micBtn.addEventListener(ev,()=>micStop());
 $('ls-end').onclick=endRide;
 (async()=>{
   try{await getToken();}catch(_){/* 配置拿不到也能打字试试 */}

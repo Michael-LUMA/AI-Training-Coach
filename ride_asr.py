@@ -26,7 +26,7 @@ MAX_AUDIO_BYTES = 1 << 20          # 32KB/s 的 16k 单声道 WAV，约 30 秒�
 MAX_RESPONSE_BYTES = 1 << 16
 TASK_TIMEOUT_S = 30.0
 CHUNK_BYTES = 3200                 # 100ms @16kHz/16bit/mono
-CHUNK_PACE_S = 0.02
+CHUNK_PACE_S = 0.005
 
 
 def _result(status, text=None, usage=None):
