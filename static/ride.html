@@ -1210,7 +1210,7 @@ async function askMark(options){
   try {
     if(!lastWeather && WEATHER_INTENT_RE.test(question))await ensureWeatherForAsk();
     if(request!==chatRequest)return;
-    const body={question:question,conv_id:CONV_ID};
+    const body={question:question,conv_id:CONV_ID,tz_offset_min:-new Date().getTimezoneOffset()};
     if(active && liveOn && liveId)body.live_id=liveId;
     else {const reviewTarget=selectedHistory||lastSession;if(reviewTarget && reviewTarget.id)body.session_id=reviewTarget.id;}
     if(lastWeather)body.weather=lastWeather;

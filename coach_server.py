@@ -20,7 +20,7 @@ import time
 from collections import deque
 from threading import Lock
 from contextlib import closing
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -511,7 +511,7 @@ class App:
         by build_ride_chat. Optional conv_id carries at most _CONV_MAX_TURNS
         recent turns as context — memory-only, TTL-bounded, never persisted.
         """
-        require(type(payload) is dict and set(payload) - {"weather", "nav"} in ({"question"}, {"question", "session_id"},
+        require(type(payload) is dict and set(payload) - {"weather", "nav", "tz_offset_min"} in ({"question"}, {"question", "session_id"},
                                                         {"question", "live_id"}, {"question", "conv_id"},
                                                         {"question", "session_id", "conv_id"},
                                                         {"question", "live_id", "conv_id"}),
@@ -528,6 +528,11 @@ class App:
         if live_id is not None:
             require(type(live_id) is str and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", live_id) is not None,
                     "Invalid live_id")
+        # Optional client-relayed timezone offset (minutes east of UTC, like
+        # -Date.getTimezoneOffset()): keeps "现在几点" honest on UTC servers.
+        tz_offset = payload.get("tz_offset_min")
+        if tz_offset is not None:
+            require(type(tz_offset) is int and -720 <= tz_offset <= 840, "Invalid tz_offset_min")
         identifier = payload.get("session_id")
         if identifier is not None:
             require(type(identifier) is str and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", identifier) is not None,
@@ -705,7 +710,8 @@ class App:
                     http_post=self.llm_post, **kw))
 
         def general():
-            now_local = datetime.now().astimezone()
+            tzinfo = timezone(timedelta(minutes=tz_offset)) if tz_offset is not None else None
+            now_local = datetime.now(tzinfo) if tzinfo is not None else datetime.now().astimezone()
             now_bundle = {'local_time': now_local.strftime('%Y-%m-%d %H:%M'),
                           'weekday': '星期' + '一二三四五六日'[now_local.weekday()]}
             return "general", llm_router.run(

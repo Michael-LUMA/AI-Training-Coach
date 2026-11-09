@@ -1787,7 +1787,8 @@ class ChatCardUI(RideMemoryUI):
         self.assertEqual(result['answer'], '这次平均心率120。')
         self.assertEqual(result['body']['question'], '这次心率多少？')
         self.assertRegex(result['body']['conv_id'], r'^conv-[A-Za-z0-9_-]{8,64}$')
-        self.assertEqual(set(result['body']), {'question', 'conv_id'})
+        self.assertIn(result['body']['tz_offset_min'], range(-720, 841))
+        self.assertEqual(set(result['body']), {'question', 'conv_id', 'tz_offset_min'})
         self.assertTrue(result['shown'])
 
     def test_conv_id_stable_per_page_and_followup_ready(self):

@@ -260,6 +260,27 @@ class ChatEndpointTests(unittest.TestCase):
         self.assertEqual((error.exception.status,error.exception.code),(404,'not_found'))
         self.post.assert_not_called()
 
+    def test_tz_offset_reaches_general_lane_now_bundle(self):
+        with patch.dict(os.environ,{'DASHSCOPE_API_KEY':'synthetic-key'}):
+            result=self.request('/api/coach/ride/chat',{'question':'聊聊古埃及金字塔','tz_offset_min':480})
+        self.assertEqual((result['speech_status'],result['lane']),('ok','general'))
+        facts=json.loads(json.loads(self.post.call_args.args[0].data)['messages'][1]['content'])
+        self.assertRegex(facts['now']['local_time'],r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$')
+        self.assertIn(facts['now']['weekday'],[f'星期{d}' for d in '一二三四五六日'])
+        from datetime import datetime as dt, timedelta as td, timezone as tz
+        expected=dt.now(tz(td(minutes=480))).strftime('%Y-%m-%d %H:%M')
+        self.assertEqual(facts['now']['local_time'],expected)
+
+    def test_invalid_tz_offset_rejected(self):
+        for bad in ('480',480.5,True,-721,841,None):
+            if bad is None:
+                continue
+            with self.subTest(tz_offset_min=repr(bad)):
+                with self.assertRaises(ActionError) as error:
+                    self.request('/api/coach/ride/chat',{'question':'心率？','tz_offset_min':bad})
+                self.assertEqual(error.exception.status,400)
+        self.post.assert_not_called()
+
     def test_unconfigured_returns_quiet_template_shape(self):
         self.save()
         result=self.request('/api/coach/ride/chat',{'question':'心率？','session_id':'current'})
