@@ -281,6 +281,19 @@ class ChatEndpointTests(unittest.TestCase):
                 self.assertEqual(error.exception.status,400)
         self.post.assert_not_called()
 
+    def test_weather_question_without_bundle_is_deterministic_honesty(self):
+        result=self.request('/api/coach/ride/chat',{'question':'今天天气怎么样？'})
+        self.assertEqual((result['speech_status'],result['lane']),('ok','personal'))
+        self.assertIn('定位',result['speech'])
+        self.post.assert_not_called()
+
+    def test_conversational_self_never_routes_personal(self):
+        self.post.return_value=transport('金字塔是古埃及法老的陵墓群。').return_value
+        with patch.dict(os.environ,{'DASHSCOPE_API_KEY':'synthetic-key'}):
+            result=self.request('/api/coach/ride/chat',{'question':'给我讲个有意思的运动冷知识'})
+        self.assertIn(result['lane'],('knowledge','general'))
+        self.assertNotEqual(result['lane'],'personal')
+
     def test_unconfigured_returns_quiet_template_shape(self):
         self.save()
         result=self.request('/api/coach/ride/chat',{'question':'心率？','session_id':'current'})

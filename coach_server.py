@@ -108,6 +108,10 @@ _RECORD_WORDS = ("心率", "踏频", "功率", "配速", "速度", "均速", "�
                  "膝盖", "旧伤", "受伤")
 # 求教词：「怎么练/是什么/为什么」是知识问题，不是记录问题。
 _ADVICE_MARKERS = ("怎么练", "怎么提高", "如何", "是什么", "为什么", "什么意思", "区别", "教程")
+# 会话式「我」：给我讲/帮我写/陪我聊里的「我」不是记录指代。
+_CHAT_SELF_MARKERS = ("给我", "帮我", "我想", "我要", "我喜欢", "陪我", "教我", "讲个", "聊聊", "荐")
+# 天气词：没有天气事实时命中即诚实短路，不让模型硬答。
+_WEATHER_MARKERS = ("天气", "下雨", "温度", "穿什么", "适合出", "适合骑", "适合运动")
 _LIVE_SILENCE_S = 60.0      # 主动播报全局静默期：克制即智能
 _LIVE_FRESH_S = 30.0        # Three missed 10-second heartbeats make current facts unavailable.
 _CONV_TTL_S = 1800.0        # 对话记忆 30 分钟无活动自焚，只在内存，不落盘
@@ -699,7 +703,16 @@ class App:
         prefer_personal = nav_intent or (
             any(marker in question for marker in _PERSONAL_MARKERS)
             and any(word in question for word in _RECORD_WORDS)
-            and not any(marker in question for marker in _ADVICE_MARKERS))
+            and not any(marker in question for marker in _ADVICE_MARKERS)
+            and not any(marker in question for marker in _CHAT_SELF_MARKERS))
+        # 天气问题没有天气事实时绝不劳烦模型：诚实直答，一毛钱不花。
+        if (prefer_personal and weather is None
+                and any(marker in question for marker in _WEATHER_MARKERS)):
+            final = {"speech_status": "ok",
+                     "speech": "我现在看不到天气——打开定位权限，我就能查你那儿的天。",
+                     "fallback": None, "usage": None, "lane": "personal"}
+            self._dialog_record(conv_id, question_for_record, final)
+            return final
 
         def personal():
             return "personal", llm_router.run(

@@ -477,12 +477,21 @@ function wavFromChunks(chunks,rate){
   return new Blob([buf],{type:'audio/wav'});
 }
 let micSession=null;
-async function micToggle(){
+function micStop(){
   const btn=$('mic');
-  if(micSession){const s=micSession;micSession=null;btn.classList.remove('listening');s.stop();return;}
+  if(!micSession)return;
+  const s=micSession;micSession=null;
+  btn.classList.remove('listening');
+  $('status-text').textContent='识别中…';
+  Promise.resolve(s.stop()).finally(()=>{$('status-text').textContent='在线';});
+}
+async function micStart(){
+  const btn=$('mic');
+  if(micSession)return;
   if(asrAvailable&&navigator.mediaDevices&&(window.AudioContext||window.webkitAudioContext)){
     try{
       const stream2=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,sampleRate:16000}});
+      if(micSession===null&&btn.classList.contains('listening')){/* already started elsewhere */}
       const ctx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:16000});
       const src=ctx.createMediaStreamSource(stream2);
       const proc=ctx.createScriptProcessor(4096,1,1);
@@ -490,31 +499,37 @@ async function micToggle(){
       proc.onaudioprocess=e=>chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
       src.connect(proc);proc.connect(ctx.destination);
       btn.classList.add('listening');
+      $('status-text').textContent='正在听…';
       const rate=ctx.sampleRate;
       micSession={stop:async()=>{
         try{proc.disconnect();src.disconnect();await ctx.close();}catch(_){/* */}
         stream2.getTracks().forEach(t=>t.stop());
-        if(!chunks.length)return;
+        if(chunks.length<4)return;  /* 太短当误触 */
         try{
           const t=await getToken();
           const r=await fetch('/api/coach/ride/asr',{method:'POST',headers:{'Content-Type':'audio/wav','X-Coach-Token':t},body:wavFromChunks(chunks,rate)});
           const d=await r.json();
           const text=d&&d.asr_status==='ok'&&typeof d.text==='string'?d.text.trim():'';
           if(text){$('input').value=text;autogrow();send();}
-        }catch(_){/* 静默，打字也行 */}
+          else addMsg('mark','我没听清，靠近一点再说一次？');
+        }catch(_){addMsg('mark','识别服务暂时不可用，打字告诉我吧。');}
       }};
       return;
-    }catch(_){/* fall through to browser engine */}
+    }catch(_){
+      addMsg('mark','麦克风权限没开，浏览器地址栏左边可以开；不开也行，打字我一样懂。');
+      return;
+    }
   }
-  if(!SpeechEngine)return;
+  if(!SpeechEngine){addMsg('mark','这个浏览器不支持语音输入，打字吧。');return;}
   const rec=new SpeechEngine();rec.lang='zh-CN';rec.interimResults=false;
   btn.classList.add('listening');
+  $('status-text').textContent='正在听…';
   micSession={stop:()=>{try{rec.stop();}catch(_){/* */}}};
   rec.onresult=e=>{const text=e.results[0]&&e.results[0][0]&&e.results[0][0].transcript;
     if(text){$('input').value=text.trim();autogrow();send();}};
   rec.onend=()=>{btn.classList.remove('listening');micSession=null;};
   rec.onerror=rec.onend;
-  rec.start();
+  try{rec.start();}catch(_){btn.classList.remove('listening');micSession=null;}
 }
 /* ================= 建议 chips ================= */
 function refreshChips(){
@@ -541,7 +556,9 @@ function autogrow(){const el2=$('input');el2.style.height='auto';el2.style.heigh
 $('input').addEventListener('input',autogrow);
 $('input').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}});
 $('send').onclick=send;
-$('mic').onclick=micToggle;
+const micBtn=$('mic');
+micBtn.addEventListener('pointerdown',e=>{e.preventDefault();micStart();});
+for(const ev of ['pointerup','pointercancel','pointerleave'])micBtn.addEventListener(ev,()=>micStop());
 $('ls-end').onclick=endRide;
 (async()=>{
   try{await getToken();}catch(_){/* 配置拿不到也能打字试试 */}
