@@ -9,8 +9,7 @@ from unittest.mock import Mock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import ride_general as gen
 
-PREFIX = gen.GENERAL_PREFIX
-OK_SPEECH = PREFIX + '金字塔是古埃及法老的陵墓群，多在尼罗河西岸。'
+OK_SPEECH = '金字塔是古埃及法老的陵墓群，多在尼罗河西岸。'
 
 
 def transport(speech=OK_SPEECH, *, status=200, draft=None, finish='stop'):
@@ -25,11 +24,21 @@ class GeneralAnswerTests(unittest.TestCase):
         kwargs.setdefault('api_key', 'synthetic-key')
         return gen.build_general_answer(question, http_post=transport(speech), **kwargs)
 
-    def test_labeled_number_free_answer_passes(self):
+    def test_plain_answer_passes_without_any_prefix(self):
         result = self.answer()
         self.assertEqual(result['llm_status'], 'ok')
         self.assertEqual(result['draft'], {'speech': OK_SPEECH})
         self.assertIsNone(result['fallback'])
+
+    def test_common_knowledge_numbers_pass(self):
+        # 通用知识里的数字是开放聊天的一部分，不再是本地不可验证的负担。
+        for speech in ('金字塔建于公元前2560年左右。',
+                       '胡夫金字塔高约146米，用了二百三十万块石头。',
+                       '今天上海白天15度，夜里9度，适合出门。'):
+            with self.subTest(speech=speech):
+                result = self.answer(speech)
+                self.assertEqual(result['llm_status'], 'ok')
+                self.assertEqual(result['draft'], {'speech': speech})
 
     def test_invalid_question_rejected_without_upstream(self):
         post = Mock(side_effect=AssertionError('no network'))
@@ -58,26 +67,8 @@ class GeneralAnswerTests(unittest.TestCase):
                 self.assertEqual(result['llm_status'], 'upstream_error')
                 self.assertEqual(result['fallback'], 'template')
 
-    def test_missing_label_prefix_rejected(self):
-        result = self.answer('金字塔是古埃及法老的陵墓群。')
-        self.assertEqual(result['llm_status'], 'rejected_bad_schema')
-        self.assertIsNone(result['draft'])
-
-    def test_any_number_rejected_arabic_and_han(self):
-        for speech in (PREFIX + '金字塔建于公元前2560年。',
-                       PREFIX + '金字塔建于公元前两千多年。',
-                       PREFIX + '胡夫金字塔高约一百多米。',
-                       PREFIX + '它用了二百三十万块石头。'):
-            with self.subTest(speech=speech):
-                result = self.answer(speech)
-                self.assertEqual(result['llm_status'], 'rejected_unverifiable_number')
-
-    def test_formal_numeral_glyphs_in_common_words_pass(self):
-        result = self.answer(PREFIX + '油漆未干别碰，这话可以参考。')
-        self.assertEqual(result['llm_status'], 'ok')
-
     def test_forbidden_words_rejected(self):
-        result = self.answer(PREFIX + '坚持训练效果明显，你会变强。')
+        result = self.answer('坚持训练效果明显，你会变强。')
         self.assertEqual(result['llm_status'], 'rejected_unsafe_speech')
 
     def test_malformed_drafts_rejected(self):
@@ -106,10 +97,3 @@ class GeneralAnswerTests(unittest.TestCase):
                                                   api_key='synthetic-key', http_post=post)
                 self.assertEqual(result['llm_status'], 'rejected_bad_schema')
         post.assert_not_called()
-
-    def test_number_free_gate(self):
-        self.assertTrue(gen._number_free('没有数字的句子，参考油漆工艺。'))
-        self.assertFalse(gen._number_free('公元前2560年'))
-        self.assertFalse(gen._number_free('两千多年'))
-        self.assertFalse(gen._number_free('心率一百二'))
-        self.assertFalse(gen._number_free('第①座'))

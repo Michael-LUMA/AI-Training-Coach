@@ -714,7 +714,7 @@ class App:
         # transport failure or no matching card. A verification rejection means
         # the right lane found material but the draft failed honesty checks —
         # the other lane cannot fix that and only produces non-sequitur answers.
-        # A knowledge miss goes to the general lane (labeled, number-free),
+        # A knowledge miss goes to the general lane (open chat, safety gates on),
         # not to the personal lane, which would have nothing to say either.
         if prefer_personal:
             lane, result = personal()
