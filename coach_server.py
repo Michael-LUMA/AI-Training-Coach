@@ -694,7 +694,11 @@ class App:
 
         first, second = (personal, knowledge) if prefer_personal else (knowledge, personal)
         lane, result = first()
-        if result["llm_status"] != "ok" and result["llm_status"] != "not_configured":
+        # Cross-lane fallback only when the first lane genuinely has nothing:
+        # transport failure or no matching card. A verification rejection means
+        # the right lane found material but the draft failed honesty checks —
+        # the other lane cannot fix that and only produces non-sequitur answers.
+        if result["llm_status"] in ("upstream_error", "no_knowledge"):
             lane, result = second()
         final = {"speech_status": result["llm_status"],
                  "speech": result["draft"]["speech"] if result["draft"] else None,

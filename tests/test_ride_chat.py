@@ -349,17 +349,26 @@ class ChatEndpointTests(unittest.TestCase):
         self.assertEqual(self.post.call_count,1)
 
     def test_preferred_lane_failure_falls_through_once(self):
-        # Knowledge question with no matching card falls through to personal.
+        # A question with no matching card at all falls through to personal.
         self.post.return_value=transport('这个我没记到。').return_value
         with patch.dict(os.environ,{'DASHSCOPE_API_KEY':'synthetic-key'}):
-            result=self.request('/api/coach/ride/chat',{'question':'量子力学是什么？'})
+            result=self.request('/api/coach/ride/chat',{'question':'聊聊古埃及金字塔'})
         self.assertEqual((result['speech_status'],result['lane']),('ok','personal'))
-        # Personal rejection falls through to knowledge; still honest template.
+        # A rejected draft never crosses lanes: the right lane found material
+        # but failed honesty checks; the other lane would only non-sequitur.
         self.post.return_value=transport('心率999。').return_value
         with patch.dict(os.environ,{'DASHSCOPE_API_KEY':'synthetic-key'}):
             result=self.request('/api/coach/ride/chat',{'question':'我这次心率多少？'})
-        self.assertEqual(result['lane'],'knowledge')
-        self.assertEqual(result['speech_status'],'rejected_unverifiable_number')
+        self.assertEqual((result['speech_status'],result['lane']),('rejected_unverifiable_number','personal'))
+        self.post.return_value=transport('踏频一般是90转。（来源：通用运动常识）').return_value
+        with patch.dict(os.environ,{'DASHSCOPE_API_KEY':'synthetic-key'}):
+            result=self.request('/api/coach/ride/chat',{'question':'踏频是什么？'})
+        self.assertEqual((result['speech_status'],result['lane']),('rejected_unverifiable_number','knowledge'))
+        # Transport failure still consults the other lane exactly once.
+        self.post.return_value=(500,{},b'{}')
+        with patch.dict(os.environ,{'DASHSCOPE_API_KEY':'synthetic-key'}):
+            result=self.request('/api/coach/ride/chat',{'question':'我这次心率多少？'})
+        self.assertEqual((result['speech_status'],result['lane']),('upstream_error','knowledge'))
 
     def test_chat_writes_no_history_to_disk(self):
         self.save()

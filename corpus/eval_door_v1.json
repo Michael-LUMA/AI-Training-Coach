@@ -209,7 +209,7 @@
  },
  {
   "id": "door-knowledge-none",
-  "question": "量子力学讲什么？",
+  "question": "聊聊古埃及金字塔",
   "expect": "ok",
   "accept_any": [
    "没记到",
