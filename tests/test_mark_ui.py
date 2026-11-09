@@ -42,6 +42,10 @@ class MarkPageStructureTests(unittest.TestCase):
         self.assertNotIn('DASHSCOPE', HTML)
         self.assertNotIn('AMAP_API_KEY', HTML)
 
+    def test_no_innerhtml_like_the_legacy_page(self):
+        # 与 ride.html 同一纪律：动态文本只走 textContent。
+        self.assertNotIn('innerHTML', HTML)
+
 
 class MarkPageServingTests(unittest.TestCase):
     def test_mark_route_served_by_server(self):

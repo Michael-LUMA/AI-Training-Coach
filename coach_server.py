@@ -296,11 +296,11 @@ class App:
         require(not parsed.scheme and not parsed.netloc and not parsed.fragment, "Invalid request target")
         require(method in ("GET", "POST"), "Method not allowed", "method_not_allowed", 405)
         font_path = re.fullmatch(r"/fonts/[a-z0-9-]+\.woff2", parsed.path) if method == "GET" else None
-        public = method == "GET" and (parsed.path in ("/", "/ride", "/privacy", "/terms", "/ride.webmanifest", "/icon.svg", "/api/coach/config") or font_path is not None)
+        public = method == "GET" and (parsed.path in ("/", "/ride", "/mark", "/privacy", "/terms", "/ride.webmanifest", "/icon.svg", "/api/coach/config") or font_path is not None)
         if not public:
             token = headers.get("X-Coach-Token", "")
             require(type(token) is str and token.isascii() and secrets.compare_digest(token, self.token), "Session token required", "token_denied", 403)
-        allowed = ((method == "GET" and (parsed.path in ("/", "/privacy", "/terms", "/api/coach/config", "/api/coach/activities", "/ride", "/ride.webmanifest", "/icon.svg", RIDE_LIST, RIDE_NOTES) or font_path is not None)) or
+        allowed = ((method == "GET" and (parsed.path in ("/", "/privacy", "/terms", "/api/coach/config", "/api/coach/activities", "/ride", "/mark", "/ride.webmanifest", "/icon.svg", RIDE_LIST, RIDE_NOTES) or font_path is not None)) or
                    (method == "POST" and path in ("/api/coach/connect", "/api/coach/review", "/api/coach/review-l2", "/api/coach/demo-review", "/api/coach/waitlist", "/api/coach/weekly", RIDE_POST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE, RIDE_CHAT, RIDE_LIVE, RIDE_IMPORT, RIDE_WEATHER, RIDE_NOTE, RIDE_NOTE_DELETE, RIDE_SPEAK, RIDE_ASR)))
         require(allowed, "Endpoint not found", "not_found", 404)
         if method == "POST":
@@ -334,7 +334,7 @@ class App:
             if path == "/health":
                 return {"status": "ok"}
             parsed = urlsplit(path)
-            if parsed.path in ("/", "/ride", "/privacy", "/terms"):
+            if parsed.path in ("/", "/ride", "/mark", "/privacy", "/terms"):
                 return _page({"/": "coach.html", "/ride": "ride.html", "/mark": "mark.html", "/privacy": "privacy.html", "/terms": "terms.html"}[parsed.path])
             if parsed.path in ("/ride.webmanifest", "/icon.svg"):
                 filename, mime = {"/ride.webmanifest": ("ride.webmanifest", "application/manifest+json; charset=utf-8"),
