@@ -775,7 +775,7 @@ let activePersona=PERSONA;
 function currentActivity(){const el=$('activity-select');const v=el?el.value:'ride';return v==='hike'||v==='run' ? v : 'ride';}
 function applyActivity(){activePersona=SCENE_PERSONAS[currentActivity()] || PERSONA;}
 let navRoute=null, navWatch=null, navVoice=true, navPlanning=false;
-let navOffRoute=false, navOffRouteSnooze=0;
+let navOffRoute=false, navOffRouteSnooze=0, navNextDistM=null;
 function navStatus(text){$('nav-status').textContent=text;}
 function stopNavWatch(){
   if(navWatch!==null && navigator.geolocation && typeof navigator.geolocation.clearWatch==='function')navigator.geolocation.clearWatch(navWatch);
@@ -793,7 +793,7 @@ function renderNavSteps(){
   }).join('\n');
 }
 function clearNav(){
-  stopNavWatch();navRoute=null;navOffRoute=false;navOffRouteSnooze=0;
+  stopNavWatch();navRoute=null;navOffRoute=false;navOffRouteSnooze=0;navNextDistM=null;
   $('nav-clear').hidden=true;$('nav-steps').textContent='';navStatus('');
 }
 async function planNav(){
@@ -836,6 +836,7 @@ function onNavPosition(position){
   let step=navRoute.steps[navRoute.index];
   if(!step)return;
   const dist=Math.round(haversineM(converted[0],converted[1],step.end_lng,step.end_lat));
+  navNextDistM=dist;
   navStatus(activePersona.nav_next(step.instruction,dist));
   // Turn guidance is time-critical: announce immediately, not after the chat gap.
   if(active && navVoice && dist<=NAV_TURN_M && !step.announced){
@@ -1137,6 +1138,8 @@ async function askMark(options){
     if(active && liveOn && liveId)body.live_id=liveId;
     else {const reviewTarget=selectedHistory||lastSession;if(reviewTarget && reviewTarget.id)body.session_id=reviewTarget.id;}
     if(lastWeather)body.weather=lastWeather;
+    const navFacts=navFactsForAsk();
+    if(navFacts)body.nav=navFacts;
     const response=await fetch('/api/coach/ride/chat',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify(body)});
     if(!response.ok)throw new Error('chat unavailable');
     const result=await response.json();
@@ -1157,6 +1160,24 @@ async function askMark(options){
 }
 // One voice entry: Mark routes the sentence himself. Conservative by design —
 // anything that is not an explicit navigation command stays a data question.
+// Nav context for Q&A: the current AMap route state rides along with the
+// question, so Mark can state remaining distance and the next turn as facts.
+// Plan-based numbers only — arrival-time guessing is forbidden server-side too.
+function navFactsForAsk(){
+  if(!navRoute)return null;
+  const count=navRoute.steps.length;
+  if(navRoute.index>=count)return {destination:navRoute.destination,remaining_km:0,step_index:count,step_count:count,off_route:false};
+  let remaining=0;
+  for(let i=navRoute.index+1;i<count;i++)remaining+=navRoute.steps[i].distance_m;
+  if(typeof navNextDistM==='number'&&Number.isFinite(navNextDistM))remaining+=navNextDistM;
+  else remaining+=navRoute.steps[navRoute.index].distance_m;
+  const facts={destination:navRoute.destination,remaining_km:Math.round(remaining/100)/10,
+    step_index:navRoute.index+1,step_count:count,off_route:navOffRoute===true};
+  if(typeof navNextDistM==='number'&&Number.isFinite(navNextDistM)){
+    facts.next_instruction=navRoute.steps[navRoute.index].instruction;facts.next_distance_m=Math.round(navNextDistM);
+  }
+  return facts;
+}
 function routeVoiceIntent(text){
   const cleaned=(typeof text==='string'?text:'').replace(/^(?:mark|马克)[，,。.\s]*/i,'').trim();
   if(!cleaned)return{kind:'empty'};

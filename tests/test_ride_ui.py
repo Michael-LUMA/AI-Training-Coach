@@ -293,6 +293,48 @@ class RideMemoryUI(unittest.TestCase):
         self.assertNotIn('weather', result['body'])
         self.assertEqual(result['answer'], '我还没记到天气。')
 
+    NAV_ROUTE = ("{destination:'奥林匹克森林公园南园',distance_m:5000,duration_s:1200,index:0,steps:["
+                 "{instruction:'左转进入林萃路',road:'林萃路',distance_m:2000,end_lng:116.4,end_lat:39.99,announced:false,path:[[116.39,39.98],[116.4,39.99]]},"
+                 "{instruction:'右转',road:'',distance_m:3000,end_lng:116.41,end_lat:40.0,announced:false,path:[[116.4,39.99],[116.41,40.0]]}]}")
+
+    def test_chat_carries_nav_state_when_route_active(self):
+        result = self.run_js("""
+          navRoute=%s;navNextDistM=1500;
+          $('chat-input').value='还有多远？';
+          await askMark();
+          const chats=_calls.filter(c=>c.url==='/api/coach/ride/chat');
+          return {body:JSON.parse(chats[0].body)};
+        """ % self.NAV_ROUTE, history=[metadata()])
+        nav = result['body']['nav']
+        self.assertEqual(nav['destination'], '奥林匹克森林公园南园')
+        self.assertEqual(nav['remaining_km'], 4.5)   # 距转向 1500 米 + 后续 3000 米
+        self.assertEqual(nav['step_index'], 1)
+        self.assertEqual(nav['step_count'], 2)
+        self.assertEqual(nav['off_route'], False)
+        self.assertEqual(nav['next_instruction'], '左转进入林萃路')
+        self.assertEqual(nav['next_distance_m'], 1500)
+
+    def test_chat_omits_nav_without_route(self):
+        result = self.run_js("""
+          $('chat-input').value='还有多远？';
+          await askMark();
+          const chats=_calls.filter(c=>c.url==='/api/coach/ride/chat');
+          return {body:JSON.parse(chats[0].body)};
+        """, history=[metadata()])
+        self.assertNotIn('nav', result['body'])
+
+    def test_chat_arrived_route_reports_zero_remaining(self):
+        result = self.run_js("""
+          navRoute=%s;navRoute.index=2;navNextDistM=null;
+          $('chat-input').value='还有多远？';
+          await askMark();
+          const chats=_calls.filter(c=>c.url==='/api/coach/ride/chat');
+          return {body:JSON.parse(chats[0].body)};
+        """ % self.NAV_ROUTE, history=[metadata()])
+        nav = result['body']['nav']
+        self.assertEqual(nav['remaining_km'], 0)
+        self.assertNotIn('next_instruction', nav)
+
     def test_no_history_stays_hidden_and_debug_only(self):
         result = self.run_js("return {hidden:$('memory-card').hidden,spoken:_spoken,debug:_debug,text:$('memory-recall').textContent};")
         self.assertTrue(result['hidden'])

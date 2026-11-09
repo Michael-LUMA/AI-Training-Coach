@@ -63,6 +63,15 @@ day_weather 白天天气、day_temp 白天温度（摄氏度）、night_weather 
 （如「高德天气：上海今天白天多云，15度；夜间晴，9度。」），数字用
 阿拉伯数字；禁止预报、禁止穿衣或出行建议、禁止评价冷热；与问题无关
 就不提。
+facts 可能含 nav（高德导航的当前路线状态，source=amap，本次规划的路线）：
+destination 目的地、remaining_km 沿规划路线剩余公里、step_index 与
+step_count 是转向进度（第几个、共几个）、off_route 是否已偏航；
+next_instruction 下一转向动作、next_distance_m 距下一转向的米数可能
+缺失，缺失就不提转向。只在被问到路线、还有多远、转向、偏航时原样
+陈述（如「沿规划路线去奥体，还剩12.3公里；前方350米左转。」，
+转向用「前方X米+动作」的句式，不要说「下一转向」——避免歧义）；off_route 为 true 时说「你已偏离规划路线，我不会自动
+重算，到安全的地方停下可以重新规划」；禁止估算到达时刻、禁止给出
+路线建议；与问题无关就不提。
 固定句式（按问题里的触发词选对应句式，照用不改，只替换数字，
 数字必须来自 facts；一句问题只用一种句式，不混用）：
 - 最近单次：「最近这次平均心率128 bpm，记录了30分钟。」
@@ -278,6 +287,65 @@ def _weather_facts(weather):
     return {'source': 'amap', **fields}, numbers
 
 
+# Nav-intent short-circuit: these phrases unambiguously ask about an active
+# navigation. Without a relayed route bundle the honest answer is deterministic
+# — no LLM call, nothing invented.
+NAV_QUESTION_MARKERS = ('还有多远', '多久到', '几点到', '到哪了',
+                        '下一个转向', '下个转向', '下一转弯', '下个转弯', '偏航')
+_NAV_NO_ROUTE = '现在没有进行中的导航路线。'
+
+
+def _nav_facts(nav):
+    """Optional client-relayed AMap route state; malformed bundles drop out whole.
+
+    The page relays its own navigation state (planned via the route endpoint);
+    the server cannot re-verify upstream truth, so every field is bounded and
+    re-validated here. Any malformed field discards the entire bundle — Mark
+    stays silent about the route rather than quoting a half-trusted bundle.
+    Unknown extra keys are ignored by design.
+    """
+    if type(nav) is not dict:
+        return None, []
+    destination = nav.get('destination')
+    if (type(destination) is not str or not 1 <= len(destination) <= 100
+            or any(ord(ch) < 32 or ord(ch) == 127 for ch in destination)):
+        return None, []
+    remaining = nav.get('remaining_km')
+    if type(remaining) in (int, float) and type(remaining) is not bool:
+        remaining_km = Decimal(str(remaining))
+        if not remaining_km.is_finite() or not 0 <= remaining_km <= 2000:
+            return None, []
+    else:
+        return None, []
+    step_index, step_count = nav.get('step_index'), nav.get('step_count')
+    if (type(step_index) is not int or type(step_count) is not int
+            or not 1 <= step_index <= step_count <= 500):
+        return None, []
+    off_route = nav.get('off_route')
+    if type(off_route) is not bool:
+        return None, []
+    numbers = [(remaining_km, 'km'), (Decimal(step_index), None), (Decimal(step_count), None)]
+    facts = {'source': 'amap', 'destination': destination,
+             'remaining_km': remaining, 'step_index': step_index,
+             'step_count': step_count, 'off_route': off_route}
+    next_instruction = nav.get('next_instruction')
+    if next_instruction is not None:
+        if (type(next_instruction) is not str or not 1 <= len(next_instruction) <= 200
+                or any(ord(ch) < 32 or ord(ch) == 127 for ch in next_instruction)):
+            return None, []
+        next_distance = nav.get('next_distance_m')
+        if type(next_distance) in (int, float) and type(next_distance) is not bool:
+            distance = Decimal(str(next_distance))
+            if not distance.is_finite() or not 0 <= distance <= 200000:
+                return None, []
+        else:
+            return None, []
+        facts['next_instruction'] = next_instruction
+        facts['next_distance_m'] = next_distance
+        numbers.append((distance, 'm'))
+    return facts, numbers
+
+
 def _profile_facts(profile):
     """Validate a complete usage-profile bundle and register its bounded numbers.
 
@@ -318,6 +386,7 @@ def build_ride_chat(question, session: dict | None = None,
                     week: dict | None = None,
                     notes: list | None = None,
                     weather: dict | None = None,
+                    nav: dict | None = None,
                     api_key: str | None = None, http_post=None,
                     endpoint: str | None = None, model: str | None = None) -> dict:
     """Answer one bounded Chinese question, or return an honest template fallback.
@@ -329,6 +398,9 @@ def build_ride_chat(question, session: dict | None = None,
         totals: Optional complete cumulative and current-month numeric aggregates.
         weather: Optional client-relayed AMap weather bundle; malformed bundles
             are dropped whole by _weather_facts, never fail the question.
+        nav: Optional client-relayed AMap route state; malformed bundles are
+            dropped whole by _nav_facts, never fail the question. Nav-intent
+            questions without a route bundle get a deterministic honest line.
         api_key: Caller-supplied printable ASCII bearer key; never read from env.
         http_post: Injectable offline transport(request, timeout=20) returning
             (status, headers, bytes). No retry; production adapter blocks redirects.
@@ -367,6 +439,14 @@ def build_ride_chat(question, session: dict | None = None,
             if weather_facts is not None:
                 facts['weather'] = weather_facts
                 numbers.extend(weather_numbers)
+        if nav is not None:
+            nav_facts, nav_numbers = _nav_facts(nav)
+            if nav_facts is not None:
+                facts['nav'] = nav_facts
+                numbers.extend(nav_numbers)
+        if 'nav' not in facts and any(marker in question for marker in NAV_QUESTION_MARKERS):
+            # 问导航而没有路线状态：确定性诚实回答，不走模型，不编造。
+            return _result('ok', None, _NAV_NO_ROUTE)
         if _missing_metric_answer(question, facts):
             # 问什么没什么：诚实短路，不问模型，省一次上行也杜绝编造。
             return _result('ok', None, '这个我没记到。')

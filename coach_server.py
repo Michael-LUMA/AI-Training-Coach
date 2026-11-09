@@ -42,7 +42,7 @@ from ride_review import ReviewError
 from ride_memory import validate_session, RideMemoryError
 from ride_brain import build_ride_review
 import llm_router
-from ride_chat import build_ride_chat
+from ride_chat import NAV_QUESTION_MARKERS, build_ride_chat
 from ride_knowledge import build_knowledge_answer, load_cards
 from ride_live import LIVE_TEMPLATE, LiveSession, build_live_answer, build_live_speech
 from ride_nav import plan_route, _http_get as _nav_http_get
@@ -492,7 +492,7 @@ class App:
         by build_ride_chat. Optional conv_id carries at most _CONV_MAX_TURNS
         recent turns as context — memory-only, TTL-bounded, never persisted.
         """
-        require(type(payload) is dict and set(payload) - {"weather"} in ({"question"}, {"question", "session_id"},
+        require(type(payload) is dict and set(payload) - {"weather", "nav"} in ({"question"}, {"question", "session_id"},
                                                         {"question", "live_id"}, {"question", "conv_id"},
                                                         {"question", "session_id", "conv_id"},
                                                         {"question", "live_id", "conv_id"}),
@@ -500,6 +500,11 @@ class App:
         # Optional client-relayed AMap weather; validated and bounded again by
         # ride_chat._weather_facts, dropped whole when malformed.
         weather = payload.get("weather")
+        # Optional client-relayed AMap route state; validated and bounded again
+        # by ride_chat._nav_facts, dropped whole when malformed. Nav-intent
+        # questions bypass the live lane: they need route facts, not telemetry.
+        nav = payload.get("nav")
+        nav_intent = any(marker in payload["question"] for marker in NAV_QUESTION_MARKERS)
         live_id = payload.get("live_id")
         if live_id is not None:
             require(type(live_id) is str and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", live_id) is not None,
@@ -601,7 +606,7 @@ class App:
         # first; everything else tries the grounded knowledge library. The
         # other lane is consulted once when the preferred one cannot answer.
         question = payload["question"]
-        if live_id is not None and any(marker in question for marker in _LIVE_MARKERS):
+        if live_id is not None and not nav_intent and any(marker in question for marker in _LIVE_MARKERS):
             # Snapshot and freshness belong to one validated telemetry update.
             # Never substitute historical records for unavailable current facts.
             with self._live_lock:
@@ -623,7 +628,7 @@ class App:
                       "fallback": live["fallback"], "usage": live["usage"], "lane": "live"}
             self._dialog_record(conv_id, question_for_record, result)
             return result
-        prefer_personal = any(marker in question for marker in _PERSONAL_MARKERS)
+        prefer_personal = nav_intent or any(marker in question for marker in _PERSONAL_MARKERS)
 
         def personal():
             return "personal", llm_router.run(
@@ -634,7 +639,7 @@ class App:
                     activity_ordinal=ordinal if ordinal else None,
                     excluded_simulated=excluded_simulated, totals=totals, history=dialog,
                     profile=profile, week=week, notes=list(user_notes), weather=weather,
-                    http_post=self.llm_post, **kw),
+                    nav=nav, http_post=self.llm_post, **kw),
                 question=question)
 
         def knowledge():

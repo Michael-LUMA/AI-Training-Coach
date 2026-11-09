@@ -928,3 +928,87 @@ class ChatWeatherTests(unittest.TestCase):
         result = self.chat(None, http_post=post)
         self.assertEqual(result['llm_status'], 'ok')
         self.assertNotIn('weather', facts_of(post))
+
+
+class ChatNavTests(unittest.TestCase):
+    """Client-relayed AMap route state: validated bundle, deterministic honesty."""
+
+    def nav(self):
+        return {'destination': '奥林匹克森林公园南园', 'remaining_km': 12.3,
+                'step_index': 2, 'step_count': 9, 'off_route': False,
+                'next_instruction': '左转进入林萃路', 'next_distance_m': 350}
+
+    def chat(self, nav, question='还有多远？', **kwargs):
+        kwargs.setdefault('api_key', 'synthetic-key')
+        return ride_chat.build_ride_chat(question, session=None, nav=nav, **kwargs)
+
+    def test_nav_projection_and_verified_speech(self):
+        nav = self.nav(); before = copy.deepcopy(nav)
+        post = transport('沿规划路线去奥林匹克森林公园南园，还剩12.3公里；前方350米左转进入林萃路。')
+        result = self.chat(nav, http_post=post)
+        self.assertEqual(result['llm_status'], 'ok')
+        self.assertEqual(nav, before)
+        facts = facts_of(post)
+        self.assertEqual(facts['nav'], {'source': 'amap', **self.nav()})
+        self.assertIn('nav', ride_chat.SYSTEM_PROMPT)
+
+    def test_unregistered_distance_rejected(self):
+        post = transport('还剩13公里。')
+        result = self.chat(self.nav(), http_post=post)
+        self.assertEqual(result['llm_status'], 'rejected_unverifiable_number')
+
+    def test_turn_trap_phrase_rejected_not_shipped(self):
+        # 「下一转向」归一化后会把「一转」读成 1 rpm —— 这种措辞必须被核验链拦下。
+        post = transport('还剩12.3公里；下一转向：左转进入林萃路。')
+        result = self.chat(self.nav(), http_post=post)
+        self.assertEqual(result['llm_status'], 'rejected_unverifiable_number')
+
+    def test_nav_question_without_route_is_deterministic_honesty(self):
+        calls = []
+        def counting_post(request, timeout=20):
+            calls.append(request)
+            return transport('这个我没记到。')(request, timeout=timeout)
+        result = self.chat(None, http_post=counting_post)
+        self.assertEqual(result['llm_status'], 'ok')
+        self.assertEqual(result['draft'], {'speech': '现在没有进行中的导航路线。'})
+        self.assertEqual(calls, [])
+
+    def test_non_nav_question_without_route_still_asks(self):
+        post = transport('这个我没记到。')
+        result = self.chat(None, question='我累计骑了多久？', http_post=post)
+        self.assertEqual(result['llm_status'], 'ok')
+        self.assertNotIn('nav', facts_of(post))
+
+    def test_malformed_nav_drops_out_whole(self):
+        invalid = ['nav', 3, [],
+                   self.nav() | {'destination': ''},
+                   self.nav() | {'destination': '奥体' * 60},
+                   self.nav() | {'destination': '奥体\n'},
+                   self.nav() | {'remaining_km': -1},
+                   self.nav() | {'remaining_km': 2001},
+                   self.nav() | {'remaining_km': True},
+                   self.nav() | {'remaining_km': '12.3'},
+                   self.nav() | {'step_index': 0},
+                   self.nav() | {'step_index': 10},
+                   self.nav() | {'step_count': '9'},
+                   self.nav() | {'off_route': 'yes'},
+                   self.nav() | {'next_instruction': ''},
+                   self.nav() | {'next_instruction': '左转\n'},
+                   self.nav() | {'next_distance_m': -5},
+                   self.nav() | {'next_distance_m': None}]
+        for bundle in invalid:
+            with self.subTest(nav=repr(bundle)[:60]):
+                post = transport('这个我没记到。')
+                result = self.chat(bundle, question='我累计骑了多久？', http_post=post)
+                self.assertEqual(result['llm_status'], 'ok')
+                self.assertNotIn('nav', facts_of(post))
+
+    def test_arrived_route_omits_turn_fields(self):
+        bundle = {'destination': '奥体', 'remaining_km': 0,
+                  'step_index': 9, 'step_count': 9, 'off_route': False}
+        post = transport('沿规划路线去奥体，还剩0公里。')
+        result = self.chat(bundle, http_post=post)
+        self.assertEqual(result['llm_status'], 'ok')
+        facts = facts_of(post)['nav']
+        self.assertNotIn('next_instruction', facts)
+        self.assertNotIn('next_distance_m', facts)

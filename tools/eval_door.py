@@ -23,7 +23,7 @@ import coach_server
 
 DEFAULT_CORPUS = ROOT / "corpus" / "eval_door_v1.json"
 REQUIRED = {"id", "question", "expect", "note"}
-OPTIONAL = {"lane", "live_id", "canned", "accept_any", "reject_any", "weather"}
+OPTIONAL = {"lane", "live_id", "canned", "accept_any", "reject_any", "weather", "nav"}
 LANES = ("live", "personal", "knowledge")
 HONEST_DEFAULT = "这个我没记到。"
 
@@ -82,6 +82,8 @@ def validate_corpus(corpus):
             _require(_text(case["canned"], 300), f"{prefix}: invalid canned speech")
         if "weather" in case:
             _require(type(case["weather"]) is dict, f"{prefix}: weather must be an object")
+        if "nav" in case:
+            _require(type(case["nav"]) is dict, f"{prefix}: nav must be an object")
         for field in ("accept_any", "reject_any"):
             if field in case:
                 values = case[field]
@@ -197,6 +199,8 @@ def run_evaluation(cases):
                     payload["live_id"] = case["live_id"]
                 if "weather" in case:
                     payload["weather"] = case["weather"]
+                if "nav" in case:
+                    payload["nav"] = case["nav"]
                 result = app._chat_ride(payload)
                 row = judge_case(case, result)
                 rows.append(row)
