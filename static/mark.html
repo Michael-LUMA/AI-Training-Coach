@@ -357,6 +357,8 @@ function localStats(sessions){
 const RE_WEATHER=/天气|下雨|温度|穿什么|适合.*(骑|出门|运动)/;
 const RE_RECORD=/累计|这周|本周|这个月|本月|上次|最近|几次|多久|多远|状态|心率|历史|记录/;
 const RE_ROUTE=/^(?:帮我)?(?:导航|规划路线|指路|骑车去|走路去|去)(.{1,30})$/;
+const RE_STARTRIDE=/^(开始骑行|开始运动|开始锻炼|出发吧|准备出发|我要开始骑|我想开始骑|我去骑车|去骑车了|走起)/;
+const RE_ENDRIDE=/^(结束骑行|结束运动|骑完了|结束了?|停止骑行|我不骑了|今天骑到这)/;
 const RE_LIVE=/现在|当前|这会|此刻|实时|刚刚/;
 function thinkLabelsFor(q){
   if(RE_WEATHER.test(q))return['正在看天气…','正在组织语言…'];
@@ -383,6 +385,23 @@ async function send(){
   typeSeq++;
   sending=true;$('input').value='';autogrow();
   addMsg('user',q);
+  if(RE_STARTRIDE.test(q)&&!riding){sending=false;startRide();return;}
+  if(RE_ENDRIDE.test(q)&&riding){sending=false;endRide();return;}
+  if(/复盘|周报/.test(q)&&!riding){
+    addThinking(['正在汇总你这周的数据…','正在写复盘…']);
+    try{
+      const nowD=new Date(),dow=(nowD.getDay()+6)%7;
+      const mon=new Date(nowD.getFullYear(),nowD.getMonth(),nowD.getDate()-dow);
+      const ws=mon.getFullYear()+'-'+String(mon.getMonth()+1).padStart(2,'0')+'-'+String(mon.getDate()).padStart(2,'0');
+      const t=await getToken();
+      const r=await fetch('/api/coach/ride/weekly',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':t},body:JSON.stringify({week_start:ws})});
+      const d=await r.json().catch(()=>null);
+      removeThinking();
+      if(r.ok&&d&&typeof d.speech==='string'&&d.speech.trim()){addMsg('mark',d.speech,{lane:'personal'});speak(d.speech);}
+      else addMsg('mark','这周还没有记录，去骑一圈我就能给你复盘了。');
+    }catch(_){removeThinking();addMsg('mark','复盘服务暂时不可用，稍后再试。');}
+    sending=false;refreshChips();return;
+  }
   const routeMatch=q.match(RE_ROUTE);
   if(routeMatch&&!riding){
     addThinking(['正在规划路线…','正在查地图…']);
@@ -539,6 +558,9 @@ function micStop(){
 async function micStart(){
   const btn=$('mic');
   if(micSession)return;
+  /* 打断：用户一开口，播报立即让位 */
+  if(currentAudio){try{currentAudio.pause();}catch(_){/* */}}
+  if('speechSynthesis' in window)window.speechSynthesis.cancel();
   if(asrAvailable&&navigator.mediaDevices&&(window.AudioContext||window.webkitAudioContext)){
     let stream2=null,released=false;
     const earlyRelease=()=>{released=true;};
@@ -647,7 +669,7 @@ function refreshChips(){
     lastWeather?[
     ['今天天气','今天天气怎么样？'],['适合运动吗','今天适合出去骑车吗？'],['我这周练了多少','我这周骑了多少？'],
     ['随便聊聊','给我讲个有意思的运动冷知识']]:[
-    ['今天天气','今天天气怎么样？'],['我这周练了多少','我这周骑了多少？'],['规划路线','导航去'],
+    ['今天天气','今天天气怎么样？'],['本周复盘','给我做个本周复盘'],['规划路线','导航去'],
     ['随便聊聊','给我讲个有意思的运动冷知识']];
   for(const pair of chips){
     const b=node('button','chip',pair[0]);
