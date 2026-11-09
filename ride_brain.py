@@ -113,6 +113,10 @@ def _han_number(match):
 
 
 def _normalized_numbers(text):
+    # 「参」「漆」是大写数字字形，Unicode isnumeric 为真，但日常只出现在
+    # 「参考」「油漆」这类词里。这是仅供核验的归一化副本，置换成非数字
+    # 字形，避免诚实草稿被误杀；真正的大写数字 claim 模型几乎不会产出。
+    text=text.replace('参','某').replace('漆','某')
     text=text.replace('负','-').replace('−','-')
     for idiom,plain in _IDIOM_ONE:
         text=text.replace(idiom,plain)

@@ -21,10 +21,10 @@ def transport(speech='踏频是曲柄每分钟转动的圈数，和车速不是�
 
 
 class KnowledgeCardLibraryTests(unittest.TestCase):
-    def test_shipped_library_loads_eighty_valid_cards(self):
+    def test_shipped_library_loads_ninety_two_valid_cards(self):
         cards = know.load_cards(CARDS_PATH)
-        self.assertEqual(len(cards), 80)
-        self.assertEqual(len({card['id'] for card in cards}), 80)
+        self.assertEqual(len(cards), 92)
+        self.assertEqual(len({card['id'] for card in cards}), 92)
 
     def test_load_cards_rejects_bad_files(self):
         import tempfile
@@ -60,6 +60,18 @@ class KnowledgeRetrieveTests(unittest.TestCase):
             '跑后要不要拉伸': 'recovery-stretch',
             '能量胶什么时候吃': 'gear-energy-gel',
             '夜跑怎么更安全': 'gear-reflective',
+            '爬坡有什么技巧': 'climb-technique',
+            '下坡怎么刹车才安全': 'descend-safety',
+            '锁鞋锁踏值得上吗': 'clipless-pedals',
+            '功率计怎么看': 'power-meter-intro',
+            '室内骑行台怎么练': 'indoor-trainer',
+            '百公里骑行怎么准备': 'century-prepare',
+            '骑车通勤要注意什么': 'commute-riding',
+            '坐垫硌得疼怎么办': 'saddle-sore',
+            '骑车手麻脖子酸怎么办': 'numb-hands-neck',
+            '链条怎么保养': 'chain-care',
+            '骑车能减肥吗': 'ride-fat-loss',
+            '运动时抽筋怎么办': 'cramp-prevention',
         }
         for question, top_id in expected.items():
             with self.subTest(question=question):
@@ -123,6 +135,11 @@ class KnowledgeAnswerTests(unittest.TestCase):
     def test_number_outside_cards_rejected(self):
         result = self.answer('踏频一定要练到250转才行。（来源：通用运动常识）')
         self.assertEqual(result['llm_status'], 'rejected_unverifiable_number')
+
+    def test_formal_numeral_glyphs_in_common_words_pass(self):
+        # 「参」「漆」是大写数字字形，出现在「参考」「油漆」里不该误杀草稿。
+        result = self.answer('踏频可以参考路况灵活调整，就像油漆未干别碰。（来源：通用运动常识）')
+        self.assertEqual(result['llm_status'], 'ok')
 
     def test_forbidden_words_rejected(self):
         result = self.answer('坚持高踏频训练效果明显，你会变强。（来源：通用运动常识）')
