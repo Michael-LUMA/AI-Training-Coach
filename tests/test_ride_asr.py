@@ -241,3 +241,105 @@ class AsrEndpointTests(unittest.TestCase):
             config = self.app.dispatch('GET', '/api/coach/config',
                                        {'Host': '127.0.0.1:8794'})
         self.assertFalse(config['asr_available'])
+
+
+class StreamSessionTests(unittest.TestCase):
+    def setUp(self):
+        ride_asr._sessions.clear()
+        self.addCleanup(ride_asr._sessions.clear)
+
+    def feed(self, asr_id='session-01', blob=None, **kwargs):
+        kwargs.setdefault('api_key', 'synthetic-key')
+        return ride_asr.feed_segment(asr_id, wav(PCM) if blob is None else blob, **kwargs)
+
+    def test_segments_then_finish_transcript(self):
+        fake = FakeUpstream()
+        dial = lambda url, headers: fake
+        self.assertEqual(self.feed(ws_dial=dial)['asr_status'], 'ok')
+        self.assertEqual(self.feed(ws_dial=Mock_boom())['asr_status'], 'ok')  # 同会话不重拨
+        result = ride_asr.finish_session('session-01', api_key='synthetic-key')
+        self.assertEqual(result['asr_status'], 'ok')
+        self.assertEqual(result['text'], '这次心率多少今天怎么样')
+        self.assertEqual(bytes(fake.audio), PCM * 2)
+        self.assertTrue(fake.closed)
+        self.assertEqual(ride_asr._sessions, {})
+
+    def test_finish_unknown_or_bad_id_rejected(self):
+        self.assertEqual(ride_asr.finish_session('nope-nope', api_key='k')['asr_status'],
+                         'invalid_input')
+        self.assertEqual(ride_asr.finish_session('bad id!!', api_key='k')['asr_status'],
+                         'invalid_input')
+        self.assertEqual(self.feed(asr_id='bad id!!')['asr_status'], 'invalid_input')
+
+    def test_rate_mismatch_and_total_cap(self):
+        self.feed(ws_dial=lambda url, headers: FakeUpstream())
+        self.assertEqual(self.feed(blob=wav(PCM, rate=8000))['asr_status'], 'invalid_input')
+        session = ride_asr._sessions['session-01']
+        session['bytes'] = ride_asr.MAX_AUDIO_BYTES
+        self.assertEqual(self.feed()['asr_status'], 'invalid_input')
+
+    def test_not_configured_never_dials(self):
+        result = ride_asr.feed_segment('session-02', wav(PCM), api_key='  ',
+                                       ws_dial=Mock_boom())
+        self.assertEqual(result['asr_status'], 'not_configured')
+        self.assertEqual(ride_asr._sessions, {})
+
+    def test_upstream_failure_marks_session_failed(self):
+        def boom(url, headers):
+            raise ride_asr.WsError('dial failed')
+        self.assertEqual(self.feed(ws_dial=boom)['asr_status'], 'upstream_error')
+        self.assertEqual(self.feed(ws_dial=boom)['asr_status'], 'upstream_error')
+        self.assertEqual(ride_asr.finish_session('session-01', api_key='synthetic-key')['asr_status'],
+                         'upstream_error')
+        self.assertEqual(ride_asr._sessions, {})
+
+    def test_ttl_reap_closes_socket(self):
+        fake = FakeUpstream()
+        self.feed(ws_dial=lambda url, headers: fake)
+        ride_asr._sessions['session-01']['touched'] -= ride_asr.SESSION_TTL_S + 1
+        self.feed(asr_id='session-02', ws_dial=lambda url, headers: FakeUpstream())
+        self.assertNotIn('session-01', ride_asr._sessions)
+        self.assertTrue(fake.closed)
+
+
+class StreamEndpointTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.fake = FakeUpstream()
+        self.app = coach_server.App(
+            store=SimpleNamespace(path=Path(self.temp.name) / 'coach.sqlite3'),
+            ws_dial=lambda url, headers: self.fake)
+        ride_asr._sessions.clear()
+        self.addCleanup(ride_asr._sessions.clear)
+
+    def segment(self, body, asr_id='session-ep-1', headers=None):
+        default = {'Host': '127.0.0.1:8794', 'Origin': 'http://127.0.0.1:8794',
+                   'Content-Type': 'audio/wav', 'Content-Length': str(len(body)),
+                   'X-Coach-Token': self.app.token, 'X-ASR-Id': asr_id}
+        default.update(headers or {})
+        return self.app.dispatch('POST', '/api/coach/ride/asr/segment', default, body)
+
+    def test_segment_and_finish_roundtrip(self):
+        payload = json.dumps({'asr_id': 'session-ep-1'}).encode()
+        with patch.dict(os.environ, {'DASHSCOPE_API_KEY': 'synthetic-key'}):
+            self.assertEqual(self.segment(wav(PCM))['asr_status'], 'ok')
+            result = self.app.dispatch('POST', '/api/coach/ride/asr/finish',
+                                       {'Host': '127.0.0.1:8794', 'Origin': 'http://127.0.0.1:8794',
+                                        'Content-Type': 'application/json',
+                                        'Content-Length': str(len(payload)),
+                                        'X-Coach-Token': self.app.token}, payload)
+        self.assertEqual(result['asr_status'], 'ok')
+        self.assertEqual(result['text'], '这次心率多少今天怎么样')
+
+    def test_segment_rejects_bad_header_and_type(self):
+        with patch.dict(os.environ, {'DASHSCOPE_API_KEY': 'synthetic-key'}):
+            with self.assertRaises(ActionError) as error:
+                self.segment(wav(PCM), headers={'X-ASR-Id': 'bad id!!'})
+            self.assertEqual(error.exception.status, 400)
+            with self.assertRaises(ActionError) as error:
+                self.segment(wav(PCM), headers={'Content-Type': 'application/json'})
+            self.assertEqual(error.exception.status, 415)
+            with self.assertRaises(ActionError) as error:
+                self.segment(wav(PCM), headers={'X-Coach-Token': 'bad'})
+            self.assertEqual(error.exception.status, 403)

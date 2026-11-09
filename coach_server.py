@@ -46,7 +46,7 @@ from ride_chat import NAV_QUESTION_MARKERS, build_ride_chat
 from ride_agent import MAX_MATCHES, SEARCH_HINTS, plan_searches, search_sessions
 from ride_knowledge import build_knowledge_answer, load_cards
 from ride_general import build_general_answer
-from ride_asr import MAX_AUDIO_BYTES, transcribe_wav
+from ride_asr import MAX_AUDIO_BYTES, feed_segment, finish_session, transcribe_wav
 from ride_live import LIVE_TEMPLATE, LiveSession, build_live_answer, build_live_speech
 from ride_nav import plan_route, _http_get as _nav_http_get
 from ride_notes import NoteError, add_note, load_notes, remove_note
@@ -77,6 +77,8 @@ RIDE_CHAT = "/api/coach/ride/chat"
 RIDE_LIVE = "/api/coach/ride/live"
 RIDE_SPEAK = "/api/coach/ride/speak"
 RIDE_ASR = "/api/coach/ride/asr"
+RIDE_ASR_SEGMENT = "/api/coach/ride/asr/segment"
+RIDE_ASR_FINISH = "/api/coach/ride/asr/finish"
 
 
 def _usage_profile(entries):
@@ -305,10 +307,10 @@ class App:
             token = headers.get("X-Coach-Token", "")
             require(type(token) is str and token.isascii() and secrets.compare_digest(token, self.token), "Session token required", "token_denied", 403)
         allowed = ((method == "GET" and (parsed.path in ("/", "/privacy", "/terms", "/api/coach/config", "/api/coach/activities", "/ride", "/mark", "/ride.webmanifest", "/icon.svg", RIDE_LIST, RIDE_NOTES) or font_path is not None)) or
-                   (method == "POST" and path in ("/api/coach/connect", "/api/coach/review", "/api/coach/review-l2", "/api/coach/demo-review", "/api/coach/waitlist", "/api/coach/weekly", RIDE_POST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE, RIDE_CHAT, RIDE_LIVE, RIDE_IMPORT, RIDE_WEATHER, RIDE_NOTE, RIDE_NOTE_DELETE, RIDE_SPEAK, RIDE_ASR)))
+                   (method == "POST" and path in ("/api/coach/connect", "/api/coach/review", "/api/coach/review-l2", "/api/coach/demo-review", "/api/coach/waitlist", "/api/coach/weekly", RIDE_POST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE, RIDE_CHAT, RIDE_LIVE, RIDE_IMPORT, RIDE_WEATHER, RIDE_NOTE, RIDE_NOTE_DELETE, RIDE_SPEAK, RIDE_ASR, RIDE_ASR_SEGMENT, RIDE_ASR_FINISH)))
         require(allowed, "Endpoint not found", "not_found", 404)
         if method == "POST":
-            asr = path == RIDE_ASR
+            asr = path in (RIDE_ASR, RIDE_ASR_SEGMENT)
             require(headers.get("Transfer-Encoding") is None
                     and headers.get("Content-Type") == ("audio/wav" if asr else "application/json"),
                     "Fixed-length body required", "invalid_body", 415)
@@ -379,6 +381,8 @@ class App:
         require(len(body) == length, "Incomplete request body", "invalid_body")
         if path == RIDE_ASR:
             return self._asr_ride(body)
+        if path == RIDE_ASR_SEGMENT:
+            return self._asr_segment(headers, body)
         try:
             payload = strict_json(body)
         except ActionError:
@@ -405,6 +409,8 @@ class App:
             return self._live_ride(payload)
         if path == RIDE_SPEAK:
             return self._speak_ride(payload)
+        if path == RIDE_ASR_FINISH:
+            return self._asr_finish(payload)
         if path == "/api/coach/waitlist":
             require(type(payload) is dict and set(payload) == {"email"}, "Expected email only")
             status = self.waitlist.register(payload["email"])
@@ -706,11 +712,14 @@ class App:
             and not any(marker in question for marker in _ADVICE_MARKERS)
             and not any(marker in question for marker in _CHAT_SELF_MARKERS))
         # 天气问题没有天气事实时绝不劳烦模型：诚实直答，一毛钱不花。
-        if (prefer_personal and weather is None
-                and any(marker in question for marker in _WEATHER_MARKERS)):
+        # 问「当下天气」（今天/现在/外面…）即使不进个人道，也不让知识库硬答。
+        _NOW_WEATHER = ("今天", "现在", "明天", "今晚", "外面", "这会")
+        if (weather is None
+                and any(marker in question for marker in _WEATHER_MARKERS)
+                and (prefer_personal or any(marker in question for marker in _NOW_WEATHER))):
             final = {"speech_status": "ok",
                      "speech": "我现在看不到天气——打开定位权限，我就能查你那儿的天。",
-                     "fallback": None, "usage": None, "lane": "personal"}
+                     "fallback": None, "usage": None, "lane": "personal" if prefer_personal else "general"}
             self._dialog_record(conv_id, question_for_record, final)
             return final
 
@@ -801,6 +810,29 @@ class App:
                                 ws_dial=self.ws_dial)
         if result["asr_status"] == "invalid_input":
             raise ActionError("invalid_input", "Invalid WAV audio")
+        return result
+
+    def _asr_segment(self, headers, body):
+        """Streaming ASR: one WAV segment forwarded upstream while still talking.
+
+        Deliberately outside the per-minute conversation bucket: a long
+        dictation is many small posts, bounded instead by session caps and
+        per-segment audio validation.
+        """
+        result = feed_segment(headers.get("X-ASR-Id", ""), body,
+                              api_key=os.environ.get("DASHSCOPE_API_KEY"),
+                              ws_dial=self.ws_dial)
+        if result["asr_status"] == "invalid_input":
+            raise ActionError("invalid_input", "Invalid ASR segment")
+        return result
+
+    def _asr_finish(self, payload):
+        """Streaming ASR: close the audio stream, return the transcript."""
+        require(type(payload) is dict and set(payload) == {"asr_id"}, "Expected asr_id only")
+        result = finish_session(payload["asr_id"],
+                                api_key=os.environ.get("DASHSCOPE_API_KEY"))
+        if result["asr_status"] == "invalid_input":
+            raise ActionError("invalid_input", "Unknown ASR session")
         return result
 
     def _speak_ride(self, payload):

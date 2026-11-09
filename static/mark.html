@@ -572,18 +572,50 @@ async function micStart(){
       window.addEventListener('pointerup',micStop);
       window.addEventListener('pointercancel',micStop);
       const rate=ctx.sampleRate;
+      /* 流式识别：每 1.6s 把新录到的音频段发上去，松手时基本只剩尾巴 */
+      const asrId='asr-'+Math.random().toString(36).slice(2,10)+Date.now().toString(36);
+      let sentSamples=0,segChain=Promise.resolve(),segBroken=false;
+      const flushSegment=(final)=>{
+        let len=0;for(const c of chunks)len+=c.length;
+        if(len-sentSamples<(final?1600:8000))return Promise.resolve();
+        const all=new Float32Array(len);let off=0;
+        for(const c of chunks){all.set(c,off);off+=c.length;}
+        const delta=all.subarray(sentSamples);sentSamples=len;
+        const pcm=resampleTo16k([delta],rate);
+        if(!pcm.length)return Promise.resolve();
+        return getToken().then(t=>fetch('/api/coach/ride/asr/segment',{method:'POST',
+          headers:{'Content-Type':'audio/wav','X-Coach-Token':t,'X-ASR-Id':asrId},
+          body:wavFromPcm(pcm,16000)})).then(r=>{if(!r.ok)segBroken=true;}).catch(()=>{segBroken=true;});
+      };
+      const segTimer=setInterval(()=>{if(!segBroken)segChain=segChain.then(()=>flushSegment(false));},1600);
       micSession={stop:async()=>{
-        clearInterval(tick);
+        clearInterval(segTimer);
         try{proc.disconnect();src.disconnect();await ctx.close();}catch(_){/* */}
         stream2.getTracks().forEach(t=>t.stop());
         const secs=chunks.length*4096/rate;
         if(secs<0.4){$('status-text').textContent='太短了，按住说完再松手';return;}
         try{
           const t=await getToken();
-          const pcm=resampleTo16k(chunks,rate);
-          const r=await fetch('/api/coach/ride/asr',{method:'POST',headers:{'Content-Type':'audio/wav','X-Coach-Token':t},body:wavFromPcm(pcm,16000)});
-          const d=await r.json();
-          const text=d&&d.asr_status==='ok'&&typeof d.text==='string'?d.text.trim():'';
+          let text='';
+          if(!segBroken){
+            await segChain;            /* 等已发出的段落落地 */
+            await flushSegment(true);  /* 补上尾巴 */
+            if(!segBroken){
+              const r=await fetch('/api/coach/ride/asr/finish',{method:'POST',
+                headers:{'Content-Type':'application/json','X-Coach-Token':t},
+                body:JSON.stringify({asr_id:asrId})});
+              const d=await r.json().catch(()=>null);
+              if(r.ok&&d&&d.asr_status==='ok'&&typeof d.text==='string')text=d.text.trim();
+              else if(!d||d.asr_status!=='no_speech')segBroken=true;
+            }
+          }
+          if(segBroken){
+            /* 流式管道坏了就整段重传，保证任何情况下都能识别 */
+            const pcm=resampleTo16k(chunks,rate);
+            const r=await fetch('/api/coach/ride/asr',{method:'POST',headers:{'Content-Type':'audio/wav','X-Coach-Token':t},body:wavFromPcm(pcm,16000)});
+            const d=await r.json().catch(()=>null);
+            if(d&&d.asr_status==='ok'&&typeof d.text==='string')text=d.text.trim();
+          }
           if(text){$('input').value=text;autogrow();send();}
           else addMsg('mark','我没听清，靠近一点再说一次？');
         }catch(_){addMsg('mark','识别服务暂时不可用，打字告诉我吧。');}
