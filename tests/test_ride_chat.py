@@ -349,11 +349,23 @@ class ChatEndpointTests(unittest.TestCase):
         self.assertEqual(self.post.call_count,1)
 
     def test_preferred_lane_failure_falls_through_once(self):
-        # A question with no matching card at all falls through to personal.
-        self.post.return_value=transport('这个我没记到。').return_value
+        # A question with no matching card goes to the general lane, which
+        # must label itself and stay number-free.
+        labeled='这个我的运动卡片库还没收录，按通用常识说：金字塔是古埃及法老的陵墓群。'
+        self.post.return_value=transport(labeled).return_value
         with patch.dict(os.environ,{'DASHSCOPE_API_KEY':'synthetic-key'}):
             result=self.request('/api/coach/ride/chat',{'question':'聊聊古埃及金字塔'})
-        self.assertEqual((result['speech_status'],result['lane']),('ok','personal'))
+        self.assertEqual((result['speech_status'],result['lane']),('ok','general'))
+        # A general draft missing the honesty label is rejected outright.
+        self.post.return_value=transport('金字塔是古埃及法老的陵墓群。').return_value
+        with patch.dict(os.environ,{'DASHSCOPE_API_KEY':'synthetic-key'}):
+            result=self.request('/api/coach/ride/chat',{'question':'聊聊古埃及金字塔'})
+        self.assertEqual((result['speech_status'],result['lane']),('rejected_bad_schema','general'))
+        # A general draft claiming any number is rejected: unverifiable locally.
+        self.post.return_value=transport(labeled.replace('陵墓群','陵墓群，建于公元前两千多年')).return_value
+        with patch.dict(os.environ,{'DASHSCOPE_API_KEY':'synthetic-key'}):
+            result=self.request('/api/coach/ride/chat',{'question':'聊聊古埃及金字塔'})
+        self.assertEqual((result['speech_status'],result['lane']),('rejected_unverifiable_number','general'))
         # A rejected draft never crosses lanes: the right lane found material
         # but failed honesty checks; the other lane would only non-sequitur.
         self.post.return_value=transport('心率999。').return_value

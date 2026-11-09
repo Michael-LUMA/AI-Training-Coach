@@ -45,6 +45,7 @@ import llm_router
 from ride_chat import NAV_QUESTION_MARKERS, build_ride_chat
 from ride_agent import MAX_MATCHES, SEARCH_HINTS, plan_searches, search_sessions
 from ride_knowledge import build_knowledge_answer, load_cards
+from ride_general import build_general_answer
 from ride_live import LIVE_TEMPLATE, LiveSession, build_live_answer, build_live_speech
 from ride_nav import plan_route, _http_get as _nav_http_get
 from ride_notes import NoteError, add_note, load_notes, remove_note
@@ -692,14 +693,28 @@ class App:
                     question, self.knowledge_cards, history=dialog,
                     http_post=self.llm_post, **kw))
 
-        first, second = (personal, knowledge) if prefer_personal else (knowledge, personal)
-        lane, result = first()
+        def general():
+            return "general", llm_router.run(
+                'general',
+                lambda **kw: build_general_answer(
+                    question, history=dialog, http_post=self.llm_post, **kw))
+
         # Cross-lane fallback only when the first lane genuinely has nothing:
         # transport failure or no matching card. A verification rejection means
         # the right lane found material but the draft failed honesty checks —
         # the other lane cannot fix that and only produces non-sequitur answers.
-        if result["llm_status"] in ("upstream_error", "no_knowledge"):
-            lane, result = second()
+        # A knowledge miss goes to the general lane (labeled, number-free),
+        # not to the personal lane, which would have nothing to say either.
+        if prefer_personal:
+            lane, result = personal()
+            if result["llm_status"] in ("upstream_error", "no_knowledge"):
+                lane, result = knowledge()
+        else:
+            lane, result = knowledge()
+            if result["llm_status"] == "no_knowledge":
+                lane, result = general()
+            elif result["llm_status"] == "upstream_error":
+                lane, result = personal()
         final = {"speech_status": result["llm_status"],
                  "speech": result["draft"]["speech"] if result["draft"] else None,
                  "fallback": result["fallback"], "usage": result["usage"], "lane": lane}

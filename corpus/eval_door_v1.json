@@ -211,11 +211,12 @@
   "id": "door-knowledge-none",
   "question": "聊聊古埃及金字塔",
   "expect": "ok",
+  "lane": "general",
+  "canned": "这个我的运动卡片库还没收录，按通用常识说：金字塔是古埃及法老的陵墓群。",
   "accept_any": [
-   "没记到",
-   "没学过"
+   "按通用常识说"
   ],
-  "note": "知识库无卡可循，落到私域道后诚实短路，绝不硬答。"
+  "note": "知识库无卡可循，落到通用常识道：必须带诚实标注、不得出现任何数字。"
  },
  {
   "id": "door-personal-weather",

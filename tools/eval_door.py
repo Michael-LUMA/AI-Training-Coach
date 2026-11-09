@@ -24,7 +24,7 @@ import coach_server
 DEFAULT_CORPUS = ROOT / "corpus" / "eval_door_v1.json"
 REQUIRED = {"id", "question", "expect", "note"}
 OPTIONAL = {"lane", "live_id", "canned", "accept_any", "reject_any", "weather", "nav", "plan"}
-LANES = ("live", "personal", "knowledge")
+LANES = ("live", "personal", "knowledge", "general")
 HONEST_DEFAULT = "这个我没记到。"
 
 # Seed data: two stored rides (sums are pinned by corpus cases).
@@ -231,7 +231,7 @@ def run_evaluation(cases):
     summary["pass_rate"] = summary["pass"] / summary["total"]
     print(f"door: {summary['pass']}/{summary['total']} pass ({summary['pass_rate']:.0%}), "
           f"lanes live={summary['by_lane']['live']} personal={summary['by_lane']['personal']} "
-          f"knowledge={summary['by_lane']['knowledge']}")
+          f"knowledge={summary['by_lane']['knowledge']} general={summary['by_lane']['general']}")
     return {"provider": "door", "summary": summary, "cases": rows}
 
 
