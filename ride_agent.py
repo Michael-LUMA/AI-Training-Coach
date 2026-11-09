@@ -18,7 +18,7 @@ from llm_review import (ENDPOINT, MAX_RESPONSE_BYTES, TIMEOUT_S,
                         _http_post, _json, _usage)
 
 MAX_TOOLS = 2
-MAX_MATCHES = 3
+MAX_MATCHES = 7  # a range query can legitimately cover a full week of rides
 
 # Only questions carrying history-search hints pay the planner's extra call;
 # everything else answers from the base bundle exactly as before.
@@ -33,11 +33,14 @@ PLANNER_PROMPT = """你是 Mark 的调度器，不是回答者。根据用户问
 不需要查历史时输出：{"tools": []}
 唯一可用工具 search_sessions，它的 args 只能含以下字段：
 - date：YYYY-MM-DD（问题指向具体某天时必填；相对日期按 today 换算成绝对日期）
+- date_from 和 date_to：YYYY-MM-DD，首尾都含的日期区间（问题指向「上周」「那几天」等一段范围时用；两者必须同时给，date_from 不晚于 date_to；与 date 互斥）
 - activity：ride 骑行 / hike 徒步 / run 跑步（问题明确限定场景时才给）
 - sort：longest（问「最长/最久的一次」时给）；默认按时间倒序
 规则：
 - 问题是闲聊或问的是「最近/这次/本周/累计」就输出 {"tools": []}（那些事实已有）。
 - 问「最长/最久/最快的一次」时只给 sort，绝不加 date——它比的是全部记录。
+- 「上周」一律换算成 last_week_start 到 last_week_end 的 date_from/date_to，不要用单个 date。
+- 「昨天/前天/周几」等单日相对日期按 today 换算成 date。
 - known_dates 是实际存在记录的日期，只在问题指向具体某天时用 date 查这些日期。
 再次强调：args 必须嵌在 tools 数组的每一项里，不允许出现在外层。"""
 
@@ -56,11 +59,20 @@ def _check_date(value):
 
 def _check_search_args(args):
     """One tool call's args: known keys only, at least one constraint."""
-    if type(args) is not dict or not (set(args) <= {'date', 'activity', 'sort'}):
+    if type(args) is not dict or not (set(args) <= {'date', 'date_from', 'date_to', 'activity', 'sort'}):
         raise ValueError('invalid search args')
     out = {}
+    if 'date' in args and ('date_from' in args or 'date_to' in args):
+        raise ValueError('date and range are mutually exclusive')
+    if ('date_from' in args) != ('date_to' in args):
+        raise ValueError('range needs both ends')
     if 'date' in args:
         out['date'] = _check_date(args['date'])
+    if 'date_from' in args:
+        out['date_from'] = _check_date(args['date_from'])
+        out['date_to'] = _check_date(args['date_to'])
+        if out['date_from'] > out['date_to']:
+            raise ValueError('inverted range')
     if 'activity' in args:
         if args['activity'] not in ('ride', 'hike', 'run'):
             raise ValueError('invalid activity')
@@ -93,12 +105,15 @@ def _result(status, tools=None, usage=None):
 
 
 def plan_searches(question, *, today, known_dates, api_key, http_post=None,
-                  endpoint=None, model=None):
+                  endpoint=None, model=None, week_start=None,
+                  last_week_start=None, last_week_end=None):
     """Ask the model which history searches this question needs.
 
     The question is data, never an instruction channel. known_dates grounds
-    relative dates (「上周三」) to days that actually have records. Any malformed
-    plan degrades to no tools — the base bundle still answers, honestly.
+    relative dates (「上周三」) to days that actually have records; the week
+    anchors spare the model all weekday arithmetic (「上周」= last_week_start
+    .. last_week_end). Any malformed plan degrades to no tools — the base
+    bundle still answers, honestly.
     """
     if api_key is None or (type(api_key) is str and not api_key.strip()):
         return _result('not_configured')
@@ -107,6 +122,11 @@ def plan_searches(question, *, today, known_dates, api_key, http_post=None,
     try:
         user = {'task': 'plan', 'question': question, 'today': today,
                 'known_dates': list(known_dates)[:20]}
+        for key, value in (('week_start', week_start),
+                           ('last_week_start', last_week_start),
+                           ('last_week_end', last_week_end)):
+            if type(value) is str and re.fullmatch(r'\d{4}-\d{2}-\d{2}', value):
+                user[key] = value
         payload = {'model': model or 'qwen-flash', 'max_tokens': 300,
                    'response_format': {'type': 'json_object'},
                    'messages': [{'role': 'system', 'content': PLANNER_PROMPT},
@@ -161,6 +181,11 @@ def search_sessions(entries, args, *, limit=MAX_MATCHES):
     if day is not None:
         rows = [entry for entry in rows
                 if entry['when'].astimezone().date().isoformat() == day]
+    date_from = args.get('date_from')
+    if date_from is not None:
+        date_to = args['date_to']
+        rows = [entry for entry in rows
+                if date_from <= entry['when'].astimezone().date().isoformat() <= date_to]
     if args.get('sort') == 'longest':
         key = lambda entry: Decimal(str(entry['summary'].get('duration_s') or 0))
     else:

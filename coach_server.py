@@ -43,7 +43,7 @@ from ride_memory import validate_session, RideMemoryError
 from ride_brain import build_ride_review
 import llm_router
 from ride_chat import NAV_QUESTION_MARKERS, build_ride_chat
-from ride_agent import SEARCH_HINTS, plan_searches, search_sessions
+from ride_agent import MAX_MATCHES, SEARCH_HINTS, plan_searches, search_sessions
 from ride_knowledge import build_knowledge_answer, load_cards
 from ride_live import LIVE_TEMPLATE, LiveSession, build_live_answer, build_live_speech
 from ride_nav import plan_route, _http_get as _nav_http_get
@@ -628,16 +628,23 @@ class App:
                 and SEARCH_HINTS.search(question)):
             known_dates = sorted({entry["when"].astimezone().date().isoformat()
                                   for entry in searchable}, reverse=True)
+            # Week anchors spare the planner all weekday arithmetic.
+            this_monday = self.today() - timedelta(days=self.today().weekday())
+            last_monday = this_monday - timedelta(days=7)
+            last_sunday = this_monday - timedelta(days=1)
             plan = llm_router.run(
                 'planner',
                 lambda **kw: plan_searches(question, today=self.today().isoformat(),
                                            known_dates=known_dates,
+                                           week_start=this_monday.isoformat(),
+                                           last_week_start=last_monday.isoformat(),
+                                           last_week_end=last_sunday.isoformat(),
                                            http_post=self.llm_post, **kw),
                 question=question)
             if plan.get("llm_status") == "ok":
                 for tool_call in plan["tools"]:
                     matched_sessions.extend(search_sessions(searchable, tool_call["args"]))
-                matched_sessions = matched_sessions[:3]
+                matched_sessions = matched_sessions[:MAX_MATCHES]
         if live_id is not None and not nav_intent and any(marker in question for marker in _LIVE_MARKERS):
             # Snapshot and freshness belong to one validated telemetry update.
             # Never substitute historical records for unavailable current facts.

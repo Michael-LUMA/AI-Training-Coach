@@ -295,5 +295,29 @@
   ],
   "note": "调度器按时长排序检索，最长为 alpha（60分钟）；检索空集时诚实说没记到。",
   "canned": "最长的一次骑了60分钟，平均心率130 bpm，25.2公里。"
+ },
+ {
+  "id": "door-personal-search-range",
+  "question": "我上周哪几天骑了？",
+  "expect": "ok",
+  "lane": "personal",
+  "plan": [
+   {
+    "name": "search_sessions",
+    "args": {
+     "date_from": "2026-11-02",
+     "date_to": "2026-11-08"
+    }
+   }
+  ],
+  "accept_any": [
+   "11月5日",
+   "1次"
+  ],
+  "reject_any": [
+   "11月1日"
+  ],
+  "note": "范围检索只含上周区间内的 beta（11-05），区间外的 alpha（11-01）不得出现；检索计数 1 注册进核验链。",
+  "canned": "上周你骑了1次，11月5日那次记录了45分钟，平均心率125 bpm。"
  }
 ]

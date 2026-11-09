@@ -361,9 +361,12 @@ def _matched_facts(matched):
     contract, not a courtesy. The date's month/day register as unitless numbers
     so 「11月1日那次」 passes the verification chain.
     """
-    if type(matched) is not list or not matched or len(matched) > 3:
-        raise ValueError('matched_sessions must be 1..3 items')
+    if type(matched) is not list or not matched or len(matched) > 7:
+        raise ValueError('matched_sessions must be 1..7 items')
     facts, numbers = [], []
+    # The retrieval count itself is a fact (「上周骑了 3 次」); it registers
+    # unitless so the answer's count passes the verification chain.
+    numbers.append((Decimal(len(matched)), None))
     for item in matched:
         if type(item) is not dict or set(item) != {'started_at', 'summary'}:
             raise ValueError('invalid matched session')

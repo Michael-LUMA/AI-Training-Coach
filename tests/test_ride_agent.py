@@ -81,6 +81,27 @@ class PlanSearchesTests(unittest.TestCase):
                            http_post=plan_transport({'tools': []}))
         self.assertEqual((result['llm_status'], result['tools']), ('ok', []))
 
+    def test_week_anchors_ride_along_when_provided(self):
+        plan = {'tools': [{'name': 'search_sessions',
+                           'args': {'date_from': '2026-11-02', 'date_to': '2026-11-08'}}]}
+        post = plan_transport(plan)
+        result = self.call(question='我上周哪几天骑了？', http_post=post,
+                           week_start='2026-11-09', last_week_start='2026-11-02',
+                           last_week_end='2026-11-08')
+        self.assertEqual(result['llm_status'], 'ok')
+        self.assertEqual(result['tools'], plan['tools'])
+        user = json.loads(plan_body(post)['messages'][1]['content'])
+        self.assertEqual(user['last_week_start'], '2026-11-02')
+        self.assertEqual(user['last_week_end'], '2026-11-08')
+        self.assertEqual(user['week_start'], '2026-11-09')
+
+    def test_malformed_week_anchors_dropped_not_fatally(self):
+        post = plan_transport({'tools': []})
+        result = self.call(http_post=post, week_start='11月9日')
+        self.assertEqual(result['llm_status'], 'ok')
+        user = json.loads(plan_body(post)['messages'][1]['content'])
+        self.assertNotIn('week_start', user)
+
     def test_malformed_plans_rejected(self):
         bad_plans = (
             {'tool': []},                                                    # wrong key
@@ -96,6 +117,17 @@ class PlanSearchesTests(unittest.TestCase):
                                                             'extra': 1}}]},
             {'tools': [{'name': 'search_sessions', 'args': {'date': '2026-11-01'}}] * 3},
             {'tools': [], 'extra': 1},
+            # Range discipline: both ends or neither, never mixed with date,
+            # never inverted.
+            {'tools': [{'name': 'search_sessions', 'args': {'date_from': '2026-11-02'}}]},
+            {'tools': [{'name': 'search_sessions', 'args': {'date_to': '2026-11-08'}}]},
+            {'tools': [{'name': 'search_sessions', 'args': {'date': '2026-11-05',
+                                                            'date_from': '2026-11-02',
+                                                            'date_to': '2026-11-08'}}]},
+            {'tools': [{'name': 'search_sessions', 'args': {'date_from': '2026-11-08',
+                                                            'date_to': '2026-11-02'}}]},
+            {'tools': [{'name': 'search_sessions', 'args': {'date_from': '2026-11-02',
+                                                            'date_to': '2026-13-08'}}]},
         )
         for plan in bad_plans:
             with self.subTest(plan=repr(plan)[:60]):
@@ -155,8 +187,25 @@ class SearchSessionsTests(unittest.TestCase):
 
     def test_limit_and_no_match(self):
         many = self.entries() * 3
-        self.assertEqual(len(ride_agent.search_sessions(many, {'sort': 'latest'})), 3)
+        self.assertEqual(len(ride_agent.search_sessions(many, {'sort': 'latest'})), 7)
         self.assertEqual(ride_agent.search_sessions(self.entries(), {'date': '2020-01-01'}), [])
+
+    def test_date_range_matches_inclusively(self):
+        found = ride_agent.search_sessions(
+            self.entries(), {'date_from': '2026-11-02', 'date_to': '2026-11-08'})
+        self.assertEqual([item['summary']['duration_s'] for item in found], [600, 2700])
+        everything = ride_agent.search_sessions(
+            self.entries(), {'date_from': '2026-11-01', 'date_to': '2026-11-09'})
+        self.assertEqual(len(everything), 3)
+        none = ride_agent.search_sessions(
+            self.entries(), {'date_from': '2026-11-02', 'date_to': '2026-11-04'})
+        self.assertEqual(none, [])
+
+    def test_range_combines_with_activity_and_sort(self):
+        found = ride_agent.search_sessions(
+            self.entries(), {'date_from': '2026-11-01', 'date_to': '2026-11-09',
+                             'activity': 'ride', 'sort': 'longest'})
+        self.assertEqual([item['summary']['duration_s'] for item in found], [3600, 2700])
 
 
 class MatchedFactsTests(unittest.TestCase):
@@ -207,6 +256,24 @@ class MatchedFactsTests(unittest.TestCase):
         result = self.chat(None, question='我累计骑了多少？', http_post=post)
         self.assertEqual(result['llm_status'], 'ok')
         self.assertNotIn('matched_sessions', self.facts_of(post))
+
+    def test_range_matches_register_the_retrieval_count(self):
+        # 「上周骑了几次」的自然答案是计数——检索条数本身注册进核验链。
+        matched = [{'started_at': f'2026-11-0{day}T08:00:00+08:00',
+                    'summary': {'duration_s': 1800, 'avg_hr': 120}}
+                   for day in (2, 4, 6)]
+        post = speech_transport('上周你骑了3次，每次30分钟。')
+        result = self.chat(matched, question='我上周骑了几次？', http_post=post)
+        self.assertEqual(result['llm_status'], 'ok')
+
+    def test_over_seven_matched_rejected_without_upstream(self):
+        matched = [{'started_at': f'2026-11-0{day}T08:00:00+08:00', 'summary': {}}
+                   for day in range(1, 8)] + \
+                  [{'started_at': '2026-11-08T08:00:00+08:00', 'summary': {}}]
+        post = Mock(side_effect=AssertionError('no network'))
+        result = self.chat(matched, http_post=post)
+        self.assertEqual(result['llm_status'], 'rejected_bad_schema')
+        post.assert_not_called()
 
 
 class PlannerWiringTests(unittest.TestCase):
