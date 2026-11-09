@@ -23,7 +23,7 @@ import coach_server
 
 DEFAULT_CORPUS = ROOT / "corpus" / "eval_door_v1.json"
 REQUIRED = {"id", "question", "expect", "note"}
-OPTIONAL = {"lane", "live_id", "canned", "accept_any", "reject_any", "weather", "nav"}
+OPTIONAL = {"lane", "live_id", "canned", "accept_any", "reject_any", "weather", "nav", "plan"}
 LANES = ("live", "personal", "knowledge")
 HONEST_DEFAULT = "这个我没记到。"
 
@@ -84,6 +84,11 @@ def validate_corpus(corpus):
             _require(type(case["weather"]) is dict, f"{prefix}: weather must be an object")
         if "nav" in case:
             _require(type(case["nav"]) is dict, f"{prefix}: nav must be an object")
+        if "plan" in case:
+            _require(type(case["plan"]) is list
+                     and all(type(call) is dict and set(call) == {"name", "args"}
+                             for call in case["plan"]),
+                     f"{prefix}: plan must be a list of name/args calls")
         for field in ("accept_any", "reject_any"):
             if field in case:
                 values = case[field]
@@ -127,18 +132,29 @@ def _session_file(identifier, started, duration, avg_hr, distance_m):
 
 
 def make_transport(cases):
-    """Replay canned speech keyed on which case question the request carries."""
+    """Replay canned speech keyed on which case question the request carries.
+
+    Planner requests (marked "task": "plan") get the case's canned tool plan
+    instead of a speech — the agent lane's two calls share one transport."""
     by_question = {case["question"]: case.get("canned", HONEST_DEFAULT) for case in cases}
+    plan_by_question = {case["question"]: case.get("plan", []) for case in cases}
+    # The planner marker rides inside the nested JSON message content, so the
+    # outer serialization escapes its quotes: look for both spellings.
+    PLAN_MARKERS = ('"task": "plan"', '"task":"plan"',
+                    '\\"task\\": \\"plan\\"', '\\"task\\":\\"plan\\"')
 
     def http_post(request, timeout):
         body = request.data.decode("utf-8") if isinstance(request.data, bytes) else str(request.data)
-        speech = HONEST_DEFAULT
-        for question, canned in by_question.items():
+        for question in by_question:
             if question in body:
-                speech = canned
-                break
-        envelope = {"choices": [{"finish_reason": "stop", "message": {
-            "content": json.dumps({"speech": speech}, ensure_ascii=False)}}]}
+                if any(marker in body for marker in PLAN_MARKERS):
+                    content = json.dumps({"tools": plan_by_question[question]}, ensure_ascii=False)
+                else:
+                    content = json.dumps({"speech": by_question[question]}, ensure_ascii=False)
+                envelope = {"choices": [{"finish_reason": "stop", "message": {"content": content}}]}
+                return 200, {"Content-Type": "application/json"}, json.dumps(envelope, ensure_ascii=False).encode("utf-8")
+        content = json.dumps({"speech": HONEST_DEFAULT}, ensure_ascii=False)
+        envelope = {"choices": [{"finish_reason": "stop", "message": {"content": content}}]}
         return 200, {"Content-Type": "application/json"}, json.dumps(envelope, ensure_ascii=False).encode("utf-8")
 
     return http_post

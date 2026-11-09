@@ -110,6 +110,50 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(llm_router.plan('live', environ={'DASHSCOPE_API_KEY': '  '}), [])
 
 
+class BrainPoolTests(unittest.TestCase):
+    def test_deepseek_joins_when_key_configured(self):
+        attempts = llm_router.plan('personal', environ={'DEEPSEEK_API_KEY': 'sk-test'})
+        self.assertEqual([a['provider'] for a in attempts], ['deepseek'])
+        self.assertEqual(attempts[0]['model'], 'deepseek-chat')
+        self.assertEqual(attempts[0]['endpoint'], 'https://api.deepseek.com/v1/chat/completions')
+
+    def test_pool_order_follows_registry_default(self):
+        environ = {'DASHSCOPE_API_KEY': 'a', 'DEEPSEEK_API_KEY': 'b', 'ZHIPU_API_KEY': 'c'}
+        attempts = llm_router.plan('live', environ=environ)
+        self.assertEqual([a['provider'] for a in attempts], ['dashscope', 'deepseek', 'zhipu'])
+
+    def test_tier_order_env_reorders_pool(self):
+        environ = {'DASHSCOPE_API_KEY': 'a', 'DEEPSEEK_API_KEY': 'b',
+                   'LLM_SMART_ORDER': 'deepseek,dashscope'}
+        attempts = llm_router.plan('personal', question='我这次心率多少？', environ=environ)
+        self.assertEqual([a['provider'] for a in attempts], ['deepseek', 'dashscope'])
+        # fast tier unaffected by the smart order
+        fast = llm_router.plan('live', environ=environ)
+        self.assertEqual([a['provider'] for a in fast], ['dashscope', 'deepseek'])
+
+    def test_order_env_ignores_unknown_names(self):
+        environ = {'DASHSCOPE_API_KEY': 'a', 'LLM_FAST_ORDER': 'openai,dashscope'}
+        attempts = llm_router.plan('live', environ=environ)
+        self.assertEqual([a['provider'] for a in attempts], ['dashscope'])
+
+    def test_doubao_needs_explicit_model_names(self):
+        only_key = {'DOUBAO_API_KEY': 'ep-key'}
+        self.assertEqual(llm_router.plan('live', environ=only_key), [])
+        with_models = dict(only_key, DOUBAO_MODEL_FAST='ep-123', DOUBAO_MODEL_SMART='ep-456')
+        attempts = llm_router.plan('live', environ=with_models)
+        self.assertEqual(attempts[0]['provider'], 'doubao')
+        self.assertEqual(attempts[0]['model'], 'ep-123')
+
+    def test_model_override_envs(self):
+        environ = {'DASHSCOPE_API_KEY': 'a', 'DASHSCOPE_MODEL_SMART': 'qwen-max'}
+        attempts = llm_router.plan('personal', question='我这次心率多少？', environ=environ)
+        self.assertEqual(attempts[0]['model'], 'qwen-max')
+
+    def test_http_base_url_rejected(self):
+        environ = {'DEEPSEEK_API_KEY': 'a', 'DEEPSEEK_BASE_URL': 'http://insecure.example.com/v1/chat/completions'}
+        self.assertEqual(llm_router.plan('live', environ=environ), [])
+
+
 class RunTests(unittest.TestCase):
     def test_no_provider_calls_with_none_credentials(self):
         seen = []

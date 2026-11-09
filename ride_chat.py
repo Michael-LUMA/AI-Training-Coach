@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from datetime import datetime
 from decimal import Decimal, InvalidOperation, localcontext
 from urllib.error import HTTPError, URLError
 from urllib.request import Request
@@ -21,8 +22,8 @@ from llm_review import (ENDPOINT, MAX_RESPONSE_BYTES, TIMEOUT_S,
 # phrasing quality at tolerable latency; the live lane keeps qwen-flash.
 MODEL = "qwen-plus"
 from ride_brain import (MAX_TOKENS, _FORBIDDEN, _count_checked, _facts,
-                        _friendly_minutes, _normalized_numbers, _result,
-                        _summary)
+                        _friendly_km, _friendly_minutes, _normalized_numbers,
+                        _result, _summary)
 from ride_memory import RideMemoryError
 
 TEMPLATE = '这个我现在答不上来，等我记到更多数据再聊。'
@@ -72,6 +73,11 @@ next_instruction 下一转向动作、next_distance_m 距下一转向的米数�
 转向用「前方X米+动作」的句式，不要说「下一转向」——避免歧义）；off_route 为 true 时说「你已偏离规划路线，我不会自动
 重算，到安全的地方停下可以重新规划」；禁止估算到达时刻、禁止给出
 路线建议；与问题无关就不提。
+facts 可能含 matched_sessions（按问题检索到的历史记录，最多3条，每条
+含 date（如「11月1日」）与聚合数值 duration_min/avg_hr/distance_km/
+ascent_m，为 null 的字段缺失即不提）：用于回答「某次/某天/最长的一次」
+类问题，可逐条陈述或两两对比数值；陈述时用「11月1日那次」的句式引用
+date；禁止推断原因，禁止补出不存在的条目；与问题无关就不提。
 固定句式（按问题里的触发词选对应句式，照用不改，只替换数字，
 数字必须来自 facts；一句问题只用一种句式，不混用）：
 - 最近单次：「最近这次平均心率128 bpm，记录了30分钟。」
@@ -346,6 +352,48 @@ def _nav_facts(nav):
     return facts, numbers
 
 
+def _matched_facts(matched):
+    """Server-retrieved history picks: projected like any record, dates counted.
+
+    Each item is {'started_at': ISO, 'summary': {...}} straight from the local
+    store — still re-validated here, because facts entering the prompt are a
+    contract, not a courtesy. The date's month/day register as unitless numbers
+    so 「11月1日那次」 passes the verification chain.
+    """
+    if type(matched) is not list or not matched or len(matched) > 3:
+        raise ValueError('matched_sessions must be 1..3 items')
+    facts, numbers = [], []
+    for item in matched:
+        if type(item) is not dict or set(item) != {'started_at', 'summary'}:
+            raise ValueError('invalid matched session')
+        when = datetime.fromisoformat(str(item['started_at']).replace('Z', '+00:00'))
+        local = when.astimezone()
+        projected, _ = _summary(item['summary'])
+        entry = {'date': f'{local.month}月{local.day}日'}
+        numbers.append((Decimal(local.month), None))
+        numbers.append((Decimal(local.day), None))
+        duration = projected.get('duration_s')
+        if duration is not None:
+            minutes = _friendly_minutes(duration)
+            entry['duration_min'] = minutes
+            numbers.append((Decimal(str(minutes)), 'min'))
+        avg_hr = projected.get('avg_hr')
+        if avg_hr is not None:
+            entry['avg_hr'] = avg_hr
+            numbers.append((Decimal(str(avg_hr)), 'bpm'))
+        distance = projected.get('distance_m')
+        if distance is not None:
+            km = _friendly_km(distance)
+            entry['distance_km'] = km
+            numbers.append((Decimal(str(km)), 'km'))
+        ascent = projected.get('ascent_m')
+        if ascent is not None:
+            entry['ascent_m'] = ascent
+            numbers.append((Decimal(str(ascent)), 'm'))
+        facts.append(entry)
+    return facts, numbers
+
+
 def _profile_facts(profile):
     """Validate a complete usage-profile bundle and register its bounded numbers.
 
@@ -387,6 +435,7 @@ def build_ride_chat(question, session: dict | None = None,
                     notes: list | None = None,
                     weather: dict | None = None,
                     nav: dict | None = None,
+                    matched_sessions: list | None = None,
                     api_key: str | None = None, http_post=None,
                     endpoint: str | None = None, model: str | None = None) -> dict:
     """Answer one bounded Chinese question, or return an honest template fallback.
@@ -444,6 +493,10 @@ def build_ride_chat(question, session: dict | None = None,
             if nav_facts is not None:
                 facts['nav'] = nav_facts
                 numbers.extend(nav_numbers)
+        if matched_sessions is not None:
+            matched_facts, matched_numbers = _matched_facts(matched_sessions)
+            facts['matched_sessions'] = matched_facts
+            numbers.extend(matched_numbers)
         if 'nav' not in facts and any(marker in question for marker in NAV_QUESTION_MARKERS):
             # 问导航而没有路线状态：确定性诚实回答，不走模型，不编造。
             return _result('ok', None, _NAV_NO_ROUTE)

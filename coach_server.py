@@ -43,6 +43,7 @@ from ride_memory import validate_session, RideMemoryError
 from ride_brain import build_ride_review
 import llm_router
 from ride_chat import NAV_QUESTION_MARKERS, build_ride_chat
+from ride_agent import SEARCH_HINTS, plan_searches, search_sessions
 from ride_knowledge import build_knowledge_answer, load_cards
 from ride_live import LIVE_TEMPLATE, LiveSession, build_live_answer, build_live_speech
 from ride_nav import plan_route, _http_get as _nav_http_get
@@ -536,6 +537,7 @@ class App:
                     raise ActionError("storage_unavailable", "Ride storage unavailable", 503) from None
             activity = memory.get("activity", "ride") if memory is not None else None
             history = []  # (when, summary) of non-simulated sessions in scope
+            searchable = []  # planner-visible descriptors: when/summary/activity
             excluded_simulated = 0
             for candidate in directory.glob("*.json"):
                 if candidate.is_symlink():
@@ -555,6 +557,8 @@ class App:
                         excluded_simulated += 1
                         continue
                     history.append((when, stored["summary"]))
+                    searchable.append({"when": when, "summary": stored["summary"],
+                                       "activity": stored.get("activity", "ride")})
                 except (RideMemoryError, ActionError, OSError, ValueError):
                     continue
             history.sort(key=lambda entry: entry[0])
@@ -564,7 +568,10 @@ class App:
             # real sessions only; distance only when every session recorded it.
             entries = list(history)
             if memory is not None and memory["source"] != "simulated":
-                entries.append((datetime.fromisoformat(memory["started_at"].replace("Z", "+00:00")), memory["summary"]))
+                when_memory = datetime.fromisoformat(memory["started_at"].replace("Z", "+00:00"))
+                entries.append((when_memory, memory["summary"]))
+                searchable.append({"when": when_memory, "summary": memory["summary"],
+                                   "activity": memory.get("activity", "ride")})
             totals = None
             week = None
             if entries:
@@ -606,6 +613,25 @@ class App:
         # first; everything else tries the grounded knowledge library. The
         # other lane is consulted once when the preferred one cannot answer.
         question = payload["question"]
+        # Agent planner: history-search questions get a model-chosen local
+        # lookup whose results join the answer facts. The planner call is a
+        # cloud request — strictly outside the disk lock. Any planner failure
+        # degrades to no search; the base bundle answers exactly as before.
+        matched_sessions = []
+        if (os.environ.get("AGENT_PLANNER", "on") != "off"
+                and SEARCH_HINTS.search(question)):
+            known_dates = sorted({entry["when"].astimezone().date().isoformat()
+                                  for entry in searchable}, reverse=True)
+            plan = llm_router.run(
+                'planner',
+                lambda **kw: plan_searches(question, today=self.today().isoformat(),
+                                           known_dates=known_dates,
+                                           http_post=self.llm_post, **kw),
+                question=question)
+            if plan.get("llm_status") == "ok":
+                for tool_call in plan["tools"]:
+                    matched_sessions.extend(search_sessions(searchable, tool_call["args"]))
+                matched_sessions = matched_sessions[:3]
         if live_id is not None and not nav_intent and any(marker in question for marker in _LIVE_MARKERS):
             # Snapshot and freshness belong to one validated telemetry update.
             # Never substitute historical records for unavailable current facts.
@@ -639,7 +665,8 @@ class App:
                     activity_ordinal=ordinal if ordinal else None,
                     excluded_simulated=excluded_simulated, totals=totals, history=dialog,
                     profile=profile, week=week, notes=list(user_notes), weather=weather,
-                    nav=nav, http_post=self.llm_post, **kw),
+                    nav=nav, matched_sessions=matched_sessions or None,
+                    http_post=self.llm_post, **kw),
                 question=question)
 
         def knowledge():

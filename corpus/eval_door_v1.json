@@ -248,5 +248,43 @@
   ],
   "note": "导航状态经客户端转发进入 facts，剩余里程与下一转向按原样陈述；数字经核验链绑定，不估算到达时刻。",
   "canned": "沿规划路线去奥林匹克森林公园南园，还剩12.3公里；前方350米左转进入林萃路。"
+ },
+ {
+  "id": "door-personal-search-date",
+  "question": "我11月1日那次骑了多久？",
+  "expect": "ok",
+  "lane": "personal",
+  "plan": [
+   {
+    "name": "search_sessions",
+    "args": {
+     "date": "2026-11-01"
+    }
+   }
+  ],
+  "accept_any": [
+   "60分钟"
+  ],
+  "note": "调度器按日期检索历史记录，命中 11-01 的 alpha（60分钟/130bpm）；数字经核验链绑定。",
+  "canned": "11月1日那次骑了60分钟，平均心率130 bpm。"
+ },
+ {
+  "id": "door-personal-search-longest",
+  "question": "我最长的一次骑了多久？",
+  "expect": "ok",
+  "lane": "personal",
+  "plan": [
+   {
+    "name": "search_sessions",
+    "args": {
+     "sort": "longest"
+    }
+   }
+  ],
+  "accept_any": [
+   "60分钟"
+  ],
+  "note": "调度器按时长排序检索，最长为 alpha（60分钟）；检索空集时诚实说没记到。",
+  "canned": "最长的一次骑了60分钟，平均心率130 bpm，25.2公里。"
  }
 ]
