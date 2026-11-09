@@ -46,6 +46,7 @@ from ride_chat import NAV_QUESTION_MARKERS, build_ride_chat
 from ride_agent import MAX_MATCHES, SEARCH_HINTS, plan_searches, search_sessions
 from ride_knowledge import build_knowledge_answer, load_cards
 from ride_general import build_general_answer
+from ride_asr import MAX_AUDIO_BYTES, transcribe_wav
 from ride_live import LIVE_TEMPLATE, LiveSession, build_live_answer, build_live_speech
 from ride_nav import plan_route, _http_get as _nav_http_get
 from ride_notes import NoteError, add_note, load_notes, remove_note
@@ -75,6 +76,7 @@ RIDE_NOTE_DELETE = "/api/coach/ride/note/delete"
 RIDE_CHAT = "/api/coach/ride/chat"
 RIDE_LIVE = "/api/coach/ride/live"
 RIDE_SPEAK = "/api/coach/ride/speak"
+RIDE_ASR = "/api/coach/ride/asr"
 
 
 def _usage_profile(entries):
@@ -197,7 +199,8 @@ def _build_rule_snapshot(record):
 class App:
     """Transport-injectable API; dispatch is testable without binding sockets."""
 
-    def __init__(self, store=None, *, fetch=None, today=None, llm_post=None, nav_get=None):
+    def __init__(self, store=None, *, fetch=None, today=None, llm_post=None, nav_get=None,
+                 ws_dial=None):
         self.store = store if store is not None else CoachStore()
         self._billing = None
         self._waitlist = None
@@ -206,6 +209,7 @@ class App:
         # Production default mirrors the llm_post=None pattern: the module's
         # own no-redirect transport. Tests inject strict fakes instead.
         self.nav_get = nav_get if nav_get is not None else _nav_http_get
+        self.ws_dial = ws_dial
         self.today = today if today is not None else date.today
         self.token = secrets.token_urlsafe(32)
         # Credential-adjacent ephemeral data; tests/custom DBs stay isolated.
@@ -288,22 +292,26 @@ class App:
             token = headers.get("X-Coach-Token", "")
             require(type(token) is str and token.isascii() and secrets.compare_digest(token, self.token), "Session token required", "token_denied", 403)
         allowed = ((method == "GET" and (parsed.path in ("/", "/privacy", "/terms", "/api/coach/config", "/api/coach/activities", "/ride", "/ride.webmanifest", "/icon.svg", RIDE_LIST, RIDE_NOTES) or font_path is not None)) or
-                   (method == "POST" and path in ("/api/coach/connect", "/api/coach/review", "/api/coach/review-l2", "/api/coach/demo-review", "/api/coach/waitlist", "/api/coach/weekly", RIDE_POST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE, RIDE_CHAT, RIDE_LIVE, RIDE_IMPORT, RIDE_WEATHER, RIDE_NOTE, RIDE_NOTE_DELETE, RIDE_SPEAK)))
+                   (method == "POST" and path in ("/api/coach/connect", "/api/coach/review", "/api/coach/review-l2", "/api/coach/demo-review", "/api/coach/waitlist", "/api/coach/weekly", RIDE_POST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE, RIDE_CHAT, RIDE_LIVE, RIDE_IMPORT, RIDE_WEATHER, RIDE_NOTE, RIDE_NOTE_DELETE, RIDE_SPEAK, RIDE_ASR)))
         require(allowed, "Endpoint not found", "not_found", 404)
         if method == "POST":
-            require(headers.get("Transfer-Encoding") is None and headers.get("Content-Type") == "application/json", "Fixed-length JSON required", "invalid_body", 415)
+            asr = path == RIDE_ASR
+            require(headers.get("Transfer-Encoding") is None
+                    and headers.get("Content-Type") == ("audio/wav" if asr else "application/json"),
+                    "Fixed-length body required", "invalid_body", 415)
             raw = headers.get("Content-Length", "")
             require(type(raw) is str and re.fullmatch(r"[0-9]{1,8}", raw) is not None, "Body length invalid", "body_too_large", 413)
             length = int(raw)
             limit = (MAX_IMPORT_BODY_BYTES if path == RIDE_IMPORT
-                     else MAX_RIDE_BODY_BYTES if path == RIDE_POST else MAX_BODY_BYTES)
+                     else MAX_RIDE_BODY_BYTES if path == RIDE_POST
+                     else MAX_AUDIO_BYTES if asr else MAX_BODY_BYTES)
             require(0 < length <= limit, "Body size exceeds limit", "body_too_large", 413)
             return length
         return 0
 
     def dispatch(self, method, path, headers, body=b"", port=DEFAULT_PORT):
         length = self.preflight(method, path, headers, port)
-        if urlsplit(path).path in (RIDE_POST, RIDE_LIST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE, RIDE_CHAT, RIDE_LIVE, RIDE_IMPORT, RIDE_WEATHER, RIDE_NOTES, RIDE_NOTE, RIDE_NOTE_DELETE, RIDE_SPEAK):
+        if urlsplit(path).path in (RIDE_POST, RIDE_LIST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE, RIDE_CHAT, RIDE_LIVE, RIDE_IMPORT, RIDE_WEATHER, RIDE_NOTES, RIDE_NOTE, RIDE_NOTE_DELETE, RIDE_SPEAK, RIDE_ASR):
             self._ride_rate_limit(method)
         if method == "POST" and path == "/api/coach/billing/webhook":
             require(len(body) == length, "Incomplete request body", "invalid_body")
@@ -334,6 +342,7 @@ class App:
                 key = self.store.get_key()
                 return {"billing_enabled": bool(os.environ.get("CREEM_WEBHOOK_SECRET", "").strip()), "subscription_status": self.billing.current_status(), "brand_name": BRAND_NAME, "support_email": SUPPORT_EMAIL, "token": self.token, "connected": key is not None,
                         "masked_key": _masked(key), "verified": False, **self.store.encryption_status,
+                        "asr_available": bool(os.environ.get("DASHSCOPE_API_KEY", "").strip()),
                         "mode": "local_only", "external_requests": "Only after explicit list/review actions"}
             parsed = urlsplit(path)
             if parsed.path == RIDE_LIST:
@@ -355,6 +364,8 @@ class App:
             return {"activities": [{k: activity.get(k) for k in ("id", "name", "start_date_local", "type", "distance", "moving_time")}
                                    for activity in activities]}
         require(len(body) == length, "Incomplete request body", "invalid_body")
+        if path == RIDE_ASR:
+            return self._asr_ride(body)
         try:
             payload = strict_json(body)
         except ActionError:
@@ -748,6 +759,14 @@ class App:
             turns = [] if entry is None else entry[0]
             turns = (turns + [{"q": question, "a": speech}])[-_CONV_MAX_TURNS:]
             self._convs[conv_id] = [turns, now]
+
+    def _asr_ride(self, body):
+        """Push-to-talk ASR relay: WAV bytes in, transcript out; key never leaves."""
+        result = transcribe_wav(body, api_key=os.environ.get("DASHSCOPE_API_KEY"),
+                                ws_dial=self.ws_dial)
+        if result["asr_status"] == "invalid_input":
+            raise ActionError("invalid_input", "Invalid WAV audio")
+        return result
 
     def _speak_ride(self, payload):
         """Voice proxy: verified speech text in, a bounded audio URL out.

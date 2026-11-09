@@ -344,6 +344,7 @@ const DEMO_DEFAULT_TARGET = Object.freeze({lower:100, upper:140});
 const DEMO_DEFAULT_GOAL = Object.freeze({minutes:40, km:null});
 const $ = id => document.getElementById(id);
 let token = '', session = null, active = false, connecting = false, device = null, characteristic = null;
+let asrAvailable = false;
 let auxDevice = null, auxCadChar = null, auxPwrChar = null, auxConnecting = false;
 let crankPrev = null, latestCad = null, latestPwr = null;
 let startedMs = 0, startedMono = 0, previous = null, lastSignal = null, gapOpen = false;
@@ -1244,7 +1245,7 @@ function routeVoiceIntent(text){
   return{kind:'qa',question:cleaned};
 }
 function answerVoice(){
-  listenInto($('chat-input'),$('voice-command'),activePersona.voice_command,(text)=>{
+  speakInto($('chat-input'),$('voice-command'),activePersona.voice_command,(text)=>{
     const intent=routeVoiceIntent(text);
     if(intent.kind==='nav'){
       $('nav-destination').value=intent.destination;planNav();
@@ -1342,7 +1343,58 @@ async function liveBeat(){
 // Ears of the assistant: one tap to talk, transcript lands in the box and sends.
 // SpeechRecognition is a progressive enhancement — no support, no button.
 const SpeechEngine=window.SpeechRecognition||window.webkitSpeechRecognition;
-if(!SpeechEngine){$('chat-mic').hidden=true;$('nav-mic').hidden=true;$('voice-command').hidden=true;}
+if(!SpeechEngine && !(navigator.mediaDevices && window.AudioContext)){$('chat-mic').hidden=true;$('nav-mic').hidden=true;$('voice-command').hidden=true;}
+// Cloud ASR (paraformer via server relay): push-to-talk WAV upload. Works
+// where the browser speech engine is missing — webviews, future app shells.
+function wavFromChunks(chunks,rate){
+  let length=0;for(const c of chunks)length+=c.length;
+  const pcm=new Int16Array(length);let offset=0;
+  for(const c of chunks)for(let i=0;i<c.length;i++){const s=Math.max(-1,Math.min(1,c[i]));pcm[offset++]=s<0?Math.round(s*0x8000):Math.round(s*0x7FFF);}
+  const buffer=new ArrayBuffer(44+pcm.length*2),view=new DataView(buffer);
+  const write=(at,text)=>{for(let i=0;i<text.length;i++)view.setUint8(at+i,text.charCodeAt(i));};
+  write(0,'RIFF');view.setUint32(4,36+pcm.length*2,true);write(8,'WAVE');write(12,'fmt ');
+  view.setUint32(16,16,true);view.setUint16(20,1,true);view.setUint16(22,1,true);
+  view.setUint32(24,rate,true);view.setUint32(28,rate*2,true);view.setUint16(32,2,true);view.setUint16(34,16,true);
+  write(36,'data');view.setUint32(40,pcm.length*2,true);
+  new Int16Array(buffer,44).set(pcm);
+  return new Blob([buffer],{type:'audio/wav'});
+}
+async function cloudListen(input,button,label,onFinal){
+  if(button._cloud){const session=button._cloud;button._cloud=null;button.textContent=label;session.stop();return;}
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,sampleRate:16000}});
+    const ctx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:16000});
+    const source=ctx.createMediaStreamSource(stream);
+    const processor=ctx.createScriptProcessor(4096,1,1);
+    const chunks=[];
+    processor.onaudioprocess=e=>{chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));};
+    source.connect(processor);processor.connect(ctx.destination);
+    button.textContent=activePersona.chat_listening;
+    const rate=ctx.sampleRate;
+    button._cloud={stop:async()=>{
+      try{processor.disconnect();source.disconnect();}catch(_){/* already torn down */}
+      try{await ctx.close();}catch(_){/* best effort */}
+      stream.getTracks().forEach(track=>track.stop());
+      if(!chunks.length)return;
+      try{
+        const auth=await getToken();
+        const response=await fetch('/api/coach/ride/asr',{method:'POST',headers:{'Content-Type':'audio/wav','X-Coach-Token':auth},body:wavFromChunks(chunks,rate)});
+        if(!response.ok)throw new Error('asr unavailable');
+        const result=await response.json();
+        const text=(result && result.asr_status==='ok' && typeof result.text==='string')?result.text.trim():'';
+        if(text){input.value=text;if(onFinal)onFinal(text);}
+      }catch(_){/* silent: user can type or retry */}
+    }};
+  }catch(_){
+    button._cloud=null;button.textContent=label;
+  }
+}
+function speakInto(input,button,label,onFinal){
+  if(asrAvailable && navigator.mediaDevices && (window.AudioContext||window.webkitAudioContext)){
+    cloudListen(input,button,label,onFinal);return;
+  }
+  listenInto(input,button,label,onFinal);
+}
 function listenInto(input,button,label,onFinal){
   if(!SpeechEngine)return;
   if(button._rec){try{button._rec.stop();}catch(_){/* double-stop is harmless */}return;}
@@ -1371,8 +1423,8 @@ function listenInto(input,button,label,onFinal){
   try{rec.start();button.textContent=activePersona.chat_listening;}
   catch(_){if(button._rec===rec)button._rec=null;}
 }
-function toggleMic(){listenInto($('chat-input'),$('chat-mic'),activePersona.chat_mic,()=>askMark());}
-function toggleNavMic(){listenInto($('nav-destination'),$('nav-mic'),activePersona.nav_mic,()=>planNav());}
+function toggleMic(){speakInto($('chat-input'),$('chat-mic'),activePersona.chat_mic,()=>askMark());}
+function toggleNavMic(){speakInto($('nav-destination'),$('nav-mic'),activePersona.nav_mic,()=>planNav());}
 function compareMetric(label,current,previous,unit){
   // better/worse are required contract keys, not training-quality judgements.
   const delta=current-previous, tolerance=previous*.03;
@@ -1656,7 +1708,7 @@ function onHeartRate(event){try {receiveHR(parseHeartRate(event.target.value));}
 function begin(options={}){
   brainRequest+=1;brainSpeech='';$('brain-card').hidden=true;
   chatRequest+=1;$('chat-card').hidden=true;$('chat-answer').textContent='';$('chat-listen').hidden=true;
-  for(const mic of [$('chat-mic'),$('nav-mic')]){if(mic._rec){try{mic._rec.abort();}catch(_){/* not started */}mic._rec=null;}mic.textContent=mic.id==='nav-mic'?activePersona.nav_mic:activePersona.chat_mic;}
+  for(const mic of [$('chat-mic'),$('nav-mic')]){if(mic._rec){try{mic._rec.abort();}catch(_){/* not started */}mic._rec=null;}if(mic._cloud){try{mic._cloud.stop();}catch(_){/* not started */}mic._cloud=null;}mic.textContent=mic.id==='nav-mic'?activePersona.nav_mic:activePersona.chat_mic;}
   comparisonRequest+=1;$('memory-compare').hidden=true;$('compare-source').hidden=true;
   applyActivity();
   target = options.target === undefined ? readTarget() : options.target; startedMs = Date.now(); startedMono = performance.now();
@@ -1892,6 +1944,7 @@ function buildTrackGpx(memory,escapeXml,iso){
 async function getToken(){
   const response=await fetch('/api/coach/config',{cache:'no-store'}); if(!response.ok) throw new Error('无法获取会话令牌');
   const config=await response.json(); if(typeof config.token !== 'string' || !config.token) throw new Error('会话令牌缺失'); token=config.token;
+  asrAvailable=config.asr_available===true;
   return token;
 }
 // Privacy strip: coordinates never leave the phone. Uploads carry only the
