@@ -705,10 +705,14 @@ class App:
                     http_post=self.llm_post, **kw))
 
         def general():
+            now_local = datetime.now().astimezone()
+            now_bundle = {'local_time': now_local.strftime('%Y-%m-%d %H:%M'),
+                          'weekday': '星期' + '一二三四五六日'[now_local.weekday()]}
             return "general", llm_router.run(
                 'general',
                 lambda **kw: build_general_answer(
-                    question, history=dialog, http_post=self.llm_post, **kw))
+                    question, history=dialog, now=now_bundle, weather=weather,
+                    http_post=self.llm_post, **kw))
 
         # Cross-lane fallback only when the first lane genuinely has nothing:
         # transport failure or no matching card. A verification rejection means

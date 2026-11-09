@@ -97,3 +97,48 @@ class GeneralAnswerTests(unittest.TestCase):
                                                   api_key='synthetic-key', http_post=post)
                 self.assertEqual(result['llm_status'], 'rejected_bad_schema')
         post.assert_not_called()
+
+
+class GeneralAwarenessTests(unittest.TestCase):
+    """now/weather bundles: projected when valid, dropped whole when malformed."""
+
+    def facts(self, **kwargs):
+        post = transport()
+        result = gen.build_general_answer('现在适合出门吗？', api_key='synthetic-key',
+                                          http_post=post, **kwargs)
+        self.assertEqual(result['llm_status'], 'ok')
+        return json.loads(json.loads(post.call_args.args[0].data)['messages'][1]['content'])
+
+    def test_now_projects_into_facts(self):
+        now = {'local_time': '2026-11-09 16:07', 'weekday': '星期一'}
+        facts = self.facts(now=now)
+        self.assertEqual(facts['now'], now)
+        self.assertIn('now', gen.SYSTEM_PROMPT)
+
+    def test_malformed_now_drops_out_whole(self):
+        for bad in ('now', 3, [], {'local_time': '2026-11-09 16:07'},
+                    {'local_time': 'x' * 41, 'weekday': '星期一'},
+                    {'local_time': '2026-11-09 16:07', 'weekday': '一\n'},
+                    {'local_time': 2026, 'weekday': '星期一'}):
+            with self.subTest(now=repr(bad)[:40]):
+                self.assertNotIn('now', self.facts(now=bad))
+
+    def test_weather_projects_into_facts(self):
+        weather = {'city': '上海市', 'day_weather': '多云', 'day_temp': 15,
+                   'night_weather': '晴', 'night_temp': 9}
+        facts = self.facts(weather=weather)
+        self.assertEqual(facts['weather'], {'source': 'amap', **weather})
+        self.assertIn('weather', gen.SYSTEM_PROMPT)
+
+    def test_malformed_weather_drops_out_whole(self):
+        for bad in ('weather', {'city': '', 'day_weather': '多云', 'day_temp': 15,
+                                'night_weather': '晴', 'night_temp': 9},
+                    {'city': '上海市', 'day_weather': '多云', 'day_temp': 99,
+                     'night_weather': '晴', 'night_temp': 9}):
+            with self.subTest(weather=repr(bad)[:40]):
+                self.assertNotIn('weather', self.facts(weather=bad))
+
+    def test_no_bundles_leaves_no_trace(self):
+        facts = self.facts()
+        self.assertNotIn('now', facts)
+        self.assertNotIn('weather', facts)
