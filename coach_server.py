@@ -623,7 +623,9 @@ class App:
         # lookup whose results join the answer facts. The planner call is a
         # cloud request — strictly outside the disk lock. Any planner failure
         # degrades to no search; the base bundle answers exactly as before.
-        matched_sessions = []
+        # None = 未检索（基础包照常作答）；[] = 检索落空（该时段无记录，这本身
+        # 是事实）；非空列表 = 检索命中。
+        matched_sessions = None
         if (os.environ.get("AGENT_PLANNER", "on") != "off"
                 and SEARCH_HINTS.search(question)):
             known_dates = sorted({entry["when"].astimezone().date().isoformat()
@@ -641,10 +643,11 @@ class App:
                                            last_week_end=last_sunday.isoformat(),
                                            http_post=self.llm_post, **kw),
                 question=question)
-            if plan.get("llm_status") == "ok":
+            if plan.get("llm_status") == "ok" and plan["tools"]:
+                found = []
                 for tool_call in plan["tools"]:
-                    matched_sessions.extend(search_sessions(searchable, tool_call["args"]))
-                matched_sessions = matched_sessions[:MAX_MATCHES]
+                    found.extend(search_sessions(searchable, tool_call["args"]))
+                matched_sessions = found[:MAX_MATCHES]
         if live_id is not None and not nav_intent and any(marker in question for marker in _LIVE_MARKERS):
             # Snapshot and freshness belong to one validated telemetry update.
             # Never substitute historical records for unavailable current facts.
@@ -678,7 +681,7 @@ class App:
                     activity_ordinal=ordinal if ordinal else None,
                     excluded_simulated=excluded_simulated, totals=totals, history=dialog,
                     profile=profile, week=week, notes=list(user_notes), weather=weather,
-                    nav=nav, matched_sessions=matched_sessions or None,
+                    nav=nav, matched_sessions=matched_sessions,
                     http_post=self.llm_post, **kw),
                 question=question)
 

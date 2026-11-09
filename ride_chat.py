@@ -73,12 +73,18 @@ next_instruction 下一转向动作、next_distance_m 距下一转向的米数�
 转向用「前方X米+动作」的句式，不要说「下一转向」——避免歧义）；off_route 为 true 时说「你已偏离规划路线，我不会自动
 重算，到安全的地方停下可以重新规划」；禁止估算到达时刻、禁止给出
 路线建议；与问题无关就不提。
-facts 可能含 matched_sessions（按问题检索到的历史记录，最多3条，每条
+facts 可能含 matched_sessions（按问题检索到的历史记录，最多7条，每条
 含 date（如「11月1日」）与聚合数值 duration_min/avg_hr/distance_km/
-ascent_m，为 null 的字段缺失即不提）：用于回答「某次/某天/最长的一次」
-类问题，可逐条陈述或两两对比数值；陈述时用「11月1日那次」的句式引用
-date；duration_min 就是分钟数，所有数值原样引用，不得换算、不得约算、
-不得改动；禁止推断原因，禁止补出不存在的条目；与问题无关就不提。
+ascent_m，为 null 的字段缺失即不提）：用于回答「某次/某天/最长的一次/
+上周哪几天/上周几次」类问题。只要它出现且非空，问题指向的时段或条目就
+以它为准——逐条陈述或两两对比数值；不得因为 week、totals 等其它汇总
+为 0 就说「没骑」「没有记录」，那些汇总说的是别的时段（week 是本周，
+周一起算，与「上周」无关）。例：问「上周骑了几次」且 matched_sessions
+有两条，答「上周骑了2次」并可逐条陈述。它是空列表时表示问题指向的时段
+里没有记录，如实说那个时段没记到；它不出现时表示没有检索，不得凭空
+回答「某天/上周」类问题。陈述时用「11月1日那次」的句式引用 date；
+duration_min 就是分钟数，所有数值原样引用，不得换算、不得约算、不得
+改动；禁止推断原因，禁止补出不存在的条目；与问题无关就不提。
 固定句式（按问题里的触发词选对应句式，照用不改，只替换数字，
 数字必须来自 facts；一句问题只用一种句式，不混用）：
 - 最近单次：「最近这次平均心率128 bpm，记录了30分钟。」
@@ -361,12 +367,15 @@ def _matched_facts(matched):
     contract, not a courtesy. The date's month/day register as unitless numbers
     so 「11月1日那次」 passes the verification chain.
     """
-    if type(matched) is not list or not matched or len(matched) > 7:
-        raise ValueError('matched_sessions must be 1..7 items')
+    if type(matched) is not list or len(matched) > 7:
+        raise ValueError('matched_sessions must be 0..7 items')
     facts, numbers = [], []
     # The retrieval count itself is a fact (「上周骑了 3 次」); it registers
-    # unitless so the answer's count passes the verification chain.
+    # unitless so the answer's count passes the verification chain. An empty
+    # list means "searched, nothing in that period" — count 0 is the fact.
     numbers.append((Decimal(len(matched)), None))
+    if not matched:
+        return facts, numbers
     for item in matched:
         if type(item) is not dict or set(item) != {'started_at', 'summary'}:
             raise ValueError('invalid matched session')

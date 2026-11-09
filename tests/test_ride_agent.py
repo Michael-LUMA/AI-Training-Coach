@@ -238,7 +238,7 @@ class MatchedFactsTests(unittest.TestCase):
         self.assertEqual(result['llm_status'], 'rejected_unverifiable_number')
 
     def test_malformed_matched_rejected_without_upstream(self):
-        bad = (None, 'matched', 42, [], [{}] * 4,
+        bad = (None, 'matched', 42, [{}] * 4,
                [{'started_at': '2026-11-01T08:00:00+08:00'}],
                [{'started_at': 'not-a-date', 'summary': {}}],
                [{'started_at': '2026-11-01T08:00:00+08:00', 'summary': {}, 'x': 1}])
@@ -256,6 +256,14 @@ class MatchedFactsTests(unittest.TestCase):
         result = self.chat(None, question='我累计骑了多少？', http_post=post)
         self.assertEqual(result['llm_status'], 'ok')
         self.assertNotIn('matched_sessions', self.facts_of(post))
+
+    def test_empty_matched_means_searched_and_found_nothing(self):
+        # 检索落空：空列表进入 facts，计数 0 注册，模型应如实说该时段没记到。
+        post = speech_transport('上周你没骑。')
+        result = self.chat([], question='我上周骑了吗？', http_post=post)
+        self.assertEqual(result['llm_status'], 'ok')
+        facts = self.facts_of(post)
+        self.assertEqual(facts['matched_sessions'], [])
 
     def test_range_matches_register_the_retrieval_count(self):
         # 「上周骑了几次」的自然答案是计数——检索条数本身注册进核验链。
