@@ -21,10 +21,10 @@ def transport(speech='踏频是曲柄每分钟转动的圈数，和车速不是�
 
 
 class KnowledgeCardLibraryTests(unittest.TestCase):
-    def test_shipped_library_loads_ninety_two_valid_cards(self):
+    def test_shipped_library_loads_valid_cards(self):
         cards = know.load_cards(CARDS_PATH)
-        self.assertEqual(len(cards), 92)
-        self.assertEqual(len({card['id'] for card in cards}), 92)
+        self.assertEqual(len(cards), 130)
+        self.assertEqual(len({card['id'] for card in cards}), 130)
 
     def test_load_cards_rejects_bad_files(self):
         import tempfile
