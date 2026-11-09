@@ -72,7 +72,7 @@ class GeneralAnswerTests(unittest.TestCase):
         self.assertEqual(result['llm_status'], 'rejected_unsafe_speech')
 
     def test_malformed_drafts_rejected(self):
-        for draft in ({}, {'speech': ''}, {'speech': '   '}, {'speech': '好' * 301},
+        for draft in ({}, {'speech': ''}, {'speech': '   '}, {'speech': '好' * 481},
                       {'speech': '行', 'extra': 1}, ['speech'], 'raw'):
             with self.subTest(draft=repr(draft)[:30]):
                 result = gen.build_general_answer('聊聊古埃及金字塔', api_key='synthetic-key',

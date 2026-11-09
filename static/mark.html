@@ -444,8 +444,23 @@ function startRide(){
     prevFix=p;renderStrip();
   },()=>{},{enableHighAccuracy:true,maximumAge:3000});
   liveTimer=setInterval(liveBeat,10000);
-  addMsg('mark','出发了，我看着呢。有事喊我。',{tag:'live'});
   refreshChips();
+  /* 出发简报：结合真实天气，本地确定性生成，立即开口 */
+  (async()=>{
+    let w=null;
+    try{w=await ensureWeather();}catch(_){/* 没天气也照常出发 */}
+    let briefing='出发了，我一路盯着：速度、里程、路况，有事随时喊我。';
+    if(w){
+      const temp=(w.day_temp!==undefined&&w.day_temp!==null)?('，气温'+w.day_temp+'度'):'';
+      briefing='出发了。'+String(w.city||'')+'今天白天'+String(w.day_weather||'')+temp+'。';
+      const bad=/雨|雪|雷|冰|霾/.test(String(w.day_weather||''));
+      if(bad)briefing+='天不算好，路滑慢点，视线差就别抢。';
+      else briefing+='天不错，放心骑。';
+      briefing+='速度、里程、路况我都盯着，有事随时喊我。';
+    }
+    addMsg('mark',briefing,{tag:'live'});
+    speak(briefing);
+  })();
 }
 function endRide(){
   riding=false;
@@ -625,6 +640,23 @@ $('ls-end').onclick=endRide;
   const hour=new Date().getHours();
   const greet=hour<6?'还没睡？我随时在。':hour<11?'早上好。':hour<14?'中午好。':hour<19?'下午好。':'晚上好。';
   addMsg('mark',greet+'我是 Mark，你的运动陪伴。可以问我天气、让我规划路线、翻你的骑行记录，或者就随便聊聊。点开始骑行，我会一路主动播报。',{lane:'general'});
+  /* 日常主动开口：定位已授权且天气合适时，主动给出运动建议 */
+  try{
+    if(navigator.permissions&&navigator.permissions.query){
+      const perm=await navigator.permissions.query({name:'geolocation'});
+      if(perm.state==='granted'){
+        const w=await ensureWeather();
+        refreshChips();
+        if(w&&hour>=6&&hour<20){
+          const bad=/雨|雪|雷|冰|霾/.test(String(w.day_weather||''));
+          const temp=typeof w.day_temp==='number'?w.day_temp:parseFloat(w.day_temp);
+          if(!bad&&Number.isFinite(temp)&&temp>=8&&temp<=32){
+            addMsg('mark','看了眼天：'+String(w.city)+'现在'+String(w.day_weather)+'、'+w.day_temp+'度，挺适合出去动一动的。想骑车的话说一声，我陪你。');
+          }
+        }
+      }
+    }
+  }catch(_){/* 主动开口是加分项，失败就安静 */}
 })();
 </script>
 </body>
