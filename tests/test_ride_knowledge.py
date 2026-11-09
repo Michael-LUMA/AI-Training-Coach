@@ -52,6 +52,9 @@ class KnowledgeRetrieveTests(unittest.TestCase):
     def test_retrieve_hits_and_misses(self):
         self.assertEqual(retrieve_ids('踏频是什么？', self.cards)[0], 'cadence-basics')
         self.assertEqual(retrieve_ids('量子力学', self.cards), [])
+        # 疑问语气二元组（什么/怎么/为什么）不产生误命中。
+        self.assertEqual(retrieve_ids('地球为什么是圆的？', self.cards), [])
+        self.assertEqual(retrieve_ids('感冒是怎么引起的？', self.cards), [])
 
     def test_retrieve_covers_new_domains(self):
         expected = {
@@ -132,6 +135,11 @@ class KnowledgeAnswerTests(unittest.TestCase):
         self.assertEqual(result['llm_status'], 'ok')
         self.assertIn('（来源：', result['draft']['speech'])
 
+    def test_honest_decline_maps_to_no_knowledge(self):
+        # 模型发现卡片没覆盖问题时诚实拒答，应视为无卡可循以便换道。
+        result = self.answer('这个我还没学过。（来源：通用运动常识）')
+        self.assertEqual(result['llm_status'], 'no_knowledge')
+
     def test_number_outside_cards_rejected(self):
         result = self.answer('踏频一定要练到250转才行。（来源：通用运动常识）')
         self.assertEqual(result['llm_status'], 'rejected_unverifiable_number')
@@ -168,7 +176,7 @@ class KnowledgeAnswerTests(unittest.TestCase):
     def test_history_projects_into_facts(self):
         post = transport('踏频是曲柄每分钟转动的圈数。（来源：通用运动常识）')
         history = [{'q': '踏频是什么？', 'a': '曲柄每分钟转动的圈数。'}]
-        result = know.build_knowledge_answer('那为什么不是车速？', self.cards, history=history,
+        result = know.build_knowledge_answer('那踏频为什么不是车速？', self.cards, history=history,
                                              api_key='synthetic-key', http_post=post)
         self.assertEqual(result['llm_status'], 'ok')
         facts = json.loads(json.loads(post.call_args.args[0].data)['messages'][1]['content'])

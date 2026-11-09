@@ -92,13 +92,19 @@ def _bigrams(text):
     return {text[index:index + 2] for index in range(len(text) - 1)}
 
 
+# 疑问语气二元组（什么/怎么/为什么/多少/如何…）在卡片标题里出现频率极高，
+# 不构成领域信号；不过滤的话，「地球为什么是圆的」会命中任何含「什么」的卡。
+_STOP_CHARS = frozenset('什么怎为吗呢吧啊哪谁如何')
+
+
 def retrieve(question, cards, limit=2):
     """Rank by unique character-bigram overlap, breaking ties by card id."""
     _check_question(question)
     _validate_cards(cards)
     if type(limit) is not int or limit < 0:
         raise ValueError('invalid retrieval limit')
-    query = _bigrams(question)
+    query = {b for b in _bigrams(question)
+             if not (b[0] in _STOP_CHARS and b[1] in _STOP_CHARS)}
     ranked = []
     for card in cards:
         score = len(query & _bigrams(card['title'] + ''.join(card['tags'])))
@@ -192,6 +198,10 @@ def build_knowledge_answer(question, cards, *, history=None, api_key=None, http_
                 or any(ord(c) < 32 or ord(c) == 127 for c in draft['speech'])):
             return _result('rejected_bad_schema', usage)
         speech = draft['speech']
+        # 模型照 system prompt 诚实拒答时，视为无卡可循——上层因此换到
+        # 通用常识道，而不是把一句「我还没学过」当成答案发给用户。
+        if any(marker in speech for marker in ('没学过', '没收录', '没有收录')):
+            return _result('no_knowledge', usage)
         with localcontext() as ctx:
             ctx.prec = 100
             if not _verified_text(_numeric_text(speech), numbers):
