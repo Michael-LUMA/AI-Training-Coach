@@ -48,6 +48,7 @@ from ride_knowledge import build_knowledge_answer, load_cards
 from ride_live import LIVE_TEMPLATE, LiveSession, build_live_answer, build_live_speech
 from ride_nav import plan_route, _http_get as _nav_http_get
 from ride_notes import NoteError, add_note, load_notes, remove_note
+from ride_tts import synthesize as tts_synthesize
 from ride_weather import fetch_weather
 from ride_weekly import build_ride_weekly, aggregate_ride_weeks, split_week_sessions, weekly_template
 from ride_server import strict_json, dumps
@@ -72,6 +73,7 @@ RIDE_NOTE = "/api/coach/ride/note"
 RIDE_NOTE_DELETE = "/api/coach/ride/note/delete"
 RIDE_CHAT = "/api/coach/ride/chat"
 RIDE_LIVE = "/api/coach/ride/live"
+RIDE_SPEAK = "/api/coach/ride/speak"
 
 
 def _usage_profile(entries):
@@ -151,7 +153,9 @@ def _page(filename="coach.html"):
         return " ".join("'sha256-" + base64.b64encode(hashlib.sha256(part.encode()).digest()).decode() + "'"
                         for part in re.findall(r"<" + tag + r">(.*?)</" + tag + r">", text, re.S))
     csp = ("default-src 'none'; script-src " + hashes("script") + "; style-src " + hashes("style") +
-           "; manifest-src 'self'; img-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
+           "; manifest-src 'self'; img-src 'self'; connect-src 'self'"
+           "; media-src https://*.aliyuncs.com http://*.aliyuncs.com"
+           "; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
     return text.encode("utf-8"), csp
 
 
@@ -283,7 +287,7 @@ class App:
             token = headers.get("X-Coach-Token", "")
             require(type(token) is str and token.isascii() and secrets.compare_digest(token, self.token), "Session token required", "token_denied", 403)
         allowed = ((method == "GET" and (parsed.path in ("/", "/privacy", "/terms", "/api/coach/config", "/api/coach/activities", "/ride", "/ride.webmanifest", "/icon.svg", RIDE_LIST, RIDE_NOTES) or font_path is not None)) or
-                   (method == "POST" and path in ("/api/coach/connect", "/api/coach/review", "/api/coach/review-l2", "/api/coach/demo-review", "/api/coach/waitlist", "/api/coach/weekly", RIDE_POST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE, RIDE_CHAT, RIDE_LIVE, RIDE_IMPORT, RIDE_WEATHER, RIDE_NOTE, RIDE_NOTE_DELETE)))
+                   (method == "POST" and path in ("/api/coach/connect", "/api/coach/review", "/api/coach/review-l2", "/api/coach/demo-review", "/api/coach/waitlist", "/api/coach/weekly", RIDE_POST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE, RIDE_CHAT, RIDE_LIVE, RIDE_IMPORT, RIDE_WEATHER, RIDE_NOTE, RIDE_NOTE_DELETE, RIDE_SPEAK)))
         require(allowed, "Endpoint not found", "not_found", 404)
         if method == "POST":
             require(headers.get("Transfer-Encoding") is None and headers.get("Content-Type") == "application/json", "Fixed-length JSON required", "invalid_body", 415)
@@ -298,7 +302,7 @@ class App:
 
     def dispatch(self, method, path, headers, body=b"", port=DEFAULT_PORT):
         length = self.preflight(method, path, headers, port)
-        if urlsplit(path).path in (RIDE_POST, RIDE_LIST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE, RIDE_CHAT, RIDE_LIVE, RIDE_IMPORT, RIDE_WEATHER, RIDE_NOTES, RIDE_NOTE, RIDE_NOTE_DELETE):
+        if urlsplit(path).path in (RIDE_POST, RIDE_LIST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE, RIDE_CHAT, RIDE_LIVE, RIDE_IMPORT, RIDE_WEATHER, RIDE_NOTES, RIDE_NOTE, RIDE_NOTE_DELETE, RIDE_SPEAK):
             self._ride_rate_limit(method)
         if method == "POST" and path == "/api/coach/billing/webhook":
             require(len(body) == length, "Incomplete request body", "invalid_body")
@@ -374,6 +378,8 @@ class App:
             return self._chat_ride(payload)
         if path == RIDE_LIVE:
             return self._live_ride(payload)
+        if path == RIDE_SPEAK:
+            return self._speak_ride(payload)
         if path == "/api/coach/waitlist":
             require(type(payload) is dict and set(payload) == {"email"}, "Expected email only")
             status = self.waitlist.register(payload["email"])
@@ -713,6 +719,21 @@ class App:
             turns = [] if entry is None else entry[0]
             turns = (turns + [{"q": question, "a": speech}])[-_CONV_MAX_TURNS:]
             self._convs[conv_id] = [turns, now]
+
+    def _speak_ride(self, payload):
+        """Voice proxy: verified speech text in, a bounded audio URL out.
+
+        The key never leaves the server; the client gets only a signed OSS
+        URL (24h) whose host is whitelisted by ride_tts. No key configured
+        returns not_configured so the client falls back to browser speech.
+        """
+        require(type(payload) is dict and set(payload) == {"text"}, "Expected text only")
+        result = tts_synthesize(payload["text"],
+                                api_key=os.environ.get("DASHSCOPE_API_KEY"),
+                                http_post=self.llm_post)
+        if result["tts_status"] == "rejected_bad_schema":
+            raise ActionError("invalid_input", "Invalid text", 400)
+        return result
 
     def _live_ride(self, payload):
         """In-ride companion: telemetry point in, bounded spoken calls out.

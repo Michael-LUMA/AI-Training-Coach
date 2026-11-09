@@ -407,7 +407,18 @@ document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState==='hidden')releaseScreenLock();
   else if(active)void requestScreenLock();
 });
-function cancelSpeech(){if ('speechSynthesis' in window) window.speechSynthesis.cancel();speechKind=null;}
+// Cloud voice state: one Audio element at a time, plus a page-scoped switch
+// that stops calling the server once it reports TTS is not configured.
+let currentAudio=null,ttsAvailable=true;
+function cancelSpeech(){
+  if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+  if(currentAudio){const audio=currentAudio;currentAudio=null;audio.onended=audio.onerror=null;try{audio.pause();}catch(_){/* stopping playback is best effort */}}
+  speechKind=null;
+}
+function voiceSpeaking(){
+  if(currentAudio && currentAudio.paused===false && currentAudio.ended!==true)return true;
+  return 'speechSynthesis' in window && window.speechSynthesis.speaking===true;
+}
 // Voice scheduler: one voice at a time. Lower rank wins; a higher-priority
 // arrival preempts the current utterance (the preempted one is dropped —
 // fall alerts flush the whole queue). Everything else waits in a small
@@ -418,13 +429,42 @@ const VOICE_QUEUE_MAX=4;
 let voiceQueue=[],voiceSeq=0;
 function voiceRank(kind){return Object.prototype.hasOwnProperty.call(VOICE_RANK,kind)?VOICE_RANK[kind]:4;}
 function voiceTtl(kind){return Object.prototype.hasOwnProperty.call(VOICE_TTL_MS,kind)?VOICE_TTL_MS[kind]:60000;}
+// Device speech engine: zero network, zero latency. Fall alerts use this
+// always — a safety voice never waits on the network.
+function synthSpeakNow(text,done){
+  if (!('speechSynthesis' in window) || !('SpeechSynthesisUtterance' in window)){done();return;}
+  const utterance=new SpeechSynthesisUtterance(text);utterance.lang='zh-CN';utterance.rate = 1.0;
+  utterance.onend=utterance.onerror=done;
+  window.speechSynthesis.speak(utterance);
+}
+// Cloud voice first (MARK server, CosyVoice): one POST per utterance with an
+// 8-second budget; any failure or timeout falls back to the device engine.
 function voiceSpeakNow(text,kind){
   cancelSpeech();
   const seq=++voiceSeq;
-  const utterance=new SpeechSynthesisUtterance(text);utterance.lang='zh-CN';utterance.rate = 1.0;
   speechKind=kind;duckAudio(true);
-  utterance.onend=utterance.onerror=()=>{if(seq!==voiceSeq)return;speechKind=null;duckAudio(false);voiceDrain();};
-  window.speechSynthesis.speak(utterance);
+  const done=()=>{if(seq!==voiceSeq)return;speechKind=null;duckAudio(false);voiceDrain();};
+  if(kind==='fall' || !ttsAvailable || !token || typeof Audio!=='function'){synthSpeakNow(text,done);return;}
+  void (async()=>{
+    try{
+      const response=await Promise.race([
+        fetch('/api/coach/ride/speak',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify({text:text})}),
+        new Promise((resolve,reject)=>{setTimeout(()=>reject(new Error('tts_timeout')),8000);})
+      ]);
+      const result=await response.json().catch(()=>null);
+      if(seq!==voiceSeq)return;
+      if(result && result.tts_status==='not_configured')ttsAvailable=false;
+      if(!response.ok || !result || result.tts_status!=='ok' || typeof result.audio_url!=='string' || !result.audio_url)throw new Error('tts_unavailable');
+      const audio=new Audio(result.audio_url);
+      currentAudio=audio;
+      audio.onended=audio.onerror=()=>{if(currentAudio===audio)currentAudio=null;done();};
+      await audio.play();
+    }catch(_){
+      if(seq!==voiceSeq)return;
+      currentAudio=null;
+      synthSpeakNow(text,done);
+    }
+  })();
 }
 function voiceDrain(){
   if(speechKind!==null)return;
@@ -440,6 +480,16 @@ function speak(text, kind='other', enqueue=false){
     const now=performance.now(),rank=voiceRank(kind);
     voiceQueue=voiceQueue.filter(item=>now-item.at<=voiceTtl(item.kind));
     if(rank===0){voiceQueue=[];voiceSpeakNow(text,kind);return true;}
+    // enqueue: the caller asked to wait for the current voice rather than
+    // cut it off (the post-ride summary uses this behind a fuel reminder).
+    if(enqueue && speechKind!==null){
+      if(!voiceQueue.some(item=>item.kind===kind&&item.text===text)){
+        voiceQueue.push({text:text,kind:kind,at:now});
+        voiceQueue.sort((a,b)=>voiceRank(a.kind)-voiceRank(b.kind)||a.at-b.at);
+        if(voiceQueue.length>VOICE_QUEUE_MAX)voiceQueue.length=VOICE_QUEUE_MAX;
+      }
+      return true;
+    }
     if(speechKind===null || rank<voiceRank(speechKind)){voiceSpeakNow(text,kind);return true;}
     if(!voiceQueue.some(item=>item.kind===kind&&item.text===text)){
       voiceQueue.push({text:text,kind:kind,at:now});
@@ -457,7 +507,7 @@ function coachCanSpeak(now=performance.now()){
   // Demo playback compresses 30 script-seconds into one real second, so the
   // minimum pause between utterances compresses with it: same script-time gap.
   const gap=demoPlaying ? COACH_SPEECH_GAP_MS/DEMO_STEP_S : COACH_SPEECH_GAP_MS;
-  return now-lastCoachSpeech>=gap && !('speechSynthesis' in window && window.speechSynthesis.speaking);
+  return now-lastCoachSpeech>=gap && !voiceSpeaking();
 }
 function remindFuel(){
   if(!active || liveOn || !fuelStepS || elapsedSeconds()<nextFuelSeconds || !coachCanSpeak())return;

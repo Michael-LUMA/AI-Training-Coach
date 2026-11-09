@@ -21,7 +21,7 @@ NODE = shutil.which('node.exe') or (str(cached) if cached.is_file() else shutil.
 HARNESS = r"""
 const fs=require('node:fs'), vm=require('node:vm');
 const input=JSON.parse(fs.readFileSync(0,'utf8'));
-const elements={}, calls=[], spoken=[], debug=[], storage=new Map(), clock={now:0}, intervals=new Map(), _sr=[];
+const elements={}, calls=[], spoken=[], debug=[], storage=new Map(), clock={now:0}, intervals=new Map(), _sr=[], audioPlayed=[];
 let nextTimer=0, bleCalls=0;
 class MockSR{
   constructor(){_sr.push(this);this.lang='';this.interimResults=false;this.maxAlternatives=1;this.started=false;}
@@ -54,11 +54,14 @@ const sandbox={URLSearchParams,Date,DataView,Uint32Array,Uint8Array,Uint16Array,
   localStorage:{setItem:(k,v)=>storage.set(k,v),getItem:k=>storage.get(k),removeItem:k=>storage.delete(k),key:i=>[...storage.keys()][i],get length(){return storage.size;}},
   setInterval:(fn,ms)=>{const id=++nextTimer;intervals.set(id,{fn,ms,next:clock.now+ms});return id;},clearInterval:id=>intervals.delete(id),setTimeout:()=>1,
   SpeechSynthesisUtterance:function(text){this.text=text;},
-  _elements:elements,_calls:calls,_spoken:spoken,_debug:debug,_options:options,_clock:clock,_storage:storage,_sr:_sr,
+  Audio:function(url){this.url=url||'';this.paused=true;this.ended=false;this.onended=null;this.onerror=null;},
+  _elements:elements,_calls:calls,_spoken:spoken,_debug:debug,_options:options,_clock:clock,_storage:storage,_sr:_sr,_audio:audioPlayed,
   _geoEmit:(lng,lat)=>{for(const fn of geo.watches.values())fn({coords:{longitude:lng,latitude:lat,accuracy:5}});},
   _geoWatches:()=>geo.watches.size,
   _bleCalls:()=>bleCalls,_flush:()=>new Promise(resolve=>setImmediate(resolve)),
   _advance:async(ms)=>{const end=clock.now+ms;while(true){let nextId=null,next=null;for(const [id,item] of intervals){if(item.next<=end && (!next || item.next<next.next)){nextId=id;next=item;}}if(!next)break;clock.now=next.next;next.next+=next.ms;next.fn();await Promise.resolve();}clock.now=end;await new Promise(resolve=>setImmediate(resolve));}};
+sandbox.Audio.prototype.play=function(){this.paused=false;audioPlayed.push(this.url);const self=this;Promise.resolve().then(()=>{self.paused=true;self.ended=true;if(self.onended)self.onended();});return Promise.resolve();};
+sandbox.Audio.prototype.pause=function(){this.paused=true;};
 sandbox.window={isSecureContext:true,SpeechSynthesisUtterance:sandbox.SpeechSynthesisUtterance,
   speechSynthesis:{cancel(){},speak:utterance=>{spoken.push(utterance.text);Promise.resolve().then(()=>{if(utterance.onend)utterance.onend();});}},addEventListener(){}};
 if(options.sr){sandbox.window.SpeechRecognition=MockSR;sandbox.window.webkitSpeechRecognition=MockSR;}
@@ -120,6 +123,11 @@ sandbox.fetch=async(url,init={})=>{
     }
     const parsed=JSON.parse(init.body);const n=Array.isArray(parsed.data)?parsed.data.length:1;
     return {ok:true,status:200,json:async()=>({saved:n,duplicate:0,failed:0,results:[]})};
+  }
+  if(url==='/api/coach/ride/speak'){
+    if(!options.tts)return {ok:false,status:503,json:async()=>({error_code:'unavailable',tts_status:'upstream_error'})};
+    if(options.tts.notConfigured)return {ok:true,status:200,json:async()=>({tts_status:'not_configured',audio_url:null,usage:null})};
+    return {ok:true,status:200,json:async()=>({tts_status:'ok',audio_url:options.tts.url || 'https://dashscope-result-test.oss-cn-beijing.aliyuncs.com/tts/synth.mp3',usage:null})};
   }
   throw new Error('Unexpected request: '+url);
 };
@@ -522,11 +530,11 @@ class RideMemoryUI(unittest.TestCase):
         self.assertNotIn('通常', result)
 
     def test_explicit_listen_and_first_start_are_user_gated(self):
-        result = self.run_js("await $('start-ride').click(); return {spoken:_spoken,version:session.persona_version};", history=[metadata()], simulate=True)
+        result = self.run_js("await $('start-ride').click(); await _flush(); return {spoken:_spoken,version:session.persona_version};", history=[metadata()], simulate=True)
         self.assertEqual(len(result['spoken']), 1)
         self.assertIn('我记得', result['spoken'][0])
         self.assertEqual(result['version'], 'ride-persona/19')
-        result = self.run_js("$('memory-listen').click(); await $('start-ride').click(); return _spoken;", history=[metadata()], simulate=True)
+        result = self.run_js("$('memory-listen').click(); await _flush(); await $('start-ride').click(); await _flush(); return _spoken;", history=[metadata()], simulate=True)
         self.assertEqual(len(result), 2)
         self.assertIn('我记得', result[0])
         # Second start gets the factual pre-ride brief before the start line;
@@ -872,7 +880,7 @@ class RideMemoryUI(unittest.TestCase):
     def test_demo_cloud_speech_appends_without_autoplay(self):
         result=self.run_js("""
           $('demo-start').click();await _advance(90000);
-          const before=_spoken.length;$('brain-listen').click();
+          const before=_spoken.length;$('brain-listen').click();await _flush();
           return {text:$('brain-speech').textContent,hidden:$('brain-card').hidden,before,after:_spoken.length,spoken:_spoken};
         """,demo=True,brain={'speech_status':'ok','speech':'模拟记录：我记到45分钟。','fallback':None})
         self.assertFalse(result['hidden']);self.assertIn('模拟记录：',result['text'])
@@ -1636,12 +1644,15 @@ class RideNavUI(RideMemoryUI):
           const step=navRoute.steps[0];
           const off=wgs84ToGcj02(step.end_lng,step.end_lat);
           _geoEmit(step.end_lng-(off[0]-step.end_lng), step.end_lat-(off[1]-step.end_lat));
+          await _flush();
           const afterFirst={spoken:_spoken.slice(),status:$('nav-status').textContent,index:navRoute.index};
           _geoEmit(step.end_lng-(off[0]-step.end_lng), step.end_lat-(off[1]-step.end_lat));
+          await _flush();
           const afterRepeat=_spoken.length;
           const last=navRoute.steps[navRoute.index];
           const off2=wgs84ToGcj02(last.end_lng,last.end_lat);
           _geoEmit(last.end_lng-(off2[0]-last.end_lng), last.end_lat-(off2[1]-last.end_lat));
+          await _flush();
           return {afterFirst,afterRepeat,spoken:_spoken,steps:$('nav-steps').textContent,
                   watches:_geoWatches(),notes:session.coach_notes};
         """, simulate=1, route=self.ROUTE)
@@ -1691,15 +1702,19 @@ class RideNavUI(RideMemoryUI):
           await $('nav-plan').click();
           await $('start-ride').click();
           _geoEmit(116.396,39.920);   // far from both corridors even after the GCJ shift
+          await _flush();
           const first={spoken:_spoken.slice(),status:$('nav-status').textContent,flag:navOffRoute};
           _geoEmit(116.396,39.920);   // snoozed: no immediate repeat
+          await _flush();
           const repeat=_spoken.length;
           await _advance(181000);     // snooze expires
           _geoEmit(116.396,39.920);
+          await _flush();
           const third=_spoken.length;
           // Land back on the step-1 corridor within 60 m (invert the GCJ shift).
           const on=wgs84ToGcj02(116.394,39.9083);
           _geoEmit(116.394-(on[0]-116.394),39.9083-(on[1]-39.9083));
+          await _flush();
           return {first,repeat,third,spoken:_spoken,flag:navOffRoute};
         """, simulate=1, route=self.ROUTE)
         self.assertIn('好像偏航了', result['first']['spoken'][-1])
@@ -1876,6 +1891,7 @@ class ChatCardUI(RideMemoryUI):
           await _flush();
           const listenHidden=$('chat-listen').hidden;
           $('chat-listen').click();
+          await _flush();
           return {listenHidden:listenHidden,spoken:_spoken};
         """, chat={'speech_status':'ok','speech':'这次平均心率120。','fallback':None,'usage':None})
         self.assertFalse(result['listenHidden'])
@@ -1929,6 +1945,49 @@ class ChatCardUI(RideMemoryUI):
         self.assertEqual(result['body']['destination_address'], '奥森南门')
         self.assertFalse(result['chatted'])
         self.assertEqual(result['micText'], '对 Mark 说话')
+
+    def test_speak_prefers_cloud_voice_when_configured(self):
+        result = self.run_js("""
+          speak('云端语音测试');
+          await _flush();await _flush();
+          return {audio:_audio,spoken:_spoken,
+                  calls:_calls.filter(c=>c.url==='/api/coach/ride/speak').length};
+        """, tts={})
+        self.assertEqual(result['audio'], ['https://dashscope-result-test.oss-cn-beijing.aliyuncs.com/tts/synth.mp3'])
+        self.assertEqual(result['spoken'], [])
+        self.assertEqual(result['calls'], 1)
+
+    def test_speak_falls_back_to_device_voice_when_cloud_fails(self):
+        result = self.run_js("""
+          speak('云端不可用时用本机嗓音');
+          await _flush();await _flush();
+          return {audio:_audio,spoken:_spoken};
+        """)
+        self.assertEqual(result['audio'], [])
+        self.assertEqual(result['spoken'], ['云端不可用时用本机嗓音'])
+
+    def test_fall_alert_never_waits_for_cloud(self):
+        result = self.run_js("""
+          speak('警报，检测到摔倒。','fall');
+          return {audio:_audio,spoken:_spoken,
+                  calls:_calls.filter(c=>c.url==='/api/coach/ride/speak').length};
+        """, tts={})
+        self.assertEqual(result['audio'], [])
+        self.assertEqual(result['spoken'], ['警报，检测到摔倒。'])
+        self.assertEqual(result['calls'], 0)
+
+    def test_speak_not_configured_disables_cloud_for_the_page(self):
+        result = self.run_js("""
+          speak('第一句');
+          await _flush();await _flush();
+          speak('第二句');
+          await _flush();await _flush();
+          return {audio:_audio,spoken:_spoken,
+                  calls:_calls.filter(c=>c.url==='/api/coach/ride/speak').length};
+        """, tts={'notConfigured': True})
+        self.assertEqual(result['audio'], [])
+        self.assertEqual(result['spoken'], ['第一句', '第二句'])
+        self.assertEqual(result['calls'], 1)
 
     def test_voice_command_routes_qa_and_speaks_answer(self):
         result = self.run_js("""
@@ -2100,40 +2159,44 @@ class VoiceSchedulerUI(RideMemoryUI):
         result = self.run_js("""
           speak('三十分钟里程碑','milestone');
           speak('喝点水','fuel');
-          const queued=_spoken.slice();
+          const queuedCount=voiceQueue.length;
           await _flush();
-          return {queued:queued,final:_spoken.slice(),left:voiceQueue.length};
+          return {queuedCount:queuedCount,final:_spoken.slice(),left:voiceQueue.length};
         """)
-        self.assertEqual(result['queued'], ['三十分钟里程碑'])
+        self.assertEqual(result['queuedCount'], 1)  # fuel waits behind the milestone
         self.assertEqual(result['final'], ['三十分钟里程碑', '喝点水'])
         self.assertEqual(result['left'], 0)
 
     def test_higher_priority_preempts_lower_never_reverse(self):
+        # Cloud synthesis takes a beat, so a preempted utterance is dropped
+        # mid-flight instead of being cut off after its first word.
         result = self.run_js("""
           speak('三十分钟里程碑','milestone');
           speak('前方左转','nav');
           const navPreempted=_spoken.slice();
           speak('心率偏高','zone');
-          const zoneQueued=_spoken.slice();
+          const zoneQueued=voiceQueue.length;
           await _flush();
           return {navPreempted:navPreempted,zoneQueued:zoneQueued,final:_spoken.slice()};
         """)
-        self.assertEqual(result['navPreempted'], ['三十分钟里程碑', '前方左转'])
-        self.assertEqual(result['zoneQueued'], ['三十分钟里程碑', '前方左转'])
-        self.assertEqual(result['final'], ['三十分钟里程碑', '前方左转', '心率偏高'])
+        self.assertEqual(result['navPreempted'], [])
+        self.assertEqual(result['zoneQueued'], 1)  # zone never preempts nav
+        self.assertEqual(result['final'], ['前方左转', '心率偏高'])
 
     def test_zone_preempts_routine_but_not_nav(self):
         result = self.run_js("""
           speak('前方左转','nav');
           speak('心率偏高','zone');
-          const held=_spoken.slice();
+          const held=voiceQueue.length;
           await _flush();
           return {held:held,final:_spoken.slice()};
         """)
-        self.assertEqual(result['held'], ['前方左转'])
+        self.assertEqual(result['held'], 1)
         self.assertEqual(result['final'], ['前方左转', '心率偏高'])
 
     def test_fall_alert_flushes_everything_immediately(self):
+        # Fall alerts stay on the zero-latency device engine and sound at once;
+        # anything still being synthesized is dropped before making a sound.
         result = self.run_js("""
           speak('前方左转','nav');
           speak('喝点水','fuel');
@@ -2142,8 +2205,8 @@ class VoiceSchedulerUI(RideMemoryUI):
           await _flush();
           return {atFall:atFall,final:_spoken.slice()};
         """)
-        self.assertEqual(result['atFall'], {'spoken': ['前方左转', '疑似摔倒，你还好吗'], 'queued': 0})
-        self.assertEqual(result['final'], ['前方左转', '疑似摔倒，你还好吗'])
+        self.assertEqual(result['atFall'], {'spoken': ['疑似摔倒，你还好吗'], 'queued': 0})
+        self.assertEqual(result['final'], ['疑似摔倒，你还好吗'])
 
     def test_stale_queue_items_expire(self):
         result = self.run_js("""
@@ -2181,8 +2244,11 @@ class VoiceSchedulerUI(RideMemoryUI):
           return {order:_spoken.slice(),dup:dup};
         """)
         self.assertEqual(result['order'],
-                         ['三十分钟里程碑', '前方左转', '疑似摔倒，你还好吗', '喝点水', '该吃能量胶了'])
-        self.assertNotIn('心率偏高', result['order'])  # flushed by the fall alert
+                         ['疑似摔倒，你还好吗', '喝点水', '该吃能量胶了'])
+        # Fall flushes the zone prompt; the milestone and nav turn were still
+        # being synthesized when the fall arrived, so they never made a sound.
+        self.assertNotIn('心率偏高', result['order'])
+        self.assertNotIn('三十分钟里程碑', result['order'])
         self.assertEqual(result['dup'], 0)
 
 

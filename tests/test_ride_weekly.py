@@ -421,6 +421,7 @@ class RideWeeklyBrowserTests(unittest.TestCase):
         result = self.run_js("""
           renderWeekly([{id:'current',started_at:new Date(2026,10,4,12).toISOString(),source:'ble_gatt_0x180d',summary:{duration_s:3600}}],new Date(2026,10,7));
           await $('ride-weekly-listen').click();
+          await _flush();
           return {text:$('ride-weekly-speech').textContent,spoken:_spoken,calls:_calls,disabled:$('ride-weekly-listen').disabled};
         """, weekly={'speech_status': 'ok', 'speech': '这周骑了1次，记录60分钟。', 'fallback': None})
         self.assertEqual(result['text'], '这周骑了1次，记录60分钟。')
@@ -434,7 +435,7 @@ class RideWeeklyBrowserTests(unittest.TestCase):
         for options in ({}, {'weeklyFail': True}, {'weekly': {'speech_status': 'rejected_unverifiable_number', 'speech': '999次', 'fallback': 'template'}}):
             result = self.run_js("""
               renderWeekly([{id:'ride',started_at:new Date(2026,10,4).toISOString(),source:'ble_gatt_0x180d',summary:{duration_s:7440}}],new Date(2026,10,7));
-              await listenWeekly();return {text:$('ride-weekly-speech').textContent,spoken:_spoken};
+              await listenWeekly();await _flush();return {text:$('ride-weekly-speech').textContent,spoken:_spoken};
             """, **options)
             self.assertEqual(result['text'], '这周骑了1次，一共124分钟。')
             self.assertEqual(result['spoken'], [result['text']])

@@ -297,7 +297,7 @@ class RideBrainUITests(unittest.TestCase):
         result=self.run_js("""
           const item={id:'current',source:'ble_gatt_0x180d',started_at:'2026-11-07T08:00:00Z',summary:{avg_hr:120,duration_s:60}};
           lastSession=item;$('summary').textContent='template stays';await upload(item,true);
-          const before=[..._spoken];$('brain-listen').click();
+          const before=[..._spoken];$('brain-listen').click();await _flush();
           return {before,after:_spoken,text:$('brain-speech').textContent,hidden:$('brain-card').hidden,template:$('summary').textContent,calls:_calls};
         """,brain={'speech_status':'ok','speech':'我记到心率120 bpm。','fallback':None})
         self.assertEqual(result['before'],[]);self.assertEqual(result['after'],['我记到心率120 bpm。'])
