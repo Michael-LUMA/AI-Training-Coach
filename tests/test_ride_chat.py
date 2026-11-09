@@ -329,10 +329,17 @@ class ChatEndpointTests(unittest.TestCase):
 
     def test_chat_counts_toward_shared_post_bucket(self):
         self.save()
-        for _ in range(9):
+        for _ in range(59):
             self.request('/api/coach/ride/chat',{'question':'心率？','session_id':'current'})
         with self.assertRaises(ActionError) as error:
             self.request('/api/coach/ride/chat',{'question':'心率？','session_id':'current'})
+        self.assertEqual((error.exception.status,error.exception.code),(429,'rate_limited'))
+
+    def test_session_save_keeps_tight_disk_bucket(self):
+        for _ in range(10):
+            self.save()
+        with self.assertRaises(ActionError) as error:
+            self.save()
         self.assertEqual((error.exception.status,error.exception.code),(429,'rate_limited'))
 
     def test_chat_totals_aggregated_under_lock(self):

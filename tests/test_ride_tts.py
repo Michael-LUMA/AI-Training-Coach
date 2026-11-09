@@ -152,7 +152,7 @@ class SpeakEndpointTests(unittest.TestCase):
         self.post.assert_not_called()
 
     def test_counts_toward_shared_post_bucket(self):
-        for _ in range(10):
+        for _ in range(60):
             self.request({'text': '心率142。'})
         with self.assertRaises(ActionError) as error:
             self.request({'text': '心率142。'})

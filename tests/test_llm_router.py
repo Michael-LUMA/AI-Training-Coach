@@ -31,7 +31,7 @@ class TierTests(unittest.TestCase):
         self.assertEqual(llm_router.model_tier('review_l2'), llm_router.FAST)
         self.assertEqual(llm_router.model_tier('weekly'), llm_router.FAST)
         self.assertEqual(llm_router.model_tier('personal'), llm_router.SMART)
-        self.assertEqual(llm_router.model_tier('knowledge'), llm_router.SMART)
+        self.assertEqual(llm_router.model_tier('knowledge'), llm_router.FAST)
 
     def test_unknown_lane_rejected(self):
         with self.assertRaises(ValueError):
@@ -47,7 +47,7 @@ class TierTests(unittest.TestCase):
             self.assertEqual(llm_router.model_tier('personal', question), llm_router.SMART, question)
 
     def test_small_talk_only_affects_personal(self):
-        self.assertEqual(llm_router.model_tier('knowledge', '你好'), llm_router.SMART)
+        self.assertEqual(llm_router.model_tier('knowledge', '你好'), llm_router.FAST)
 
 
 class PlanTests(unittest.TestCase):

@@ -709,7 +709,7 @@ class CoachServerTests(unittest.TestCase):
 
     def test_ride_route_rate_limited_with_ride_bucket(self):
         self.app.nav_get = Mock(side_effect=AssertionError('No upstream without a key'))
-        for _ in range(10):
+        for _ in range(60):
             self.request('/api/coach/ride/route', {'origin': '116.397,39.908', 'destination_address': '天安门'})
         self.error('rate_limited', lambda: self.request('/api/coach/ride/route',
                                                         {'origin': '116.397,39.908', 'destination_address': '天安门'}))
@@ -763,7 +763,7 @@ class CoachServerTests(unittest.TestCase):
 
     def test_ride_get_rate_limit_and_independent_post_budget(self):
         with patch.object(server.time, 'monotonic', return_value=100):
-            for _ in range(60):
+            for _ in range(120):
                 self.assertEqual(self.request('/api/coach/ride/sessions')['sessions'], [])
             error = self.error('rate_limited', lambda: self.request('/api/coach/ride/sessions'))
             self.assertEqual(error.status, 429)

@@ -294,7 +294,7 @@ class RideWeeklyRouteTests(unittest.TestCase):
 
     def test_shares_post_budget_with_upload_and_review_get_independent(self):
         self.request(memory(), path=server.RIDE_POST)
-        for _ in range(9):
+        for _ in range(59):
             self.request()
         with self.assertRaises(ActionError) as error:
             self.request({'session_id': 'ride-current'}, path=server.RIDE_REVIEW)

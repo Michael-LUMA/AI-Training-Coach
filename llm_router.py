@@ -29,8 +29,8 @@ SMART = 'smart'
 # Lane → tier. Fast lanes answer mid-ride or under silence windows; smart lanes
 # answer after the ride where phrasing quality wins at tolerable latency.
 LANES = {'live': FAST, 'live_answer': FAST, 'review': FAST, 'review_l2': FAST,
-         'weekly': FAST, 'planner': FAST, 'personal': SMART, 'knowledge': SMART,
-         'general': FAST}  # 闲聊要的是快，不是深
+         'weekly': FAST, 'planner': FAST, 'personal': SMART, 'knowledge': FAST,
+         'general': FAST}  # 交互道全部求快；记录道保 SMART 求准
 
 # Brain pool registry: default endpoint and per-tier model names. None model
 # means the provider only joins when its model env var is set explicitly.

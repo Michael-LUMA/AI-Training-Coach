@@ -325,7 +325,7 @@ class App:
     def dispatch(self, method, path, headers, body=b"", port=DEFAULT_PORT):
         length = self.preflight(method, path, headers, port)
         if urlsplit(path).path in (RIDE_POST, RIDE_LIST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE, RIDE_CHAT, RIDE_LIVE, RIDE_IMPORT, RIDE_WEATHER, RIDE_NOTES, RIDE_NOTE, RIDE_NOTE_DELETE, RIDE_SPEAK, RIDE_ASR):
-            self._ride_rate_limit(method)
+            self._ride_rate_limit(method, urlsplit(path).path)
         if method == "POST" and path == "/api/coach/billing/webhook":
             require(len(body) == length, "Incomplete request body", "invalid_body")
             require(verify_billing(body, headers.get("creem-signature", ""), os.environ.get("CREEM_WEBHOOK_SECRET", "")), "Invalid webhook signature", "billing_signature_invalid", 403)
@@ -987,11 +987,13 @@ class App:
                     503 if error.code in ("storage_unavailable", "storage_corrupt") else 400)
                 raise ActionError(error.code, str(error), status) from None
 
-    def _ride_rate_limit(self, method):
+    def _ride_rate_limit(self, method, path):
         """Bound local disk traffic per single-user app, never an upstream quota.
 
-        Existing coach routes have upstream 429 propagation, not a local bucket.
-        Ride routes have no upstream; enforce 10 POST / 60 GET per minute here.
+        Disk-writing endpoints (session save, import) keep the tight 10/min
+        bucket; conversation endpoints (chat, weather, route, speak, live
+        beats) share a roomier 60/min bucket — a back-and-forth chat plus
+        TTS playback must never hit a wall mid-sentence.
         Called once in dispatch, not twice via preflight+dispatch in the handler.
         """
         now = time.monotonic()
@@ -999,7 +1001,11 @@ class App:
             bucket = self._ride_requests[method]
             while bucket and now - bucket[0] >= 60:
                 bucket.popleft()
-            if len(bucket) >= (10 if method == "POST" else 60):
+            if method == "POST":
+                limit = 10 if path in (RIDE_POST, RIDE_IMPORT) else 60
+            else:
+                limit = 120
+            if len(bucket) >= limit:
                 error = ActionError("rate_limited", "Local ride request limit reached", 429)
                 error.retry_after = str(max(1, int(60 - (now - bucket[0])) + 1))
                 raise error
