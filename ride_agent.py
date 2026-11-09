@@ -27,13 +27,19 @@ SEARCH_HINTS = re.compile(
     r'|\d{1,2}\s*月\s*\d{1,2}\s*[日号]|\d{4}-\d{1,2}-\d{1,2}')
 
 PLANNER_PROMPT = """你是 Mark 的调度器，不是回答者。根据用户问题决定要查哪些历史记录。
-只输出 JSON {"tools":[...]}，最多2个调用；不需要查就输出 {"tools":[]}。
-唯一可用工具 search_sessions，args 字段：
+只输出一个 JSON 对象，严禁输出任何其他文字、解释或 markdown 代码围栏。
+输出格式（严格遵守，tools 数组的每一项都必须同时含 name 和 args 两个字段）：
+{"tools": [{"name": "search_sessions", "args": {"date": "2026-11-01"}}]}
+不需要查历史时输出：{"tools": []}
+唯一可用工具 search_sessions，它的 args 只能含以下字段：
 - date：YYYY-MM-DD（问题指向具体某天时必填；相对日期按 today 换算成绝对日期）
 - activity：ride 骑行 / hike 徒步 / run 跑步（问题明确限定场景时才给）
 - sort：longest（问「最长/最久的一次」时给）；默认按时间倒序
-规则：问题是闲聊或问的是「最近/这次/本周/累计」就不调用（那些事实已有）。
-不要输出任何解释。known_dates 是实际存在记录的日期，只能查这些日期。"""
+规则：
+- 问题是闲聊或问的是「最近/这次/本周/累计」就输出 {"tools": []}（那些事实已有）。
+- 问「最长/最久/最快的一次」时只给 sort，绝不加 date——它比的是全部记录。
+- known_dates 是实际存在记录的日期，只在问题指向具体某天时用 date 查这些日期。
+再次强调：args 必须嵌在 tools 数组的每一项里，不允许出现在外层。"""
 
 _TOOL_NAME = 'search_sessions'
 
