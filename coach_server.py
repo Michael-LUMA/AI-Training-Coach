@@ -335,7 +335,7 @@ class App:
                 return {"status": "ok"}
             parsed = urlsplit(path)
             if parsed.path in ("/", "/ride", "/privacy", "/terms"):
-                return _page({"/": "coach.html", "/ride": "ride.html", "/privacy": "privacy.html", "/terms": "terms.html"}[parsed.path])
+                return _page({"/": "coach.html", "/ride": "ride.html", "/mark": "mark.html", "/privacy": "privacy.html", "/terms": "terms.html"}[parsed.path])
             if parsed.path in ("/ride.webmanifest", "/icon.svg"):
                 filename, mime = {"/ride.webmanifest": ("ride.webmanifest", "application/manifest+json; charset=utf-8"),
                                   "/icon.svg": ("icon.svg", "image/svg+xml")}[parsed.path]

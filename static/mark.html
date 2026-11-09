@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#070b12">
+<title>MARK · 你的运动陪伴智能体</title>
+<style>
+:root{
+  --bg:#070b12;--bg2:#0b111c;--card:rgba(255,255,255,.045);--card2:rgba(255,255,255,.08);
+  --line:rgba(255,255,255,.09);--text:#e8eef7;--dim:#8b98ac;--dimmer:#5b6779;
+  --mint:#3dffb0;--blue:#5b8cff;--violet:#a06bff;--amber:#ffb454;--red:#ff6b6b;
+  --grad:linear-gradient(135deg,#3dffb0,#5b8cff);
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{
+  background:var(--bg);color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","HarmonicOS Sans SC","Microsoft YaHei",sans-serif;
+  display:flex;flex-direction:column;overflow:hidden;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 70% -10%,rgba(91,140,255,.12),transparent),
+    radial-gradient(ellipse 60% 40% at 110% 110%,rgba(61,255,176,.07),transparent);
+}
+/* ---------- header ---------- */
+header{
+  display:flex;align-items:center;gap:12px;padding:14px 18px;
+  border-bottom:1px solid var(--line);
+  background:rgba(7,11,18,.72);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  z-index:10;
+}
+.orb{width:34px;height:34px;border-radius:50%;position:relative;flex:none;
+  background:conic-gradient(from 120deg,#3dffb0,#5b8cff,#a06bff,#3dffb0);
+  animation:spin 6s linear infinite;}
+.orb::after{content:'';position:absolute;inset:3px;border-radius:50%;background:var(--bg);}
+.orb::before{content:'';position:absolute;inset:9px;border-radius:50%;background:var(--grad);z-index:1;
+  animation:pulse 2.4s ease-in-out infinite;}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pulse{0%,100%{opacity:.85;transform:scale(1)}50%{opacity:.5;transform:scale(.82)}}
+.brand{font-weight:700;letter-spacing:.14em;font-size:15px}
+.brand small{display:block;font-weight:400;letter-spacing:.02em;color:var(--dim);font-size:11px;margin-top:1px}
+#status{margin-left:auto;font-size:12px;color:var(--dim);display:flex;align-items:center;gap:6px}
+#status .dot{width:7px;height:7px;border-radius:50%;background:var(--mint);box-shadow:0 0 8px var(--mint)}
+#status.thinking #status-dot{background:var(--amber);box-shadow:0 0 8px var(--amber)}
+#legacy{font-size:12px;color:var(--dimmer);text-decoration:none;border:1px solid var(--line);
+  padding:5px 10px;border-radius:8px;transition:.2s}
+#legacy:hover{color:var(--text);border-color:var(--dimmer)}
+/* ---------- live strip ---------- */
+#livestrip{display:flex;gap:0;border-bottom:1px solid var(--line);background:linear-gradient(90deg,rgba(61,255,176,.06),rgba(91,140,255,.06));}
+#livestrip[hidden]{display:none}
+.ls-cell{flex:1;text-align:center;padding:8px 4px;border-right:1px solid var(--line)}
+.ls-cell:last-child{border-right:none}
+.ls-v{font-size:17px;font-weight:700;font-variant-numeric:tabular-nums}
+.ls-v em{font-style:normal;font-size:10px;color:var(--dim);margin-left:2px}
+.ls-l{font-size:10px;color:var(--dimmer);margin-top:1px;letter-spacing:.08em}
+#ls-end{flex:none;padding:0 14px;border:none;background:none;color:var(--red);font-size:12px;cursor:pointer}
+/* ---------- stream ---------- */
+#stream{flex:1;overflow-y:auto;padding:18px 14px 8px;scroll-behavior:smooth}
+#stream::-webkit-scrollbar{width:4px}
+#stream::-webkit-scrollbar-thumb{background:var(--line);border-radius:2px}
+.wrap{max-width:760px;margin:0 auto}
+.msg{display:flex;gap:10px;margin-bottom:18px;animation:rise .3s ease}
+@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.msg.user{flex-direction:row-reverse}
+.avatar{width:30px;height:30px;border-radius:50%;flex:none;margin-top:2px;
+  background:conic-gradient(from 120deg,#3dffb0,#5b8cff,#a06bff,#3dffb0);position:relative}
+.avatar::after{content:'';position:absolute;inset:2.5px;border-radius:50%;background:var(--bg)}
+.avatar::before{content:'';position:absolute;inset:8px;border-radius:50%;background:var(--grad);z-index:1}
+.bubble{max-width:82%;padding:11px 14px;border-radius:16px;font-size:14.5px;line-height:1.65;
+  word-break:break-word;white-space:pre-wrap}
+.msg.mark .bubble{background:var(--card);border:1px solid var(--line);border-top-left-radius:4px}
+.msg.user .bubble{background:linear-gradient(135deg,rgba(91,140,255,.25),rgba(91,140,255,.12));
+  border:1px solid rgba(91,140,255,.3);border-top-right-radius:4px}
+.msg .meta{display:flex;gap:8px;align-items:center;margin-top:5px;font-size:11px;color:var(--dimmer)}
+.lane{border:1px solid var(--line);border-radius:20px;padding:1px 8px}
+.tag-live{color:var(--mint);border-color:rgba(61,255,176,.35)}
+.tag-urgent{color:var(--red);border-color:rgba(255,107,107,.4)}
+.say{cursor:pointer;color:var(--dimmer);border:none;background:none;font-size:11px;padding:1px 4px}
+.say:hover{color:var(--mint)}
+/* thinking */
+.dots{display:inline-flex;gap:5px;padding:4px 2px}
+.dots i{width:7px;height:7px;border-radius:50%;background:var(--mint);animation:bounce 1.2s infinite}
+.dots i:nth-child(2){animation-delay:.15s;background:var(--blue)}
+.dots i:nth-child(3){animation-delay:.24s;background:var(--violet)}
+@keyframes bounce{0%,60%,100%{transform:translateY(0);opacity:.5}30%{transform:translateY(-6px);opacity:1}}
+.think-label{font-size:12px;color:var(--dim);margin-top:4px;min-height:16px}
+/* cards */
+.card{max-width:82%;margin:-8px 0 18px 40px;background:var(--card);border:1px solid var(--line);
+  border-radius:14px;padding:14px 16px;animation:rise .3s ease;backdrop-filter:blur(8px)}
+.card h4{font-size:12px;color:var(--dim);font-weight:500;letter-spacing:.06em;margin-bottom:10px;
+  display:flex;align-items:center;gap:6px}
+.card h4::before{content:'';width:6px;height:6px;border-radius:2px;background:var(--grad)}
+.metric-row{display:flex;gap:18px;flex-wrap:wrap}
+.metric .v{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;background:var(--grad);
+  -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.metric .v em{font-style:normal;font-size:11px;-webkit-text-fill-color:var(--dim);font-weight:400;margin-left:2px}
+.metric .l{font-size:11px;color:var(--dimmer);margin-top:2px}
+.wtemp{font-size:26px;font-weight:700}
+.wdesc{color:var(--dim);font-size:13px;margin-top:4px}
+.step{display:flex;gap:10px;padding:7px 0;border-bottom:1px dashed var(--line);font-size:13px}
+.step:last-child{border-bottom:none}
+.step .n{flex:none;width:20px;height:20px;border-radius:50%;border:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--dim)}
+.step .d{margin-left:auto;color:var(--dimmer);font-size:12px;flex:none}
+.route-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
+.route-head .km{font-size:22px;font-weight:700;background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.route-head .min{color:var(--dim);font-size:12px}
+.card .go{margin-top:10px;width:100%;padding:9px;border:none;border-radius:10px;background:var(--grad);
+  color:#04121a;font-weight:600;font-size:13px;cursor:pointer}
+/* chips */
+#chips{padding:8px 14px 4px;overflow-x:auto;white-space:nowrap;scrollbar-width:none}
+#chips::-webkit-scrollbar{display:none}
+#chips .wrap{display:flex;gap:8px}
+.chip{flex:none;border:1px solid var(--line);background:var(--card);color:var(--dim);
+  font-size:12.5px;padding:7px 14px;border-radius:20px;cursor:pointer;transition:.2s}
+.chip:hover{color:var(--text);border-color:var(--dimmer)}
+.chip.hot{color:var(--mint);border-color:rgba(61,255,176,.4)}
+.chip.danger{color:var(--red);border-color:rgba(255,107,107,.4)}
+/* composer */
+footer{padding:10px 14px calc(12px + env(safe-area-inset-bottom));border-top:1px solid var(--line);
+  background:rgba(7,11,18,.8);backdrop-filter:blur(14px)}
+footer .wrap{display:flex;gap:9px;align-items:flex-end}
+#input{flex:1;resize:none;border:1px solid var(--line);background:var(--card);color:var(--text);
+  border-radius:18px;padding:11px 15px;font-size:14.5px;line-height:1.4;max-height:110px;
+  font-family:inherit;outline:none;transition:border-color .2s}
+#input:focus{border-color:rgba(91,140,255,.5)}
+.roundbtn{flex:none;width:42px;height:42px;border-radius:50%;border:1px solid var(--line);
+  background:var(--card);color:var(--dim);cursor:pointer;display:flex;align-items:center;
+  justify-content:center;transition:.2s}
+.roundbtn:hover{color:var(--text)}
+.roundbtn svg{width:18px;height:18px;fill:currentColor}
+#send{background:var(--grad);border:none;color:#04121a}
+#send svg{fill:#04121a}
+#mic.listening{color:var(--red);border-color:var(--red);animation:pulse 1s infinite}
+@media (min-width:761px){body{align-items:center}header,#livestrip,#stream,#chips,footer{width:100%;max-width:820px}
+  #stream{border-left:1px solid var(--line);border-right:1px solid var(--line)}}
+</style>
+</head>
+<body>
+<header>
+  <div class="orb"></div>
+  <div class="brand">MARK<small>你的运动陪伴智能体</small></div>
+  <div id="status"><span class="dot" id="status-dot"></span><span id="status-text">在线</span></div>
+  <a id="legacy" href="/ride">旧版工作台</a>
+</header>
+<div id="livestrip" hidden>
+  <div class="ls-cell"><div class="ls-v" id="ls-speed">--<em>km/h</em></div><div class="ls-l">速度</div></div>
+  <div class="ls-cell"><div class="ls-v" id="ls-hr">--<em>bpm</em></div><div class="ls-l">心率</div></div>
+  <div class="ls-cell"><div class="ls-v" id="ls-dist">--<em>km</em></div><div class="ls-l">距离</div></div>
+  <div class="ls-cell"><div class="ls-v" id="ls-time">--<em>min</em></div><div class="ls-l">时长</div></div>
+  <button id="ls-end">结束</button>
+</div>
+<main id="stream"><div class="wrap" id="stream-inner"></div></main>
+<div id="chips"><div class="wrap" id="chips-inner"></div></div>
+<footer><div class="wrap">
+  <button class="roundbtn" id="mic" title="按住说话">
+    <svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12h-2z"/></svg>
+  </button>
+  <textarea id="input" rows="1" placeholder="和 Mark 说点什么…"></textarea>
+  <button class="roundbtn" id="send" title="发送">
+    <svg viewBox="0 0 24 24"><path d="M3 20v-6l9-2-9-2V4l19 8z"/></svg>
+  </button>
+</div></footer>
+<script>
+'use strict';
+/* ================= 基础 ================= */
+const $=id=>document.getElementById(id);
+const stream=$('stream-inner');
+const TZ=-new Date().getTimezoneOffset();
+const CONV_ID='conv-'+Math.random().toString(36).slice(2,10)+Date.now().toString(36);
+let token=null, ttsAvailable=true, asrAvailable=false;
+async function getToken(){
+  if(token)return token;
+  const r=await fetch('/api/coach/config',{cache:'no-store'});
+  const d=await r.json();
+  token=d.token;ttsAvailable=!!d.tts_available;asrAvailable=!!d.asr_available;
+  return token;
+}
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function scrollDown(){const s=$('stream');s.scrollTop=s.scrollHeight;}
+/* ================= 语音播报 ================= */
+let voiceSeq=0,currentAudio=null;
+function speak(text){
+  if(!text)return;
+  const seq=++voiceSeq;
+  if(currentAudio){try{currentAudio.pause();}catch(_){/* */}}
+  if('speechSynthesis' in window)window.speechSynthesis.cancel();
+  const fallback=()=>{
+    if(seq!==voiceSeq)return;
+    if(!('speechSynthesis' in window))return;
+    const u=new SpeechSynthesisUtterance(text);u.lang='zh-CN';window.speechSynthesis.speak(u);
+  };
+  if(!ttsAvailable||!token){fallback();return;}
+  (async()=>{
+    try{
+      const r=await Promise.race([
+        fetch('/api/coach/ride/speak',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify({text})}),
+        new Promise((_,rej)=>setTimeout(()=>rej(new Error('t')),8000))]);
+      const d=await r.json().catch(()=>null);
+      if(seq!==voiceSeq)return;
+      if(d&&d.tts_status==='not_configured')ttsAvailable=false;
+      if(!r.ok||!d||d.tts_status!=='ok'||typeof d.audio_url!=='string')throw 0;
+      const a=new Audio(d.audio_url);currentAudio=a;
+      a.onended=a.onerror=()=>{if(currentAudio===a)currentAudio=null;};
+      await a.play();
+    }catch(_){fallback();}
+  })();
+}
+/* ================= 消息渲染 ================= */
+const LANE_NAME={personal:'翻了你的记录',knowledge:'查了运动知识库',general:'自由聊',live:'看了实时数据',planner:'检索了历史'};
+function addMsg(role,text,opts){
+  opts=opts||{};
+  const div=document.createElement('div');
+  div.className='msg '+role;
+  const av=role==='mark'?'<div class="avatar"></div>':'';
+  let meta='';
+  if(role==='mark'){
+    const bits=[];
+    if(opts.tag==='live')bits.push('<span class="lane tag-live">运动中·主动播报</span>');
+    if(opts.tag==='urgent')bits.push('<span class="lane tag-urgent">安全提醒</span>');
+    if(opts.lane&&LANE_NAME[opts.lane])bits.push('<span class="lane">'+LANE_NAME[opts.lane]+'</span>');
+    bits.push('<button class="say">🔊 听</button>');
+    meta='<div class="meta">'+bits.join('')+'</div>';
+  }
+  div.innerHTML=av+'<div><div class="bubble">'+esc(text)+'</div>'+meta+'</div>';
+  stream.appendChild(div);
+  const btn=div.querySelector('.say');
+  if(btn)btn.onclick=()=>speak(text);
+  scrollDown();
+  return div;
+}
+/* 思考态：旋转的能力标签，让「Mark 在想」可见 */
+let thinkingEl=null,thinkingTimer=null;
+const THINK_DEFAULT=['正在想…','正在组织语言…','马上就好…'];
+function addThinking(labels){
+  removeThinking();
+  labels=labels&&labels.length?labels:THINK_DEFAULT;
+  thinkingEl=document.createElement('div');
+  thinkingEl.className='msg mark';
+  thinkingEl.innerHTML='<div class="avatar"></div><div><div class="bubble"><span class="dots"><i></i><i></i><i></i></span></div><div class="think-label"></div></div>';
+  stream.appendChild(thinkingEl);
+  const labelEl=thinkingEl.querySelector('.think-label');
+  let i=0;labelEl.textContent=labels[0];
+  thinkingTimer=setInterval(()=>{i=(i+1)%labels.length;labelEl.textContent=labels[i];},1400);
+  $('status').classList.add('thinking');$('status-text').textContent='思考中';
+  scrollDown();
+}
+function removeThinking(){
+  if(thinkingTimer){clearInterval(thinkingTimer);thinkingTimer=null;}
+  if(thinkingEl){thinkingEl.remove();thinkingEl=null;}
+  $('status').classList.remove('thinking');$('status-text').textContent='在线';
+}
+/* 卡片 */
+function addCard(html){
+  const div=document.createElement('div');
+  div.className='card';div.innerHTML=html;
+  stream.appendChild(div);scrollDown();
+  return div;
+}
+function weatherCard(w){
+  addCard('<h4>天气 · 高德</h4><div class="wtemp">'+esc(w.day_temp)+'°<span style="font-size:14px;color:var(--dim)"> / 夜 '+esc(w.night_temp)+'°</span></div>'+
+    '<div class="wdesc">'+esc(w.city)+' · 白天'+esc(w.day_weather)+' · 夜间'+esc(w.night_weather)+'</div>');
+}
+function statsCard(s){
+  addCard('<h4>你的骑行数据</h4><div class="metric-row">'+
+    '<div class="metric"><div class="v">'+s.total+'<em>次</em></div><div class="l">累计记录</div></div>'+
+    '<div class="metric"><div class="v">'+s.weekCount+'<em>次</em></div><div class="l">本周</div></div>'+
+    '<div class="metric"><div class="v">'+s.weekMin+'<em>min</em></div><div class="l">本周时长</div></div>'+
+    (s.weekKm!==null?'<div class="metric"><div class="v">'+s.weekKm+'<em>km</em></div><div class="l">本周距离</div></div>':'')+
+    '</div>');
+}
+function routeCard(route,onGo){
+  const km=(route.distance_m/1000).toFixed(1),min=Math.max(1,Math.round(route.duration_s/60));
+  const steps=route.steps.slice(0,8).map((s,i)=>'<div class="step"><span class="n">'+(i+1)+'</span><span>'+esc(s.instruction)+'</span><span class="d">'+Math.round(s.distance_m)+'m</span></div>').join('');
+  const card=addCard('<h4>路线 · '+esc(route.destination)+'</h4>'+
+    '<div class="route-head"><span class="km">'+km+' km</span><span class="min">约 '+min+' 分钟 · '+route.steps.length+' 个转向</span></div>'+steps+
+    '<button class="go">开始导航</button>');
+  card.querySelector('.go').onclick=onGo;
+}
+/* ================= 上下文数据 ================= */
+let lastWeather=null;
+async function ensureWeather(){
+  if(lastWeather)return lastWeather;
+  const pos=await new Promise((res,rej)=>navigator.geolocation.getCurrentPosition(res,rej,{timeout:12000,maximumAge:300000}));
+  const c=pos&&pos.coords;if(!c)throw new Error('geo');
+  const t=await getToken();
+  const r=await fetch('/api/coach/ride/weather',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':t},body:JSON.stringify({lat:c.latitude,lng:c.longitude})});
+  const d=await r.json().catch(()=>null);
+  if(r.ok&&d&&d.weather_status==='ok'&&d.weather){lastWeather=d.weather;return lastWeather;}
+  throw new Error('weather');
+}
+async function fetchSessions(){
+  const t=await getToken();
+  const r=await fetch('/api/coach/ride/sessions',{cache:'no-store',headers:{'X-Coach-Token':t}});
+  const d=await r.json();
+  return Array.isArray(d.sessions)?d.sessions:[];
+}
+function localStats(sessions){
+  const real=sessions.filter(m=>m&&m.source!=='simulated'&&typeof m.started_at==='string');
+  const now=new Date();const monday=new Date(now);monday.setHours(0,0,0,0);monday.setDate(monday.getDate()-(monday.getDay()+6)%7);
+  const week=real.filter(m=>Date.parse(m.started_at)>=monday.getTime());
+  let weekMin=0,weekKm=0,hasDist=true;
+  for(const m of week){const s=m.summary||{};
+    if(typeof s.duration_s==='number')weekMin+=s.duration_s/60;
+    if(typeof s.distance_m==='number')weekKm+=s.distance_m/1000;else hasDist=false;}
+  return {total:real.length,weekCount:week.length,weekMin:Math.round(weekMin),weekKm:hasDist&&week.length?weekKm.toFixed(1):null};
+}
+/* ================= 意图与思考标签 ================= */
+const RE_WEATHER=/天气|下雨|温度|穿什么|适合.*(骑|出门|运动)/;
+const RE_RECORD=/累计|这周|本周|这个月|本月|上次|最近|几次|多久|多远|状态|心率|历史|记录/;
+const RE_ROUTE=/^(?:帮我)?(?:导航|规划路线|指路|骑车去|走路去|去)(.{1,30})$/;
+const RE_LIVE=/现在|当前|这会|此刻|实时|刚刚/;
+function thinkLabelsFor(q){
+  if(RE_WEATHER.test(q))return['正在看天气…','正在组织语言…'];
+  if(RE_ROUTE.test(q))return['正在规划路线…','正在查地图…'];
+  if(RE_LIVE.test(q)&&riding)return ['正在看实时数据…','正在想…'];
+  if(RE_RECORD.test(q))return ['正在翻你的记录…','正在核对数字…'];
+  return THINK_DEFAULT;
+}
+/* ================= 导航状态 ================= */
+let navRoute=null;
+function navFacts(){
+  if(!navRoute)return null;
+  const step=navRoute.steps[navRoute.index];
+  const facts={destination:navRoute.destination,remaining_km:Math.round(navRoute.remaining_m/100)/10,
+    step_index:navRoute.index+1,step_count:navRoute.steps.length,off_route:false};
+  if(step){facts.next_instruction=step.instruction;facts.next_distance_m=Math.round(step.distance_m);}
+  return facts;
+}
+/* ================= 发送主流程 ================= */
+let sending=false;
+async function send(){
+  const q=$('input').value.trim();
+  if(!q||sending)return;
+  sending=true;$('input').value='';autogrow();
+  addMsg('user',q);
+  /* 路线意图：本地接管，直接给卡片 */
+  const routeMatch=q.match(RE_ROUTE);
+  if(routeMatch&&!riding){
+    addThinking(['正在规划路线…','正在查地图…']);
+    try{await planRoute(routeMatch[1].trim());}catch(e){removeThinking();addMsg('mark','路线规划失败了：'+(e.message==='geo'?'定位没拿到，检查一下定位权限':'地图服务暂时不可用，稍后再试。'));}
+    sending=false;refreshChips();return;
+  }
+  addThinking(thinkLabelsFor(q));
+  try{
+    if(RE_WEATHER.test(q)&&!lastWeather){try{await ensureWeather();}catch(_){/* 没天气照样聊 */}}
+    const body={question:q,conv_id:CONV_ID,tz_offset_min:TZ};
+    if(riding&&liveId)body.live_id=liveId;
+    if(lastWeather)body.weather=lastWeather;
+    const nf=navFacts();if(nf)body.nav=nf;
+    const t=await getToken();
+    const r=await fetch('/api/coach/ride/chat',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':t},body:JSON.stringify(body)});
+    const d=await r.json().catch(()=>null);
+    removeThinking();
+    if(r.ok&&d&&d.speech_status==='ok'&&typeof d.speech==='string'&&d.speech.trim()){
+      addMsg('mark',d.speech,{lane:d.lane});
+      if(RE_WEATHER.test(q)&&lastWeather)weatherCard(lastWeather);
+      if(RE_RECORD.test(q)){try{statsCard(localStats(await fetchSessions()));}catch(_){/* 卡片是加分项 */}}
+    }else{
+      addMsg('mark','这个我暂时答不上来，换个问法试试。');
+    }
+  }catch(_){
+    removeThinking();
+    addMsg('mark','网络好像断了，我先缓缓，你再说一次？');
+  }
+  sending=false;refreshChips();
+}
+/* ================= 路线规划 ================= */
+async function planRoute(dest){
+  const pos=await new Promise((res,rej)=>navigator.geolocation.getCurrentPosition(res,rej,{enableHighAccuracy:true,timeout:15000,maximumAge:60000})).catch(()=>{throw new Error('geo');});
+  const c=pos.coords;
+  const t=await getToken();
+  const r=await fetch('/api/coach/ride/route',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':t},
+    body:JSON.stringify({origin:c.longitude.toFixed(6)+','+c.latitude.toFixed(6),destination_address:dest,mode:'bicycling'})});
+  const d=await r.json().catch(()=>null);
+  removeThinking();
+  if(!r.ok||!d||d.route_status!=='ok'||!Array.isArray(d.steps)||!d.steps.length){
+    addMsg('mark','这条路线我没规划出来，换个说法或者确认下目的地名字。');return;
+  }
+  const steps=d.steps.map(s=>({instruction:String(s.instruction||''),distance_m:Number(s.distance_m)||0})).filter(s=>s.instruction);
+  navRoute={destination:dest,distance_m:d.distance_m,duration_s:d.duration_s,steps,index:0,remaining_m:d.distance_m};
+  addMsg('mark','到'+dest+'，全程'+(d.distance_m/1000).toFixed(1)+'公里，约'+Math.max(1,Math.round(d.duration_s/60))+'分钟。路线放下面了，点开始导航我就一路提醒你。');
+  routeCard({destination:dest,distance_m:d.distance_m,duration_s:d.duration_s,steps},()=>{
+    addMsg('mark','导航开始，转弯我会提前说。',{tag:'live'});speak('导航开始');
+    if(!riding)startRide();
+  });
+}
+/* ================= 骑行模式 ================= */
+let riding=false,liveId=null,liveTimer=null,watchId=null,lastFix=null,rideStart=0,rideDist=0,prevFix=null;
+function startRide(){
+  if(riding)return;
+  riding=true;rideStart=Date.now();rideDist=0;prevFix=null;liveId=null;
+  $('livestrip').hidden=false;
+  watchId=navigator.geolocation.watchPosition(p=>{lastFix=p;
+    if(prevFix){rideDist+=hav(prevFix.coords.latitude,prevFix.coords.longitude,p.coords.latitude,p.coords.longitude);}
+    prevFix=p;renderStrip();
+  },()=>{},{enableHighAccuracy:true,maximumAge:3000});
+  liveTimer=setInterval(liveBeat,10000);
+  addMsg('mark','出发了，我看着呢。有事喊我。',{tag:'live'});
+  refreshChips();
+}
+function endRide(){
+  riding=false;
+  if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null;}
+  if(liveTimer){clearInterval(liveTimer);liveTimer=null;}
+  $('livestrip').hidden=true;liveId=null;
+  const min=Math.round((Date.now()-rideStart)/60000);
+  addMsg('mark','这次骑了'+min+'分钟、'+(rideDist/1000).toFixed(1)+'公里。想聊细节随时问。');
+  refreshChips();
+}
+function renderStrip(){
+  if(!lastFix)return;
+  const c=lastFix.coords;
+  $('ls-speed').innerHTML=(typeof c.speed==='number'&&c.speed>=0?(c.speed*3.6).toFixed(1):'--')+'<em>km/h</em>';
+  $('ls-dist').innerHTML=(rideDist/1000).toFixed(1)+'<em>km</em>';
+  $('ls-time').innerHTML=Math.round((Date.now()-rideStart)/60000)+'<em>min</em>';
+}
+setInterval(()=>{if(riding)renderStrip();},5000);
+async function liveBeat(){
+  if(!riding||!lastFix)return;
+  try{
+    if(!liveId)liveId='live-'+Math.random().toString(36).slice(2,10)+Date.now().toString(36);
+    const c=lastFix.coords;
+    const point={t:Date.now()/1000,lat:c.latitude,lng:c.longitude,speed_mps:typeof c.speed==='number'&&c.speed>=0?c.speed:0};
+    if(typeof c.altitude==='number'&&Number.isFinite(c.altitude))point.alt=c.altitude;
+    const t=await getToken();
+    const r=await fetch('/api/coach/ride/live',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':t},body:JSON.stringify({live_id:liveId,activity:'ride',point})});
+    const d=await r.json().catch(()=>null);
+    if(!r.ok||!d||!Array.isArray(d.calls))return;
+    for(const call of d.calls){
+      if(call&&typeof call.speech==='string'&&call.speech.trim()){
+        const urgent=call.urgent===true;
+        addMsg('mark',call.speech,{tag:urgent?'urgent':'live'});
+        speak(call.speech);
+      }
+    }
+  }catch(_){/* 网络抖动，下一拍再来 */}
+}
+function hav(a,b,c2,d){const R=6371000,r=Math.PI/180;
+  const h=Math.sin((c2-a)*r/2)**2+Math.cos(a*r)*Math.cos(c2*r)*Math.sin((d-b)*r/2)**2;
+  return 2*R*Math.asin(Math.sqrt(h));}
+/* ================= 语音输入 ================= */
+const SpeechEngine=window.SpeechRecognition||window.webkitSpeechRecognition;
+function wavFromChunks(chunks,rate){
+  let length=0;for(const c of chunks)length+=c.length;
+  const pcm=new Int16Array(length);let o=0;
+  for(const c of chunks)for(let i=0;i<c.length;i++){const s=Math.max(-1,Math.min(1,c[i]));pcm[o++]=s<0?Math.round(s*0x8000):Math.round(s*0x7FFF);}
+  const buf=new ArrayBuffer(44+pcm.length*2),v=new DataView(buf);
+  const w=(at,s)=>{for(let i=0;i<s.length;i++)v.setUint8(at+i,s.charCodeAt(i));};
+  w(0,'RIFF');v.setUint32(4,36+pcm.length*2,true);w(8,'WAVE');w(12,'fmt ');
+  v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
+  v.setUint32(24,rate,true);v.setUint32(28,rate*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);
+  w(36,'data');v.setUint32(40,pcm.length*2,true);
+  return new Blob([buf],{type:'audio/wav'});
+}
+let micSession=null;
+async function micToggle(){
+  const btn=$('mic');
+  if(micSession){const s=micSession;micSession=null;btn.classList.remove('listening');s.stop();return;}
+  if(asrAvailable&&navigator.mediaDevices&&(window.AudioContext||window.webkitAudioContext)){
+    try{
+      const stream2=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,sampleRate:16000}});
+      const ctx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:16000});
+      const src=ctx.createMediaStreamSource(stream2);
+      const proc=ctx.createScriptProcessor(4096,1,1);
+      const chunks=[];
+      proc.onaudioprocess=e=>chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+      src.connect(proc);proc.connect(ctx.destination);
+      btn.classList.add('listening');
+      const rate=ctx.sampleRate;
+      micSession={stop:async()=>{
+        try{proc.disconnect();src.disconnect();await ctx.close();}catch(_){/* */}
+        stream2.getTracks().forEach(t=>t.stop());
+        if(!chunks.length)return;
+        try{
+          const t=await getToken();
+          const r=await fetch('/api/coach/ride/asr',{method:'POST',headers:{'Content-Type':'audio/wav','X-Coach-Token':t},body:wavFromChunks(chunks,rate)});
+          const d=await r.json();
+          const text=d&&d.asr_status==='ok'&&typeof d.text==='string'?d.text.trim():'';
+          if(text){$('input').value=text;autogrow();send();}
+        }catch(_){/* 静默，打字也行 */}
+      }};
+      return;
+    }catch(_){/* fall through to browser engine */}
+  }
+  if(!SpeechEngine)return;
+  const rec=new SpeechEngine();rec.lang='zh-CN';rec.interimResults=false;
+  btn.classList.add('listening');
+  micSession={stop:()=>{try{rec.stop();}catch(_){/* */}}};
+  rec.onresult=e=>{const text=e.results[0]&&e.results[0][0]&&e.results[0][0].transcript;
+    if(text){$('input').value=text.trim();autogrow();send();}};
+  rec.onend=()=>{btn.classList.remove('listening');micSession=null;};
+  rec.onerror=rec.onend;
+  rec.start();
+}
+/* ================= 建议 chips ================= */
+function refreshChips(){
+  const box=$('chips-inner');box.innerHTML='';
+  const chips=riding?[
+    ['现在速度多少','现在速度多少？'],['心率怎么样','现在心率多少？'],['还有多远','还有多远？'],
+    ['路况提醒','前面路况怎么样？']]:
+    lastWeather?[
+    ['今天天气','今天天气怎么样？'],['适合运动吗','今天适合出去骑车吗？'],['我这周练了多少','我这周骑了多少？'],
+    ['随便聊聊','给我讲个有意思的运动冷知识']]:[
+    ['今天天气','今天天气怎么样？'],['我这周练了多少','我这周骑了多少？'],['规划路线','导航去'],
+    ['随便聊聊','给我讲个有意思的运动冷知识']];
+  for(const[label,q]of chips){
+    const b=document.createElement('button');b.className='chip';b.textContent=label;
+    b.onclick=()=>{if(q==='导航去'){$('input').value='导航去';$('input').focus();}else{$('input').value=q;send();}};
+    box.appendChild(b);
+  }
+  const rideBtn=document.createElement('button');
+  rideBtn.className='chip '+(riding?'danger':'hot');
+  rideBtn.textContent=riding?'■ 结束骑行':'▶ 开始骑行';
+  rideBtn.onclick=()=>riding?endRide():startRide();
+  box.appendChild(rideBtn);
+}
+/* ================= 启动 ================= */
+function autogrow(){const el=$('input');el.style.height='auto';el.style.height=Math.min(el.scrollHeight,110)+'px';}
+$('input').addEventListener('input',autogrow);
+$('input').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}});
+$('send').onclick=send;
+$('mic').onclick=micToggle;
+$('ls-end').onclick=endRide;
+(async()=>{
+  try{await getToken();}catch(_){/* 配置拿不到也能打字试试 */}
+  refreshChips();
+  const hour=new Date().getHours();
+  const greet=hour<6?'还没睡？我随时在。':hour<11?'早上好。':hour<14?'中午好。':hour<19?'下午好。':'晚上好。';
+  addMsg('mark',greet+'我是 Mark，你的运动陪伴。可以问我天气、让我规划路线、翻你的骑行记录，或者就随便聊聊。点开始骑行，我会一路主动播报。',{lane:'general'});
+  /* 预取天气，第一次问天气零等待 */
+  if(navigator.geolocation){try{await ensureWeather();refreshChips();}catch(_){/* 用户拒绝定位就算了 */}}
+})();
+</script>
+</body>
+</html>
