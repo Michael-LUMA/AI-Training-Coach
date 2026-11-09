@@ -11,37 +11,37 @@
 @font-face{font-family:'Archivo';src:url('/fonts/archivo-latin-800-normal.woff2') format('woff2');font-weight:800;font-display:swap}
 @font-face{font-family:'Plex Mono';src:url('/fonts/ibm-plex-mono-latin-400-normal.woff2') format('woff2');font-weight:400;font-display:swap}
 @font-face{font-family:'Plex Mono';src:url('/fonts/ibm-plex-mono-latin-600-normal.woff2') format('woff2');font-weight:600;font-display:swap}
-/* ── MARK 设计系统 v4 · 品类标准满工艺（Garmin Connect / Strava 水准）──
-   创始人在方向决策页亲选：深色运动仪表盘，辨识度来自零缺陷工艺。
+/* ── MARK 设计系统 v5 · Operate 模式 · 深色仪表台 ──
    信号橙只给主行动、激活态与数据系列；状态色叠加其上。
-   零渐变、零辉光、零装饰纹理；深度靠地面色阶与发丝线。
+   科技感来自工艺：tabular-nums、发丝线、SVG 品牌标记、
+   仪表带单点氛围光（本页唯一签名时刻）。无渐变文字、无装饰辉光。
    语义色：accent=主行动/数据系列 route=警示 contour=警告
    hydro=低于区间 flora=区间内 faint=次级文字 ─────────────── */
 :root{color-scheme:dark;
-  --bg:#0E1116;--bg2:#0E1116;
-  --panel:#161C24;--panel2:#161C24;--well:#12181F;
+  --bg:#0B0E13;--bg2:#0E1116;
+  --panel:#151B23;--panel2:#161C24;--well:#10161D;
   --line:rgba(232,237,242,.07);--line2:rgba(232,237,242,.14);
   --ink:#E8EDF2;--faint:#8B96A3;--dimmer:#7B8592;
   --accent:#FC4C02;--accent2:#FC4C02;--accent-text:#FF7A3D;--on-accent:#1C1005;
   --route:#E5484D;--hydro:#3D74A6;--flora:#52C77B;--contour:#F5A623;
-  --radius:12px;--radius-s:8px;
+  --radius:14px;--radius-s:9px;
   --mono:'Plex Mono',Consolas,'Courier New',monospace;
   --sans:'Archivo','PingFang SC','Hiragino Sans GB','Microsoft YaHei',system-ui,sans-serif}
 *{box-sizing:border-box}
 ::selection{background:var(--accent);color:#fff}
-body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.65 var(--sans);-webkit-font-smoothing:antialiased}
+body{margin:0;background:radial-gradient(1100px 560px at 82% -8%,rgba(252,76,2,.05),transparent 62%),var(--bg);color:var(--ink);font:16px/1.65 var(--sans);-webkit-font-smoothing:antialiased}
 ::-webkit-scrollbar{width:10px;height:10px}
 ::-webkit-scrollbar-thumb{background:#2A3340;border:3px solid var(--bg);border-radius:6px}
 ::-webkit-scrollbar-track{background:var(--bg)}
 a{color:inherit;text-underline-offset:3px}
 .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
-/* 顶部导航壳：发丝线底边，承载品牌 + 场景页签 */
-.titlebar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:18px;padding:12px 28px;background:var(--bg);border-bottom:1px solid var(--line)}
+/* 顶栏：毛玻璃壳 + 品牌槽（换公司名/Logo 只动这一处） */
+.titlebar{position:sticky;top:0;z-index:8;display:flex;align-items:center;gap:18px;padding:12px 28px;background:rgba(11,14,19,.82);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
 .titlebar .brand{display:flex;align-items:center;gap:11px;font-weight:800;font-size:16px;letter-spacing:.08em;text-decoration:none;white-space:nowrap}
-.titlebar .logo{width:22px;height:22px;border-radius:6px;background:var(--accent);flex:none}
-.scenes{display:flex;gap:6px;margin-right:auto}
-.scene{display:inline-flex;align-items:baseline;gap:6px;padding:6px 14px;border-radius:8px;border:1px solid var(--line2);font:600 12.5px/1.5 var(--sans);letter-spacing:.04em;color:var(--faint);white-space:nowrap}
-.scene.active{background:rgba(252,76,2,.14);border-color:rgba(252,76,2,.45);color:var(--accent-text);font-weight:700}
+.titlebar .logo{width:24px;height:24px;flex:none}
+.scenes{display:flex;gap:4px;margin-right:auto;padding:4px;border:1px solid var(--line);border-radius:999px;background:rgba(21,27,35,.55)}
+.scene{display:inline-flex;align-items:baseline;gap:6px;padding:5px 14px;border-radius:999px;border:1px solid transparent;font:600 12.5px/1.5 var(--sans);letter-spacing:.04em;color:var(--faint);white-space:nowrap;transition:color .15s,background .15s,border-color .15s}
+.scene.active{background:rgba(252,76,2,.15);border-color:rgba(252,76,2,.4);color:var(--accent-text);font-weight:700}
 .scene.soon{opacity:.7}
 .scene i{font-style:normal;font-size:11px;letter-spacing:.1em;opacity:.8}
 .scene.soon i{opacity:1}
@@ -50,8 +50,8 @@ a{color:inherit;text-underline-offset:3px}
 .titlebar a:not(.brand):hover{color:var(--ink)}
 .lang{font-family:var(--mono);font-size:12.5px;padding:5px 13px;border:1px solid var(--line2);background:transparent;color:var(--ink);cursor:pointer;border-radius:8px;transition:border-color .15s,color .15s}
 .lang:hover{border-color:var(--accent);color:var(--accent-text)}
-#simulated-banner{position:sticky;top:0;z-index:6;background:var(--route);color:#fff;padding:10px 24px;text-align:center;font-weight:700;letter-spacing:.04em;font-size:14px}
-.sheet{max-width:1180px;margin:0 auto;padding:28px 28px 64px}
+#simulated-banner{position:sticky;top:0;z-index:9;background:var(--route);color:#fff;padding:10px 24px;text-align:center;font-weight:700;letter-spacing:.04em;font-size:14px}
+.sheet{max-width:1240px;margin:0 auto;padding:28px 28px 72px}
 /* 视图切换：纯 CSS 分段控件（骑行/复盘），零脚本依赖 */
 .viewradio{position:absolute;width:0;height:0;opacity:0;pointer-events:none}
 .view{display:none}
@@ -59,7 +59,7 @@ a{color:inherit;text-underline-offset:3px}
 .viewtabs{display:inline-flex;gap:4px;padding:4px;margin:0 0 22px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
 .viewtab{padding:7px 24px;border-radius:7px;font:600 13px/1.4 var(--sans);letter-spacing:.04em;color:var(--faint);cursor:pointer;transition:background .15s,color .15s;user-select:none}
 .viewtab:hover{color:var(--ink)}
-#view-live:checked~.viewtabs label[for=view-live],#view-review:checked~.viewtabs label[for=view-review]{background:rgba(252,76,2,.14);color:var(--accent-text);font-weight:700}
+#view-live:checked~.viewtabs label[for=view-live],#view-review:checked~.viewtabs label[for=view-review]{background:rgba(252,76,2,.15);color:var(--accent-text);font-weight:700}
 /* 头部区：工具页任务优先，压缩为标题行 */
 .masthead{padding-bottom:20px;margin-bottom:22px;border-bottom:1px solid var(--line)}
 h1{font:800 clamp(24px,3vw,32px)/1.2 var(--sans);letter-spacing:-.01em;margin:0 0 8px}
@@ -67,18 +67,25 @@ h1 .grad{color:var(--accent)}
 .lede{font-size:15px;margin:0 0 12px;max-width:72ch;color:var(--faint)}
 .note{color:var(--faint);font-size:12.5px;line-height:1.65}
 .masthead .note{margin:0;max-width:76ch;padding:10px 14px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
-/* 双栏网格：面板 #161C24 + 发丝线，零阴影，深度靠色阶 */
+/* 双栏网格：面板 + 发丝线，深度靠色阶与内高光 */
 .sheetgrid{display:grid;grid-template-columns:minmax(0,7fr) minmax(0,5fr);gap:20px;align-items:start}
 .mapcol,.margincol{display:grid;gap:20px;align-content:start}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:20px 22px}
 .panel h2{display:flex;align-items:center;gap:10px;font:600 13px/1.4 var(--sans);letter-spacing:.03em;margin:0 0 12px;color:#B9C3CE}
 .panel h3{font:600 12.5px/1.4 var(--sans);margin:16px 0 8px;color:var(--faint)}
-.inst-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:6px}
+/* 通栏仪表带：连接态 + 计时 + 大心率一行横排，唯一的氛围光签名 */
+.panel.instrument{position:relative;display:flex;flex-wrap:wrap;align-items:flex-end;gap:14px 48px;padding:24px 28px 22px;margin-bottom:20px;border-color:var(--line2);box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}
+.panel.instrument::before{content:"";position:absolute;inset:0;background:radial-gradient(460px 220px at 10% 0%,rgba(252,76,2,.09),transparent 70%);pointer-events:none}
+.panel.instrument>*{position:relative}
+.inst-main{min-width:240px}
+.inst-side{display:grid;gap:8px;margin-left:auto;min-width:230px;align-content:end}
+.inst-side .note{margin:0}
+.inst-head{display:flex;align-items:center;gap:14px;margin-bottom:4px}
 .chip{display:inline-block;border:1px solid var(--line2);padding:3px 12px;font:600 12px/1.7 var(--sans);letter-spacing:.06em;background:transparent;color:var(--faint);border-radius:6px}
 .chip.offline{border-color:rgba(229,72,77,.55);color:var(--route)}
 .dim{color:var(--dimmer)}
 .bignumber{margin:0;display:flex;align-items:baseline;gap:12px}
-.hr{font:800 clamp(84px,15vw,132px)/1 var(--sans);letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.hr{font:800 clamp(88px,11vw,140px)/1 var(--sans);letter-spacing:-.03em;font-variant-numeric:tabular-nums;transition:color .25s}
 .hr.idle{color:var(--dimmer)}
 .unit{color:var(--faint);font:600 13px/1 var(--mono);letter-spacing:.14em}
 .zone{margin:6px 0 2px;font:600 12.5px/1.5 var(--mono);letter-spacing:.04em;color:var(--contour)}
@@ -102,9 +109,17 @@ h1 .grad{color:var(--accent)}
 #history-list .tag{display:inline-block;margin-left:8px;padding:1px 7px;border:1px solid var(--line);border-radius:6px;font-size:11px;color:var(--faint)}
 #notes-list .note-row{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:6px 0;padding:8px 12px;border:1px solid var(--line);border-radius:9px}
 #notes-list .note-row button{flex:none;padding:2px 10px;font-size:12px}
-#voice-command{position:fixed;right:18px;bottom:18px;z-index:50;border-radius:999px;padding:14px 22px}
-#live-toggle{position:fixed;right:18px;bottom:84px;z-index:50;border-radius:999px;padding:12px 20px;opacity:.92}
-#live-toggle.on{font-weight:700;opacity:1}
+/* 设定分组折叠：首屏只留场景与主行动，其余按需展开 */
+details.group{border:1px solid var(--line);border-radius:var(--radius-s);margin:14px 0 0;background:rgba(16,22,29,.45)}
+details.group>summary{cursor:pointer;list-style:none;padding:12px 14px;font:600 13px/1.4 var(--sans);letter-spacing:.04em;color:#B9C3CE;display:flex;align-items:center;justify-content:space-between;user-select:none;transition:color .15s}
+details.group>summary::-webkit-details-marker{display:none}
+details.group>summary::after{content:"";width:8px;height:8px;border-right:1.5px solid var(--faint);border-bottom:1.5px solid var(--faint);transform:rotate(45deg);transition:transform .18s;margin-right:4px}
+details.group[open]>summary::after{transform:rotate(225deg)}
+details.group>summary:hover{color:var(--ink)}
+details.group .group-body{padding:4px 14px 12px;border-top:1px solid var(--line)}
+#voice-command{position:fixed;right:20px;bottom:20px;z-index:50;border-radius:999px;padding:15px 26px;box-shadow:0 10px 30px rgba(252,76,2,.32),0 2px 8px rgba(0,0,0,.45)}
+#live-toggle{position:fixed;right:20px;bottom:90px;z-index:50;border-radius:999px;padding:12px 20px;opacity:.95;background:var(--panel);color:var(--ink);border:1px solid var(--line2);box-shadow:0 4px 16px rgba(0,0,0,.4)}
+#live-toggle.on{font-weight:700;opacity:1;border-color:rgba(252,76,2,.55);color:var(--accent-text)}
 label{display:grid;gap:6px;flex:1;font-size:12.5px;font-weight:600;min-width:140px;color:#B9C3CE}
 label.check{display:flex;flex-direction:row;align-items:center;gap:10px;flex:none;color:var(--ink);font-size:13px}
 input,select,button{font:inherit}
@@ -113,12 +128,12 @@ input::placeholder{color:var(--dimmer)}
 input:focus,select:focus{outline:none;border-color:var(--accent)}
 input:disabled,select:disabled{opacity:.55}
 input[type=checkbox]{width:18px;height:18px;padding:0;accent-color:var(--accent)}
-button{border:1px solid transparent;background:var(--accent);color:var(--on-accent);font-weight:700;letter-spacing:.03em;padding:12px 18px;border-radius:10px;cursor:pointer;transition:background .15s,border-color .15s,color .15s}
+button{border:1px solid transparent;background:var(--accent);color:var(--on-accent);font-weight:700;letter-spacing:.03em;padding:12px 18px;border-radius:10px;cursor:pointer;transition:background .15s,border-color .15s,color .15s,box-shadow .15s}
 button:hover:not(:disabled):not(.secondary){background:#FF5E1F}
 button.secondary{background:transparent;color:var(--ink);border-color:var(--line2)}
 button.secondary:hover:not(:disabled){background:transparent;border-color:rgba(252,76,2,.6);color:var(--accent-text)}
 button:disabled{opacity:.5;cursor:not-allowed}
-button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 .actions{margin-top:16px}
 .statusline{margin:14px 0 0;padding-top:12px;border-top:1px solid var(--line);font:12.5px/1.6 var(--mono);color:var(--faint)}
 .warn{color:var(--contour)}
@@ -130,13 +145,13 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px/1.75 var(--mono);max
 .archive a{color:var(--ink)}
 .archive a:hover{color:var(--accent-text)}
 [hidden]{display:none!important}
-@media(max-width:920px){.sheetgrid{grid-template-columns:1fr}.sheet{padding:24px 16px 52px}.titlebar{flex-wrap:wrap;gap:10px 14px;padding:10px 16px}.titlebar .sheetno{display:none}.scenes{order:5;width:100%;overflow-x:auto;padding-bottom:2px}}
+@media(max-width:920px){.sheetgrid{grid-template-columns:1fr}.sheet{padding:24px 16px 56px}.titlebar{flex-wrap:wrap;gap:10px 14px;padding:10px 16px}.titlebar .sheetno{display:none}.scenes{order:5;width:100%;overflow-x:auto;padding-bottom:2px}.panel.instrument{gap:12px 24px;padding:20px}.inst-side{margin-left:0;min-width:0}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
 <body>
 <div id="simulated-banner" hidden role="status">SIMULATED · 合成心率演示，不是真实骑行记录</div>
-<nav class="titlebar"><a class="brand" href="/"><span class="logo" aria-hidden="true"></span><span data-i18n="brand">MARK · 骑行</span></a><span class="scenes" aria-label="场景"><span class="scene active" data-i18n="scene-ride">骑行</span><span class="scene active" data-i18n="scene-hike">徒步</span><span class="scene active" data-i18n="scene-run">跑步</span><span class="scene soon"><span data-i18n="scene-office">办公</span><i data-i18n="scene-soon">即将</i></span></span><span class="sheetno">RIDE OS · EARLY ACCESS</span><a href="/privacy">Privacy</a><a href="/terms">Terms</a><button id="lang-toggle" type="button" class="lang" aria-label="Switch language">EN</button></nav>
+<nav class="titlebar"><a class="brand" href="/"><svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="6" fill="#FC4C02"/><path d="M4 12h3.2l1.8-4.2 3 8.4 1.8-4.2H20" fill="none" stroke="#1C1005" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span data-i18n="brand">MARK · 骑行</span></a><span class="scenes" aria-label="场景"><span class="scene active" data-i18n="scene-ride">骑行</span><span class="scene active" data-i18n="scene-hike">徒步</span><span class="scene active" data-i18n="scene-run">跑步</span><span class="scene soon"><span data-i18n="scene-office">办公</span><i data-i18n="scene-soon">即将</i></span></span><span class="sheetno">RIDE OS · EARLY ACCESS</span><a href="/privacy">Privacy</a><a href="/terms">Terms</a><button id="lang-toggle" type="button" class="lang" aria-label="Switch language">EN</button></nav>
 <main class="sheet">
 <header class="masthead">
 <h1><span data-i18n="h1a">记录此刻，</span><br><span class="grad" data-i18n="h1b">不替你做判断。</span></h1>
@@ -148,15 +163,19 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px/1.75 var(--mono);max
 <nav class="viewtabs" aria-label="视图切换"><label for="view-live" class="viewtab" data-i18n="view-live">骑行</label><label for="view-review" class="viewtab" data-i18n="view-review">复盘</label></nav>
 <section id="fall-card" class="panel alert" hidden><h2 data-i18n="fall-h">疑似摔倒</h2><p id="fall-countdown" class="countdown">30</p><p id="fall-message"></p><button id="fall-ok" type="button" data-i18n="fall-ok">我没事，别报警</button></section>
 <div class="view view-live">
-<div class="sheetgrid">
-<div class="mapcol">
 <section class="panel instrument" aria-label="实时读数">
+<div class="inst-main">
 <div class="inst-head"><span id="connection" class="chip" data-i18n="conn-init">未连接</span><span id="elapsed" class="mono dim">00:00</span></div>
 <p class="bignumber"><span id="heart-rate" class="hr idle">—</span><span class="unit">bpm</span></p>
 <p id="zone-state" class="zone" data-i18n="zone-init">未设置目标区间</p>
+</div>
+<div class="inst-side">
 <p id="track-live" class="note" data-i18n="track-live-init">轨迹：未开始</p>
 <p id="aux-live" class="note" data-i18n="aux-init">未连接功率/踏频计</p>
+</div>
 </section>
+<div class="sheetgrid">
+<div class="mapcol">
 <section id="track-panel" class="panel">
 <h2 data-i18n="track-h">骑行轨迹</h2>
 <svg id="track-plot" viewBox="0 0 1000 620" preserveAspectRatio="xMidYMid meet" role="img" aria-label="骑行轨迹图"><rect id="track-frame" x="1" y="1" width="998" height="618"/><path id="track-line" d=""/><rect id="track-start" x="-6" y="-6" width="12" height="12"/><circle id="track-end" r="7"/></svg>
@@ -177,22 +196,28 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px/1.75 var(--mono);max
 <button id="demo-start" type="button" hidden>看 Mark 演示</button>
 <div class="row"><label><span data-i18n="activity-label">场景</span><select id="activity-select"><option value="ride" selected data-i18n="activity-ride">骑行</option><option value="hike" data-i18n="activity-hike">徒步</option><option value="run" data-i18n="activity-run">跑步</option></select></label></div>
 <p class="note" data-i18n="activity-note">场景只改变 Mark 的措辞和记录里的场景标签，数据契约与隐私规则完全一致；骑行与徒步支持语音导航，跑步导航规划中按步行路线。</p>
+<div class="row actions"><button id="start-ride" type="button" data-i18n="start">连接心率带并开始</button><button id="end-ride" type="button" class="secondary" disabled data-i18n="end">结束骑行</button><button id="reconnect" type="button" class="secondary" disabled data-i18n="reconnect">重新连接</button></div>
+<p id="status" class="statusline" role="status" aria-live="polite" data-i18n="status-init">准备记录。语音需点击开始激活；请先在静止状态连接设备。</p>
+<details class="group" open><summary data-i18n="grp-goals">目标与提醒</summary><div class="group-body">
 <div class="row"><label><span data-i18n="lower-label">自定义下限（bpm，可留空）</span><input id="lower" type="number" min="0" max="65535" step="1" inputmode="numeric" placeholder="由你填写" data-i18n-ph="bounds-ph"></label><label><span data-i18n="upper-label">自定义上限（bpm，可留空）</span><input id="upper" type="number" min="0" max="65535" step="1" inputmode="numeric" placeholder="由你填写" data-i18n-ph="bounds-ph"></label></div>
 <div class="row"><label><span data-i18n="goal-min-label">时长目标（分钟，可留空）</span><input id="goal-min" type="number" min="1" max="1440" step="1" inputmode="numeric" placeholder="由你填写" data-i18n-ph="bounds-ph"></label><label><span data-i18n="goal-km-label">距离目标（公里，可留空）</span><input id="goal-km" type="number" min="0" max="2000" step="0.1" inputmode="decimal" placeholder="由你填写" data-i18n-ph="bounds-ph"></label></div>
 <p class="note" data-i18n="bounds-note">上下限须同时填写或同时留空；仅为你设定的提醒阈值，不是医学安全范围。不根据年龄、LTHR 或演示值猜测训练区间。时长/距离目标可留空：只在过半和接近完成时各播报一次，完成与否骑后按真实记录结算；距离目标需要开启轨迹记录，目标本身只留在本浏览器。</p>
-<div class="row"><label class="check"><input id="crash-detect" type="checkbox"><span data-i18n="crash-label">跌倒检测（实验）</span></label></div>
-<p class="note" data-i18n="crash-note">开启后，骑行中侦测到疑似摔倒会先问你，30 秒无响应就在本机发出警报音。手机需放在身上（骑行服口袋）才有效，放车把包或背包里会不准；屏幕熄灭时手机可能停发传感器数据，检测会失效。网页版不能自动发短信或打电话——它可能漏报或误报，不是可靠的安全设备。</p>
 <div class="row"><label><span data-i18n="milestone-label">里程碑播报</span><select id="milestone-interval"><option value="900" data-i18n="opt-15">每 15 分钟</option><option value="1800" selected data-i18n="opt-30d">每 30 分钟（默认）</option><option value="2700" data-i18n="opt-45">每 45 分钟</option><option value="3600" data-i18n="opt-60">每 60 分钟</option><option value="0" data-i18n="opt-off">关闭</option></select></label><label><span data-i18n="fuel-label">补给提醒</span><select id="fuel-interval"><option value="1800" data-i18n="opt-30">每 30 分钟</option><option value="2700" selected data-i18n="opt-45d">每 45 分钟（默认）</option><option value="3600" data-i18n="opt-60b">每 60 分钟</option><option value="0" data-i18n="opt-offb">关闭</option></select></label></div>
 <p class="note" data-i18n="cadence-note">里程碑：Mark 定时播报当前心率/功率/踏频并与上次对比；补给：定时提醒喝水吃东西。设置保存在本浏览器，下次打开自动带上；关闭只影响这两类播报，越区和安全提醒不受影响。多个声音同时出现时，重要的先说（摔倒警报＞导航转向＞心率越限＞你的提问＞日常播报），其余排队或过期丢弃——同一时间只会有一个声音。</p>
-<div class="row actions"><button id="start-ride" type="button" data-i18n="start">连接心率带并开始</button><button id="end-ride" type="button" class="secondary" disabled data-i18n="end">结束骑行</button><button id="reconnect" type="button" class="secondary" disabled data-i18n="reconnect">重新连接</button></div>
-<div class="row"><button id="connect-aux" type="button" class="secondary" data-i18n="aux">加连功率计/踏频计（可选）</button></div>
-<p class="note" data-i18n="aux-note">可选第二步：连接功率计或踏频计（CSC/Cycling Power 标准协议）。只连接心率带也能正常记录，功率和踏频会如实留空。</p>
+</div></details>
+<details class="group"><summary data-i18n="grp-safety">安全与记录</summary><div class="group-body">
+<div class="row"><label class="check"><input id="crash-detect" type="checkbox"><span data-i18n="crash-label">跌倒检测（实验）</span></label></div>
+<p class="note" data-i18n="crash-note">开启后，骑行中侦测到疑似摔倒会先问你，30 秒无响应就在本机发出警报音。手机需放在身上（骑行服口袋）才有效，放车把包或背包里会不准；屏幕熄灭时手机可能停发传感器数据，检测会失效。网页版不能自动发短信或打电话——它可能漏报或误报，不是可靠的安全设备。</p>
 <div class="row"><label class="check"><input id="track-enabled" type="checkbox" checked><span data-i18n="track-enabled-label">记录骑行轨迹（GPS，仅本机）</span></label></div>
 <p class="note" data-i18n="track-note">轨迹只写入本页内存和你手动下载的备份文件；上传到本服务的记录自动剥离坐标，只带距离/速度聚合数字。精度差于 30 米的定位点直接丢弃并如实留空。GPS 常开预计每小时耗电约 10%，长途建议低电量模式并带充电宝；屏幕熄灭不影响记录。授权定位后，本页会在首次定位成功时通过本服务向高德请求一次当日天气；你直接问 Mark 天气时，也会用一次定位去查（坐标仅用于该次请求，不写入任何记录）。</p>
 <div class="row"><label class="check"><input id="track-upload-none" type="checkbox"><span data-i18n="track-upload-label">连距离/速度聚合数字也不上传</span></label></div>
 <div class="row"><label class="check"><input id="track-clip" type="checkbox" checked><span data-i18n="track-clip-label">GPX 导出时裁掉起终点各 500 米（防家庭住址泄露）</span></label></div>
 <div class="row"><button id="goto-import" type="button" class="secondary" data-i18n="goto-import">导入历史记录（GPX/TCX）</button></div>
-<p id="status" class="statusline" role="status" aria-live="polite" data-i18n="status-init">准备记录。语音需点击开始激活；请先在静止状态连接设备。</p>
+</div></details>
+<details class="group"><summary data-i18n="grp-device">设备扩展</summary><div class="group-body">
+<div class="row"><button id="connect-aux" type="button" class="secondary" data-i18n="aux">加连功率计/踏频计（可选）</button></div>
+<p class="note" data-i18n="aux-note">可选第二步：连接功率计或踏频计（CSC/Cycling Power 标准协议）。只连接心率带也能正常记录，功率和踏频会如实留空。</p>
+</div></details>
 </section>
 <section id="nav-card" class="panel" aria-labelledby="nav-heading">
 <h2 id="nav-heading" data-i18n="nav-h">骑行导航（实验 · 高德）</h2>
@@ -2144,6 +2169,7 @@ const I18N_EN=Object.freeze({
   brand:'MARK · Ride',
   'scene-ride':'Ride', 'scene-hike':'Hike', 'scene-run':'Run', 'scene-office':'Work', 'scene-soon':'soon',
   'view-live':'Ride', 'view-review':'Review',
+  'grp-goals':'Goals & alerts', 'grp-safety':'Safety & recording', 'grp-device':'Devices',
   'activity-label':'Scene', 'activity-ride':'Ride', 'activity-hike':'Hike', 'activity-run':'Run',
   'activity-note':'The scene only changes Mark’s wording and the activity label in the record; the data contract and privacy rules are identical. Ride and hike support voice navigation; run routes are planned as walking.',
   eyebrow:'AI sports companion · one mind, many bodies',
