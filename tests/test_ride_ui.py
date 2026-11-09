@@ -96,6 +96,12 @@ sandbox.fetch=async(url,init={})=>{
     if(options.routeFail)return {ok:false,status:503,json:async()=>({error_code:'unavailable'})};
     return {ok:true,status:200,json:async()=>options.route || {route_status:'not_configured'}};
   }
+  // Weather stays silent by default: without options.weather the endpoint
+  // fails, so existing geo-emitting tests never gain a spoken weather brief.
+  if(url==='/api/coach/ride/weather'){
+    if(!options.weather)return {ok:false,status:503,json:async()=>({error_code:'unavailable'})};
+    return {ok:true,status:200,json:async()=>options.weather};
+  }
   if(url==='/api/coach/ride/note'){
     if(options.noteLimit)return {ok:false,status:409,json:async()=>({error_code:'note_limit'})};
     if(options.noteFail)return {ok:false,status:503,json:async()=>({error_code:'storage_unavailable'})};
@@ -229,14 +235,63 @@ class RideMemoryUI(unittest.TestCase):
         self.assertEqual(result['body']['weather']['city'], '上海市')
         self.assertEqual(result['body']['weather']['day_temp'], 15)
 
-    def test_chat_omits_weather_when_never_fetched(self):
+    def test_chat_omits_weather_for_non_weather_question(self):
+        result = self.run_js("""
+          $('chat-input').value='这次平均心率多少？';
+          await askMark();
+          const chats=_calls.filter(c=>c.url==='/api/coach/ride/chat');
+          return {body:JSON.parse(chats[0].body),weatherCalls:_calls.filter(c=>c.url==='/api/coach/ride/weather').length};
+        """, history=[metadata()], weather={'weather_status':'ok','city':'北京市','day_weather':'晴','day_temp':12,'night_weather':'晴','night_temp':3})
+        self.assertNotIn('weather', result['body'])
+        self.assertEqual(result['weatherCalls'], 0)
+
+    def test_chat_weather_question_prefetches_once(self):
         result = self.run_js("""
           $('chat-input').value='今天天气怎么样？';
           await askMark();
           const chats=_calls.filter(c=>c.url==='/api/coach/ride/chat');
-          return {body:JSON.parse(chats[0].body)};
-        """, history=[metadata()])
+          return {body:JSON.parse(chats[0].body),
+                  weatherCalls:_calls.filter(c=>c.url==='/api/coach/ride/weather').length};
+        """, history=[metadata()], weather={'weather_status':'ok','city':'北京市','day_weather':'晴','day_temp':12,'night_weather':'晴','night_temp':3})
+        self.assertEqual(result['weatherCalls'], 1)
+        self.assertEqual(result['body']['weather']['city'], '北京市')
+        self.assertEqual(result['body']['weather']['day_temp'], 12)
+
+    def test_chat_weather_question_geo_denied_asks_without_weather(self):
+        result = self.run_js("""
+          $('chat-input').value='今天天气怎么样？';
+          await askMark();
+          const chats=_calls.filter(c=>c.url==='/api/coach/ride/chat');
+          return {sent:chats.length,body:chats.length?JSON.parse(chats[0].body):null,
+                  answer:$('chat-answer').textContent};
+        """, history=[metadata()], geoError=1, weather={'weather_status':'ok','city':'北京市','day_weather':'晴','day_temp':12,'night_weather':'晴','night_temp':3},
+           chat={'speech_status':'ok','speech':'我还没记到天气。','fallback':None,'usage':None})
+        self.assertEqual(result['sent'], 1)
         self.assertNotIn('weather', result['body'])
+        self.assertEqual(result['answer'], '我还没记到天气。')
+
+    def test_chat_weather_question_reuses_cached_brief(self):
+        result = self.run_js("""
+          lastWeather={city:'上海市',day_weather:'多云',day_temp:15,night_weather:'晴',night_temp:9};
+          $('chat-input').value='今天天气怎么样？';
+          await askMark();
+          const chats=_calls.filter(c=>c.url==='/api/coach/ride/chat');
+          return {body:JSON.parse(chats[0].body),
+                  weatherCalls:_calls.filter(c=>c.url==='/api/coach/ride/weather').length};
+        """, history=[metadata()], weather={'weather_status':'ok','city':'北京市','day_weather':'晴','day_temp':12,'night_weather':'晴','night_temp':3})
+        self.assertEqual(result['weatherCalls'], 0)
+        self.assertEqual(result['body']['weather']['city'], '上海市')
+
+    def test_chat_weather_prefetch_failure_still_asks(self):
+        result = self.run_js("""
+          $('chat-input').value='会下雨吗？';
+          await askMark();
+          const chats=_calls.filter(c=>c.url==='/api/coach/ride/chat');
+          return {sent:chats.length,body:JSON.parse(chats[0].body),answer:$('chat-answer').textContent};
+        """, history=[metadata()], chat={'speech_status':'ok','speech':'我还没记到天气。','fallback':None,'usage':None})
+        self.assertEqual(result['sent'], 1)
+        self.assertNotIn('weather', result['body'])
+        self.assertEqual(result['answer'], '我还没记到天气。')
 
     def test_no_history_stays_hidden_and_debug_only(self):
         result = self.run_js("return {hidden:$('memory-card').hidden,spoken:_spoken,debug:_debug,text:$('memory-recall').textContent};")
