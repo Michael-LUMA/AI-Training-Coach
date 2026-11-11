@@ -15,7 +15,8 @@ ROOT = Path(__file__).resolve().parents[1]
 NODE = shutil.which('node') or str(Path.home() / '.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node.exe')
 HTML = (ROOT / 'static/mark.html').read_text(encoding='utf-8')
 RIDE = HTML.split('let ridePoints=[]', 1)[1].split('/* ================= 语音输入', 1)[0]
-RIDE = 'let ridePoints=[]' + RIDE
+LOCATION = HTML.split('/* ================= 定位检查 ================= */', 1)[1].split('/* ================= 上下文数据 ================= */', 1)[0]
+RIDE = LOCATION + 'let ridePoints=[]' + RIDE
 INIT = HTML.split("try{const draft=JSON.parse(preferenceRead(PENDING_RIDE_KEY", 1)[1].split("window.addEventListener('beforeunload'", 1)[0]
 INIT = 'try{const draft=JSON.parse(preferenceRead(PENDING_RIDE_KEY' + INIT
 HARNESS = r"""
@@ -23,7 +24,7 @@ const fs=require('node:fs'),vm=require('node:vm');
 const input=JSON.parse(fs.readFileSync(0,'utf8'));
 const storage=new Map(), clock={now:Date.parse('2026-11-10T00:00:00Z')};
 function boot(){
- const elements={},listeners={},watches=new Map(),messages=[],calls=[],intervals=[];
+ const elements={},listeners={},watches=new Map(),messages=[],calls=[],intervals=[],timeouts=new Map();let timerId=0;
  const elem=id=>elements[id]||(elements[id]={textContent:'',hidden:true,dataset:{}});
  class ClockDate extends Date{constructor(...a){super(...(a.length?a:[clock.now]));}static now(){return clock.now;}}
  const s={Date:ClockDate,JSON,Math,Number,Array,String,Error,Promise,AbortController,
@@ -31,11 +32,11 @@ function boot(){
  document:{hidden:false,addEventListener:(k,f)=>listeners[k]=f},
  navigator:{geolocation:{watchPosition:(ok,error)=>{watches.set(watches.size,{ok,error});return watches.size-1;},clearWatch:id=>watches.delete(id)}},
  localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
- setInterval:f=>{intervals.push(f);return intervals.length;},clearInterval(){},
+ setInterval:f=>{intervals.push(f);return intervals.length;},clearInterval(){},setTimeout:(fn,ms)=>{timeouts.set(++timerId,{fn,ms});return timerId;},clearTimeout:id=>timeouts.delete(id),
  $:elem,setView(){},updateRidePanel(){},addMsg:(who,text)=>messages.push(text),speak(){},cancelSpeech(){},refreshChips(){},
  voiceAuto:false,ensureWeather:async()=>null,getToken:async()=>'synthetic',loadHistory:async()=>{},
  fetchWithTimeout:async(url,opts)=>{calls.push({url,body:JSON.parse(opts.body)});throw new Error('offline');},
- _storage:storage,_clock:clock,_elements:elements,_listeners:listeners,_watches:watches,_messages:messages,_calls:calls,_intervals:intervals};
+ _storage:storage,_clock:clock,_elements:elements,_listeners:listeners,_watches:watches,_messages:messages,_calls:calls,_intervals:intervals,_timeouts:timeouts};
  vm.createContext(s);
  vm.runInContext(`function preferenceRead(k,f){try{return localStorage.getItem(k)||f;}catch(_){return f;}}
  function preferenceWrite(k,v){try{localStorage.setItem(k,v);return true;}catch(_){return false;}}`+input.ride+input.init,s);

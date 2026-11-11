@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -81,6 +81,12 @@
 
 .voice-settings{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:12px;color:#c4d5df;font-size:12px}.voice-settings label{display:inline-flex;align-items:center;gap:7px}.voice-settings select,.voice-settings button{min-height:44px;border:1px solid #526a78;border-radius:9px;background:#152d3b;color:#e3eef3;padding:0 10px;font:inherit}.voice-settings select{max-width:190px}.voice-settings :focus-visible{outline:2px solid var(--cyan);outline-offset:3px}.voice-source{flex-basis:100%;color:#c4d5df;font-size:11px}.ride-save{margin-top:16px;color:var(--text);font-size:13px;line-height:1.7}.ride-save button,.history-retry,.history-review{min-height:44px;padding:0 12px;margin:8px 8px 0 0;border:1px solid #526a78;border-radius:9px;background:#193848;color:#e3eef3;font:inherit}.ride-save button[hidden]{display:none}
 @media(max-width:760px){.voice-stage{grid-template-columns:64px minmax(0,1fr);gap:8px}.voice-settings{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;margin-top:8px}.voice-settings label{font-size:0;min-width:0}.voice-settings select{font-size:11px;width:100%;max-width:none;padding:0 6px}.voice-settings button{font-size:11px;padding:0 8px}.voice-source{grid-column:1 / -1}.voice-actions{margin-top:8px;gap:6px}.voice-actions button{padding:0 8px}}
+
+/* Location diagnostics remain readable and tappable on the existing weather grid. */
+#view-dashboard #location-status{grid-column:1/-1;padding-left:0;margin-top:12px!important;overflow-wrap:anywhere}
+.home-weather #location-check{grid-column:1/-1;justify-self:start;margin-top:12px;max-width:100%;white-space:normal;text-align:center}
+.preflight p{margin:8px 0;overflow-wrap:anywhere}.preflight button{margin:4px 0;max-width:100%}
+#location-check:disabled,#ride-location-retry:disabled{opacity:.6;cursor:wait}
 </style>
 </head>
 <body>
@@ -108,7 +114,7 @@
   <div class="section-head"><h3>出发前，看一眼</h3><button class="home-text-link" data-view="history">运动记录<svg viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></svg></button></div>
   <div class="home-overview">
     <article class="home-week"><div class="home-card-heading"><h4>这一周，动起来的时间</h4><svg viewBox="0 0 24 24"><path d="M4 17 9 12l4 3 7-10M15 5h5v5"/></svg></div><div class="home-week-stats"><div class="home-main-stat"><strong id="dash-week-min">--<small>分钟</small></strong></div><div><strong id="dash-week-count">--</strong><span>运动次数</span></div><div><strong id="dash-week-km">--</strong><span>累计距离</span></div></div><p class="panel-note" id="dash-week-note">正在读取真实运动记录…</p></article>
-    <article class="home-weather"><div class="home-card-heading"><h4>出行天气</h4><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M5 19l1.5-1.5M17.5 6.5 19 5"/></svg></div><div class="weather-line"><div class="weather-temp" id="dash-temp">--°</div><div class="weather-copy"><strong id="dash-weather">等待定位</strong><span id="dash-city">开始运动后按授权获取</span></div></div><p class="panel-note" id="dash-weather-note">没有位置数据时，不猜测当地天气。</p></article>
+    <article class="home-weather"><div class="home-card-heading"><h4>出行天气</h4><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M5 19l1.5-1.5M17.5 6.5 19 5"/></svg></div><div class="weather-line"><div class="weather-temp" id="dash-temp">--°</div><div class="weather-copy"><strong id="dash-weather">等待定位</strong><span id="dash-city">点击下方检查定位</span></div></div><p class="panel-note" id="dash-weather-note">没有位置数据时，不猜测当地天气。</p><p class="panel-note" id="location-status" role="status" aria-live="polite">尚未检查定位。点击后浏览器可能询问位置权限。</p><button type="button" id="location-check" class="ghost">检查定位 / 更新天气</button></article>
     <article class="home-readiness"><div class="home-card-heading"><h4>出发小提示</h4><svg viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M8 14a6 6 0 1 1 8 0l-1 2H9Z"/></svg></div><strong id="next-action">先热身 5 分钟</strong><p>检查车况，带好饮水。<br>骑行中请优先留意真实路况。</p><button class="home-text-link" data-view="devices">查看设备与能力<svg viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></svg></button></article>
   </div>
   <div class="section-head home-quick-heading"><h3>交给 Mark</h3><span>从一个具体问题开始</span></div>
@@ -120,7 +126,7 @@
   <div class="home-footer"><span>MARK · 少看屏幕，多感受生活。</span><span>按自己的节奏出发</span></div>
 </div></section>
 <section class="view" id="view-coach"><div class="coach-layout"><div class="coach-main"><section class="voice-stage" id="voice-stage" data-state="idle" aria-label="Mark 语音助手"><div class="voice-visual" aria-hidden="true"><svg viewBox="0 0 360 180"><ellipse class="voice-field" cx="180" cy="90" rx="163" ry="62"/><ellipse class="voice-field" cx="180" cy="90" rx="140" ry="44"/><rect class="voice-bar" x="36" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="44" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="52" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="60" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="68" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="76" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="84" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="92" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="100" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="108" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="116" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="124" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="132" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="140" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="148" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="156" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="164" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="172" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="180" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="188" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="196" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="204" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="212" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="220" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="228" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="236" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="244" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="252" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="260" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="268" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="276" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="284" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="292" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="300" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="308" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="316" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/></svg></div><div class="voice-copy"><div class="voice-state"><span class="voice-dot"></span><span id="voice-label" role="status" aria-live="polite">待命 · 麦克风未开启</span></div><h2 id="voice-title">说吧，我在。</h2><p id="voice-detail">点击开始说话，再点一次结束。也可以在下方打字。</p><div class="voice-actions"><button class="voice-main" id="voice-main" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11v1a7 7 0 0 0 14 0v-1M12 19v3"/></svg><span id="voice-main-text">开始说话</span></button><button class="voice-stop" id="voice-stop" type="button" hidden>停止播报</button><button class="voice-toggle" id="voice-toggle" type="button" aria-pressed="true">朗读开启</button></div><div class="voice-settings"><label for="voice-choice">声音<select id="voice-choice"><option value="Ethan">Mark · 男声</option><option value="Cherry">Cherry · 女声</option><option value="Serena">Serena · 女声</option></select></label><button type="button" id="voice-preview">试听声音</button><span class="voice-source" id="voice-source" role="status">优先使用云端音色；不可用时会标明系统声音。</span></div></div></section><main id="stream"><div class="wrap" id="stream-inner"></div></main><div id="chips"><div class="wrap" id="chips-inner"></div></div><footer><div class="wrap"><button class="roundbtn" id="mic" title="按住说话"><svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12h-2z"/></svg></button><textarea id="input" rows="1" placeholder="和 Mark 说点什么…"></textarea><button class="roundbtn" id="send" title="发送"><svg viewBox="0 0 24 24"><path d="M3 20v-6l9-2-9-2V4l19 8z"/></svg></button></div></footer></div><aside class="coach-side"><div class="eyebrow">LIVE CONTEXT</div><div class="context-card"><h4>当前能力</h4><div class="context-pill"><i></i><span id="context-mode">日常陪伴</span></div><p style="margin-top:9px">Mark 不会假装连接不存在的设备；每一条能力都以当前可验证的服务为准。</p></div><div class="context-card"><h4>最近一条建议</h4><p id="latest-mark">还没有新的运动提醒，先问我一个问题吧。</p></div><div class="context-card"><h4>建议问法</h4><ul><li>今天适合出去骑车吗？</li><li>我这周练了多少？</li><li>导航去附近的公园</li></ul></div></aside></div></section>
-<section class="view" id="view-ride"><div class="ride-stage"><div class="ride-head"><div><div class="eyebrow">MARK / LIVE RIDE</div><h2>运动中，少看屏幕。</h2><p>Mark 负责关注定位、节奏、路况和必要提醒。</p></div><span class="ride-badge" id="ride-live-state">尚未开始</span></div><div class="ride-card"><div class="ride-metrics"><div class="ride-metric"><strong id="ride-speed">--</strong><span>当前速度 km/h</span></div><div class="ride-metric"><strong id="ride-hr">--</strong><span>心率 bpm</span></div><div class="ride-metric"><strong id="ride-dist">0.0</strong><span>本次距离 km</span></div><div class="ride-metric"><strong id="ride-time">0</strong><span>本次时长 min</span></div></div><div class="ride-coach"><div class="avatar"></div><div class="ride-coach-copy"><strong id="ride-last-message">准备好后，点击开始运动。</strong><span>语音提醒会优先处理安全和路线信息</span></div></div><div class="ride-actions"><button id="ride-start" class="primary">开始运动</button><button id="ride-end" class="danger">结束运动</button><button id="ride-open-chat" class="ghost">查看对话</button></div><div class="ride-save"><p id="ride-save-status" role="status">结束后自动保存记录；未测得的距离和心率保持为空。记录保存在此设备，尚未云同步。</p><button type="button" id="ride-save-retry" hidden>重试保存</button><button type="button" id="ride-save-export" hidden>下载记录备份</button><button type="button" id="ride-draft-discard" hidden>放弃损坏草稿</button></div><div class="preflight"><strong>开始前检查</strong>定位权限可用后会记录距离；语音播报是加分项，文字状态始终保留。</div></div></div></section>
+<section class="view" id="view-ride"><div class="ride-stage"><div class="ride-head"><div><div class="eyebrow">MARK / LIVE RIDE</div><h2>运动中，少看屏幕。</h2><p>Mark 负责关注定位、节奏、路况和必要提醒。</p></div><span class="ride-badge" id="ride-live-state">尚未开始</span></div><div class="ride-card"><div class="ride-metrics"><div class="ride-metric"><strong id="ride-speed">--</strong><span>当前速度 km/h</span></div><div class="ride-metric"><strong id="ride-hr">--</strong><span>心率 bpm</span></div><div class="ride-metric"><strong id="ride-dist">0.0</strong><span>本次距离 km</span></div><div class="ride-metric"><strong id="ride-time">0</strong><span>本次时长 min</span></div></div><div class="ride-coach"><div class="avatar"></div><div class="ride-coach-copy"><strong id="ride-last-message">准备好后，点击开始运动。</strong><span>语音提醒会优先处理安全和路线信息</span></div></div><div class="ride-actions"><button id="ride-start" class="primary">开始运动</button><button id="ride-end" class="danger">结束运动</button><button id="ride-open-chat" class="ghost">查看对话</button></div><div class="ride-save"><p id="ride-save-status" role="status">结束后自动保存记录；未测得的距离和心率保持为空。记录保存在此设备，尚未云同步。</p><button type="button" id="ride-save-retry" hidden>重试保存</button><button type="button" id="ride-save-export" hidden>下载记录备份</button><button type="button" id="ride-draft-discard" hidden>放弃损坏草稿</button></div><div class="preflight"><strong>定位状态</strong><p id="ride-location-status" role="status" aria-live="polite">尚未检查；只有精度足够的定位才计入轨迹。</p><button type="button" id="ride-location-retry" class="ghost">检查 / 重试定位</button><p>需允许此网站和系统定位。电脑通常只有粗定位；手机请开启精确位置并到开阔处测试。网页后台可能暂停，不能保证锁屏连续记录。</p><p>位置用于本服务查询高德天气和路线；检查不会开始运动记录。</p></div></div></div></section>
 <section class="view" id="view-history"><div class="inner"><div class="eyebrow">MARK / HISTORY</div><h2 style="font-size:30px;margin-top:8px">运动记录</h2><p class="muted" style="margin-top:6px">记录保存在本机；下方统计基于最近 20 条真实记录。</p><div class="history-grid"><div class="panel"><h4>已载入记录</h4><div class="panel-value" id="history-total">--<small>次</small></div><div class="panel-note">最近 20 条真实记录</div></div><div class="panel"><h4>本周次数</h4><div class="panel-value" id="history-count">--<small>次</small></div><div class="panel-note">按自然周统计</div></div><div class="panel"><h4>本周时长</h4><div class="panel-value" id="history-min">--<small>分钟</small></div><div class="panel-note">打开页面后自动读取</div></div></div><div class="panel" style="margin-top:16px"><div class="panel-top"><h4>最近活动</h4><span class="muted" style="font-size:11px">来自 Mark 运动记录</span></div><div id="history-list" class="history-list"><div class="history-item"><div><strong>正在读取记录</strong><span>不会伪造一条不存在的运动</span></div><div class="history-value">--</div></div></div></div></div></section>
 <section class="view" id="view-devices"><div class="inner"><div class="eyebrow">MARK / DEVICE ECOSYSTEM</div><h2 style="font-size:30px;margin-top:8px">设备与能力</h2><p class="muted" style="margin-top:6px;max-width:680px">先把手机端的核心体验做实，再按真实供应链和连接协议接入眼镜、耳机、戒指，不用虚构“已连接”。</p><div class="device-grid"><div class="panel device-card"><div class="device-glyph"><svg viewBox="0 0 24 24"><path d="M7 3h10v18H7zM10 6h4M10 18h4"/></svg></div><h3>手机端 Mark</h3><p>对话、语音、天气、路线、实时运动和复盘已作为当前主能力。</p><span class="device-state">● 已就绪</span></div><div class="panel device-card"><div class="device-glyph"><svg viewBox="0 0 24 24"><path d="M4 10h16v4H4zM7 10V7a5 5 0 0 1 10 0v3M7 14v3a5 5 0 0 0 10 0v-3"/></svg></div><h3>AI 眼镜</h3><p>规划能力：免手交互、主动提醒、路线与环境上下文。接入前必须完成供应商验证。</p><span class="device-state" style="color:var(--amber)">○ 规划中</span></div><div class="panel device-card"><div class="device-glyph"><svg viewBox="0 0 24 24"><path d="M4 9a8 8 0 0 1 16 0v6a8 8 0 0 1-16 0zM8 12h8"/></svg></div><h3>耳机 / 戒指</h3><p>规划能力：更低注意力交互、按压/手势输入、运动状态补充。暂不展示虚假连接状态。</p><span class="device-state" style="color:var(--amber)">○ 规划中</span></div></div></div></section>
 </main></div>
@@ -446,18 +452,106 @@ function routeCard(route,onGo){
   go.onclick=onGo;
   card.appendChild(go);
 }
+/* ================= 定位检查 ================= */
+/* Reuse the existing ride page converter only at the AMap boundary; tracks stay WGS-84. */
+const GCJ_A=6378245.0,GCJ_EE=0.00669342162296594323;
+function outOfChina(lng,lat){return lng<72.004||lng>137.8347||lat<0.8293||lat>55.8271;}
+function transformLat(x,y){
+  let ret=-100.0+2.0*x+3.0*y+0.2*y*y+0.1*x*y+0.2*Math.sqrt(Math.abs(x));
+  ret+=(20.0*Math.sin(6.0*x*Math.PI)+20.0*Math.sin(2.0*x*Math.PI))*2.0/3.0;
+  ret+=(20.0*Math.sin(y*Math.PI)+40.0*Math.sin(y/3.0*Math.PI))*2.0/3.0;
+  ret+=(160.0*Math.sin(y/12.0*Math.PI)+320.0*Math.sin(y*Math.PI/30.0))*2.0/3.0;
+  return ret;
+}
+function transformLng(x,y){
+  let ret=300.0+x+2.0*y+0.1*x*x+0.1*x*y+0.1*Math.sqrt(Math.abs(x));
+  ret+=(20.0*Math.sin(6.0*x*Math.PI)+20.0*Math.sin(2.0*x*Math.PI))*2.0/3.0;
+  ret+=(20.0*Math.sin(x*Math.PI)+40.0*Math.sin(x/3.0*Math.PI))*2.0/3.0;
+  ret+=(150.0*Math.sin(x/12.0*Math.PI)+300.0*Math.sin(x/30.0*Math.PI))*2.0/3.0;
+  return ret;
+}
+function wgs84ToGcj02(lng,lat){
+  if(outOfChina(lng,lat))return [lng,lat];
+  let dlat=transformLat(lng-105.0,lat-35.0), dlng=transformLng(lng-105.0,lat-35.0);
+  const radlat=lat/180.0*Math.PI;
+  let magic=Math.sin(radlat);magic=1-GCJ_EE*magic*magic;
+  const sqrtmagic=Math.sqrt(magic);
+  dlat=(dlat*180.0)/((GCJ_A*(1-GCJ_EE))/(magic*sqrtmagic)*Math.PI);
+  dlng=(dlng*180.0)/(GCJ_A/sqrtmagic*Math.cos(radlat)*Math.PI);
+  return [lng+dlng,lat+dlat];
+}
+
+let locationPending=null;
+function locationFailure(code){const e=new Error('geo');e.geo=true;e.code=code;return e;}
+function locationGate(){
+  if(window.isSecureContext===false)return locationFailure('insecure');
+  if(!navigator.geolocation)return locationFailure('unsupported');
+  return null;
+}
+function locationErrorText(error){
+  const code=error&&error.code;
+  if(code==='insecure')return '当前页面不是安全连接，浏览器无法定位。请使用正式 HTTPS 入口；手机不能使用电脑的 localhost 地址。';
+  if(code==='unsupported')return '当前浏览器没有定位接口。请用 Safari、Chrome 或 Edge 打开正式入口。';
+  if(code===1)return '位置权限被拒绝（PERMISSION_DENIED）。请允许此网站的位置权限，并开启系统定位；iPhone 请检查“定位服务 → Safari 网站”并开启精确位置，再点重试。';
+  if(code===2)return '系统未能提供位置（POSITION_UNAVAILABLE）。请确认系统定位已开启、网络可用；手机移到开阔处。电脑可能没有可用的位置来源，可换手机重试。';
+  if(code===3)return '定位超时（TIMEOUT）。请开启系统定位和精确位置，保持网页在前台，到开阔处后重试。';
+  if(code==='coarse')return '已收到位置，但精度不足以用作路线起点。请开启精确位置，到开阔处后重试；电脑粗定位不等于 GPS。';
+  return '定位数据不可用。请检查网站与系统定位权限后重试。';
+}
+function validLocation(p){const c=p&&p.coords;return !!c&&Number.isFinite(c.latitude)&&Math.abs(c.latitude)<=90&&Number.isFinite(c.longitude)&&Math.abs(c.longitude)<=180&&Number.isFinite(c.accuracy)&&c.accuracy>=0&&Number.isFinite(p.timestamp)&&Date.now()-p.timestamp>=-1000&&Date.now()-p.timestamp<=300000;}
+function locationSummary(p){return '已获取位置，误差约 '+Math.ceil(p.coords.accuracy)+' 米。'+(p.coords.accuracy>80?'这是粗定位，可尝试查询天气，不用于记录运动轨迹。':'可尝试记录轨迹；速度仍以设备实际返回值为准。');}
+function setLocationStatus(text){$('location-status').textContent=text;}
+function positionAttempt(highAccuracy,timeout,maximumAge){
+  return new Promise((resolve,reject)=>{
+    let done=false;
+    const finish=(error,p)=>{if(done)return;done=true;clearTimeout(timer);if(error)reject(locationFailure(error.code));else if(validLocation(p))resolve(p);else reject(locationFailure(2));};
+    /* 浏览器权限弹窗或位置服务无响应时，也给出有界等待。迟到结果不能覆盖新一次检查。 */
+    const timer=setTimeout(()=>finish({code:3}),timeout+2000);
+    try{navigator.geolocation.getCurrentPosition(p=>finish(null,p),e=>finish(e),{enableHighAccuracy:highAccuracy,timeout,maximumAge});}
+    catch(_){finish({code:2});}
+  });
+}
+async function getLocation(forRoute=false){
+  const blocked=locationGate();if(blocked)throw blocked;
+  try{return await positionAttempt(forRoute,12000,forRoute?15000:60000);}
+  catch(e){if(e.code!==2&&e.code!==3)throw e;return positionAttempt(!forRoute,10000,0);}
+}
+async function checkLocation(){
+  if(locationPending)return locationPending;
+  if(riding){beginRideLocation();return;}
+  for(const id of ['location-check','ride-location-retry'])$(id).disabled=true;
+  setLocationStatus('正在获取位置；如出现权限询问，请允许。最多等待约 26 秒。');
+  $('ride-location-status').textContent='正在检查定位；这不会开始运动。';
+  locationPending=(async()=>{
+    let pos;
+    try{pos=await getLocation();}
+    catch(e){const text=locationErrorText(e);setLocationStatus(text);if(!riding)$('ride-location-status').textContent=text;return;}
+    const text=locationSummary(pos);setLocationStatus(text);if(!riding)$('ride-location-status').textContent=text;
+    try{await ensureWeather(pos);}
+    catch(e){$('dash-weather-note').textContent='定位已获取；'+weatherErrorText(e);}
+  })();
+  try{await locationPending;}finally{locationPending=null;for(const id of ['location-check','ride-location-retry'])$(id).disabled=false;}
+}
+function weatherErrorText(e){
+  if(e&&e.geo)return locationErrorText(e);
+  if(e&&e.message==='not_configured')return '天气服务尚未配置，需由开发端配置地图服务；不是你没开定位。';
+  if(e&&e.message==='coarse_weather')return '位置误差超过 20 公里，暂不查询当地天气。请开启精确位置或换手机重试。';
+  return '天气服务暂时不可用，请稍后重试；无需重复开关定位权限。';
+}
 /* ================= 上下文数据 ================= */
 let lastWeather=null,weatherFetchedAt=0;
-async function ensureWeather(){
+async function ensureWeather(position=null){
   if(lastWeather&&Date.now()-weatherFetchedAt<600000)return lastWeather;
   lastWeather=null;
-  const pos=await new Promise((res,rej)=>navigator.geolocation.getCurrentPosition(res,rej,{timeout:4000,maximumAge:300000}));
-  const c=pos&&pos.coords;if(!c)throw new Error('geo');
+  const pos=position||await getLocation();
+  const c=pos&&pos.coords;if(!validLocation(pos))throw locationFailure(2);
+  if(c.accuracy>20000)throw new Error('coarse_weather');
+  const [lng,lat]=wgs84ToGcj02(c.longitude,c.latitude);
   const t=await getToken();
-  const r=await fetchWithTimeout('/api/coach/ride/weather',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':t},body:JSON.stringify({lat:c.latitude,lng:c.longitude})},10000);
+  const r=await fetchWithTimeout('/api/coach/ride/weather',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':t},body:JSON.stringify({lat,lng})},10000);
   const d=await r.json().catch(()=>null);
   if(r.ok&&d&&d.weather_status==='ok'&&d.weather){lastWeather=d.weather;weatherFetchedAt=Date.now();updateDashboard();return lastWeather;}
-  throw new Error('weather');
+  throw new Error(d&&d.weather_status==='not_configured'?'not_configured':'weather');
 }
 async function fetchSessions(){
   const t=await getToken();
@@ -526,12 +620,12 @@ async function send(sessionId=null){
   const routeMatch=q.match(RE_ROUTE);
   if(routeMatch&&!riding){
     addThinking(['正在规划路线…','正在查地图…']);
-    try{await planRoute(routeMatch[1].trim());}catch(e){removeThinking();addMsg('mark','路线规划失败了：'+(e&&e.message==='geo'?'定位没拿到，检查一下定位权限。':'地图服务暂时不可用，稍后再试。'));}
+    try{await planRoute(routeMatch[1].trim());}catch(e){removeThinking();addMsg('mark','路线规划失败了：'+(e&&e.geo?locationErrorText(e):'地图服务暂时不可用，稍后再试。'));}
     sending=false;refreshChips();return;
   }
   addThinking(thinkLabelsFor(q));
   try{
-    if(RE_WEATHER.test(q)&&(!lastWeather||Date.now()-weatherFetchedAt>=600000)){try{await ensureWeather();}catch(_){/* 没天气照样聊 */}}
+    if(RE_WEATHER.test(q)&&(!lastWeather||Date.now()-weatherFetchedAt>=600000)){try{await ensureWeather();}catch(e){removeThinking();const message=weatherErrorText(e);addMsg('mark',message);setLocationStatus(message);if(voiceAuto)speak(message);sending=false;refreshChips();return;}}
     const body={question:q,conv_id:CONV_ID,tz_offset_min:TZ};
     if(typeof sessionId!=='string'&&/(?:上次|最近一次|最近的一次|刚才这次)/.test(q)&&!riding){const sessions=await fetchSessions();const latest=sessions.find(m=>m&&m.source!=='simulated');if(latest)sessionId=latest.id;}
     if(typeof sessionId==='string')body.session_id=sessionId;
@@ -557,15 +651,17 @@ async function send(sessionId=null){
 }
 /* ================= 路线规划 ================= */
 async function planRoute(dest){
-  const pos=await new Promise((res,rej)=>navigator.geolocation.getCurrentPosition(res,rej,{enableHighAccuracy:true,timeout:15000,maximumAge:60000})).catch(()=>{throw new Error('geo');});
+  const pos=await getLocation(true);
+  if(pos.coords.accuracy>200)throw locationFailure('coarse');
   const c=pos.coords;
+  const [lng,lat]=wgs84ToGcj02(c.longitude,c.latitude);
   const t=await getToken();
   const r=await fetchWithTimeout('/api/coach/ride/route',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':t},
-    body:JSON.stringify({origin:c.longitude.toFixed(6)+','+c.latitude.toFixed(6),destination_address:dest,mode:'bicycling'})},15000);
+    body:JSON.stringify({origin:lng.toFixed(6)+','+lat.toFixed(6),destination_address:dest,mode:'bicycling'})},15000);
   const d=await r.json().catch(()=>null);
   removeThinking();
   if(!r.ok||!d||d.route_status!=='ok'||!Array.isArray(d.steps)||!d.steps.length){
-    const message='这条路线我没规划出来，换个说法或者确认下目的地名字。';addMsg('mark',message);if(voiceAuto)speak(message);return;
+    const message=d&&d.route_status==='not_configured'?'地图服务尚未配置，请由开发端配置；不是你的定位权限问题。':'这条路线我没规划出来，换个说法或者确认下目的地名字。';addMsg('mark',message);if(voiceAuto)speak(message);return;
   }
   const steps=d.steps.map(s=>({instruction:String(s.instruction||''),distance_m:Number(s.distance_m)||0})).filter(s=>s.instruction);
   navRoute={destination:dest,distance_m:d.distance_m,duration_s:d.duration_s,steps,index:0,remaining_m:d.distance_m};
@@ -586,6 +682,8 @@ let rideSeq=0,liveBusy=false,liveAbort=null,lastLiveSpeech='',lastLiveSpeechAt=0
 function announceGeo(text){
   if(geoNotice===text)return;
   geoNotice=text;
+  $('ride-location-status').textContent=text;
+  setLocationStatus(text);
   addMsg('mark',text,{tag:'live'});
 }
 function buildRideRecord(ended){
@@ -634,7 +732,7 @@ function startRide(){
   if(riding)return;
   if(recoveryProblem){setView('ride');return;}
   if(pendingRide||rideSaving){setView('ride');$('ride-save-status').textContent='请先保存上一条记录，避免覆盖尚未保存的数据。';return;}
-  if(!navigator.geolocation){addMsg('mark','当前浏览器不支持定位，无法开始 GPS 运动记录。');return;}
+  const blocked=locationGate();if(blocked){const text=locationErrorText(blocked);setLocationStatus(text);$('ride-location-status').textContent=text;addMsg('mark',text);return;}
   ridePoints=[];rideRecordId='mark-'+crypto.randomUUID();
   $('ride-save-status').textContent='运动进行中；结束后保存至本机。没有心率设备时不生成心率。';
   setView('ride');
@@ -646,21 +744,7 @@ function startRide(){
   addMsg('mark','已开始记录，正在获取定位。定位成功后会记录速度和里程；我会根据已收到的数据提醒你，不提供实时路况感知。',{tag:'live'});
   speak('已开始记录，正在获取定位。',{tag:'ride',priority:35});
   checkpointRide(true);
-  const gpsSeq=rideSeq;
-  watchId=navigator.geolocation.watchPosition(p=>{
-    if(!riding||gpsSeq!==rideSeq||!gpsIsFresh(p))return;
-    const c=p.coords,elapsed=(p.timestamp-rideStart)/1000;
-    const previous=ridePoints[ridePoints.length-1];
-    if(!Number.isFinite(elapsed)||elapsed<0||elapsed>(Date.now()-rideStart)/1000+1||!Number.isFinite(c.latitude)||!Number.isFinite(c.longitude)||Math.abs(c.latitude)>90||Math.abs(c.longitude)>180||!Number.isFinite(c.accuracy)||c.accuracy>80)return;
-    if(previous&&(elapsed-previous.t<1||hav(previous.lat,previous.lng,c.latitude,c.longitude)/(elapsed-previous.t)>70))return;
-    if(ridePoints.length>=20000){endRide();return;}
-    const point={t:elapsed,lat:c.latitude,lng:c.longitude};
-    ridePoints.push(point);
-    lastFix=p;lastFixAt=Date.now();
-    if(!geoNotice||/等待|过期|恢复/.test(geoNotice))announceGeo('定位已连接，开始记录路线。');
-    if(prevFix){rideDist+=hav(prevFix.coords.latitude,prevFix.coords.longitude,p.coords.latitude,p.coords.longitude);}
-    prevFix=p;renderStrip();checkpointRide();
-  },()=>{if(riding&&gpsSeq===rideSeq&&!lastFix)announceGeo('正在等待定位，暂时无法计算距离。请保持定位权限开启。');},{enableHighAccuracy:true,maximumAge:3000});
+  beginRideLocation();
   liveTimer=setInterval(liveBeat,10000);
   refreshChips();
   const seq=rideSeq;
@@ -679,10 +763,48 @@ function startRide(){
     }
   })();
 }
+let locationWatchSeq=0,locationWatchTimer=null;
+function beginRideLocation(){
+  if(!riding)return;
+  const gpsSeq=rideSeq,watchSeq=++locationWatchSeq;
+  if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null;}
+  clearTimeout(locationWatchTimer);lastFix=null;lastFixAt=0;prevFix=null;
+  for(const id of ['ls-speed','ride-speed'])$(id).textContent='--';
+  announceGeo('正在等待定位；请允许网站位置权限，并保持网页在前台。');
+  const active=()=>riding&&gpsSeq===rideSeq&&watchSeq===locationWatchSeq;
+  const unavailable=e=>{
+    if(!active())return;
+    clearTimeout(locationWatchTimer);lastFix=null;lastFixAt=0;prevFix=null;
+    for(const id of ['ls-speed','ride-speed'])$(id).textContent='--';
+    announceGeo(locationErrorText(e)+' 当前速度未知，暂停实时播报；运动计时继续。');
+  };
+  locationWatchTimer=setTimeout(()=>unavailable({code:3}),22000);
+  try{watchId=navigator.geolocation.watchPosition(p=>{
+    if(!active())return;
+    if(!validLocation(p)||!gpsIsFresh(p)){unavailable({code:2});return;}
+    clearTimeout(locationWatchTimer);
+    const c=p.coords;
+    if(c.accuracy>80){
+      lastFix=null;lastFixAt=0;prevFix=null;
+      for(const id of ['ls-speed','ride-speed'])$(id).textContent='--';
+      announceGeo('已收到粗定位，但误差超过 80 米；不计入轨迹或速度。请开启精确位置并到开阔处重试，电脑粗定位不适合运动记录。');return;
+    }
+    const elapsed=(p.timestamp-rideStart)/1000,previous=ridePoints[ridePoints.length-1];
+    if(!Number.isFinite(elapsed)||elapsed<0||elapsed>(Date.now()-rideStart)/1000+1)return;
+    if(previous&&(elapsed-previous.t<1||hav(previous.lat,previous.lng,c.latitude,c.longitude)/(elapsed-previous.t)>70))return;
+    if(ridePoints.length>=20000){endRide();return;}
+    const point={t:elapsed,lat:c.latitude,lng:c.longitude};ridePoints.push(point);
+    lastFix=p;lastFixAt=Date.now();
+    announceGeo('定位已连接，开始记录路线。');
+    if(prevFix){rideDist+=hav(prevFix.coords.latitude,prevFix.coords.longitude,p.coords.latitude,p.coords.longitude);}
+    prevFix=p;renderStrip();checkpointRide();
+  },unavailable,{enableHighAccuracy:true,timeout:20000,maximumAge:0});}
+  catch(_){unavailable({code:2});}
+}
 function endRide(){
   if(!riding)return;
   checkpointRide(true);
-  riding=false;rideSeq++;
+  riding=false;rideSeq++;locationWatchSeq++;clearTimeout(locationWatchTimer);
   if(liveAbort){try{liveAbort.abort();}catch(_){/* */}liveAbort=null;}
   cancelSpeech('ride');
   if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null;}
@@ -723,6 +845,8 @@ async function savePendingRide(){
 }
 
 function renderStrip(){
+  $('ls-time').textContent=String(Math.round((Date.now()-rideStart)/60000));
+  if($('ride-time'))$('ride-time').textContent=$('ls-time').textContent;
   if(!lastFix)return;
   const c=lastFix.coords,fresh=gpsIsFresh();
   $('ls-speed').textContent=(fresh&&Number.isFinite(c.speed)&&c.speed>=0&&c.speed<=30)?(c.speed*3.6).toFixed(1):'--';
@@ -738,7 +862,7 @@ async function liveBeat(){
   if(!gpsIsFresh()){renderStrip();announceGeo('定位已过期，当前速度未知；暂停实时播报，等待新的定位。');return;}
   const fix=lastFix;
   if(!liveFixReady(fix)){announceGeo('当前速度未测得，暂停实时播报；GPS 轨迹仍会记录。');return;}
-  const requestSeq=rideSeq;
+  const requestSeq=rideSeq,requestLocationSeq=locationWatchSeq;
   const requestLiveId=liveId||('live-'+Math.random().toString(36).slice(2,10)+Date.now().toString(36));
   liveId=requestLiveId;liveBusy=true;
   const controller=new AbortController();liveAbort=controller;
@@ -747,10 +871,10 @@ async function liveBeat(){
     const point={t:fix.timestamp/1000,lat:c.latitude,lng:c.longitude,speed_mps:c.speed};
     if(typeof c.altitude==='number'&&Number.isFinite(c.altitude))point.alt=c.altitude;
     const t=await getToken();
-    if(!riding||requestSeq!==rideSeq||!gpsIsFresh(fix))return;
+    if(!riding||requestSeq!==rideSeq||requestLocationSeq!==locationWatchSeq||!liveFixReady()||!gpsIsFresh(fix))return;
     const r=await fetchWithTimeout('/api/coach/ride/live',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':t},body:JSON.stringify({live_id:requestLiveId,activity:'ride',point}),signal:controller.signal},12000);
     const d=await r.json().catch(()=>null);
-    if(!r.ok||!d||!Array.isArray(d.calls)||!riding||requestSeq!==rideSeq||requestLiveId!==liveId||!gpsIsFresh(fix))return;
+    if(!r.ok||!d||!Array.isArray(d.calls)||!riding||requestSeq!==rideSeq||requestLiveId!==liveId||requestLocationSeq!==locationWatchSeq||!liveFixReady()||!gpsIsFresh(fix))return;
     for(const call of d.calls){
       const text=call&&typeof call.speech==='string'?call.speech.trim():'';
       if(!text)continue;
@@ -956,6 +1080,8 @@ $('voice-choice').onchange=()=>{cancelSpeech();voiceChoice=$('voice-choice').val
 $('voice-preview').onclick=()=>{cancelSpeech();speak('你好，我是 Mark。按你的节奏来，我会陪着你。');};
 $('voice-toggle').onclick=()=>{voiceAuto=!voiceAuto;preferenceWrite('mark.voiceAuto',String(voiceAuto));renderVoicePreference();if(!voiceAuto)cancelSpeech();};
 renderVoicePreference();
+$('location-check').onclick=checkLocation;
+$('ride-location-retry').onclick=checkLocation;
 $('ride-save-retry').onclick=savePendingRide;
 $('ride-save-export').onclick=()=>{const raw=pendingRide?JSON.stringify(pendingRide,null,2):preferenceRead(ACTIVE_RIDE_KEY,'');if(!raw)return;const url=URL.createObjectURL(new Blob([raw],{type:'application/json'}));const a=node('a');a.href=url;a.download=(pendingRide?pendingRide.id:'mark-interrupted-backup')+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
 try{const draft=JSON.parse(preferenceRead(PENDING_RIDE_KEY,'null'));if(draft&&draft.source==='web_gps'&&typeof draft.id==='string'&&draft.summary){pendingRide=draft;$('ride-save-status').textContent='发现上一条未确认保存的记录。请重试保存；重复提交不会重复生成记录。';$('ride-save-retry').hidden=false;$('ride-save-export').hidden=false;}}catch(_){/* Ignore corrupt browser draft; server still validates all saves. */}
