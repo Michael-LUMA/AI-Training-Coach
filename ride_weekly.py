@@ -114,8 +114,10 @@ def aggregate_ride_weeks(week_sessions: list[dict], prev_week_sessions: list[dic
         differences = {'count_diff': week['count'] - prev['count'],
                        'total_duration_diff_s': delta,
                        'duration_diff_min': _minutes(abs(delta))}
+    sources = {item['source'] for item in current + previous}
+    source = next(iter(sources)) if len(sources) == 1 else ('mixed' if sources else None)
     return {'week': week, 'previous_week': prev, 'differences': differences,
-            'excluded_simulated': excluded, 'source': 'simulated' if simulated_only else 'ble_gatt_0x180d'}
+            'excluded_simulated': excluded, 'source': source}
 
 
 def weekly_template(week_agg: dict, prev_agg: dict | None) -> str:

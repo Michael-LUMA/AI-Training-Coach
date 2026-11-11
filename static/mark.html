@@ -3,207 +3,325 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#f6f7f9">
+<meta name="theme-color" content="#09131f">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
-<title>MARK · 你的运动陪伴智能体</title>
+<title>MARK · 运动智能陪伴中枢</title>
 <style>
-:root{
-  --bg:#f6f7f9;--card:#ffffff;
-  --line:rgba(15,23,42,.09);--text:#17202c;--dim:#5f6b7c;--dimmer:#94a0ae;
-  --mint:#0fb77f;--blue:#3b6ef0;--violet:#7c5cf0;--amber:#e8912d;--red:#e05252;
-  --grad:linear-gradient(135deg,#0fb77f,#3b6ef0);
-}
-*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{height:100%}
-body{
-  background:var(--bg);color:var(--text);
-  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","HarmonicOS Sans SC","Microsoft YaHei",sans-serif;
-  display:flex;flex-direction:column;overflow:hidden;
-  background-image:
-    radial-gradient(ellipse 80% 50% at 70% -10%,rgba(59,110,240,.06),transparent),
-    radial-gradient(ellipse 60% 40% at 110% 110%,rgba(15,183,127,.06),transparent);
-}
-header{
-  display:flex;align-items:center;gap:12px;padding:14px 18px;
-  border-bottom:1px solid var(--line);
-  background:rgba(255,255,255,.75);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
-  z-index:10;
-}
-.orb{width:34px;height:34px;border-radius:50%;position:relative;flex:none;
-  background:conic-gradient(from 120deg,#0fb77f,#3b6ef0,#7c5cf0,#0fb77f);
-  animation:spin 6s linear infinite;}
-.orb::after{content:'';position:absolute;inset:3px;border-radius:50%;background:#fff;}
-.orb::before{content:'';position:absolute;inset:9px;border-radius:50%;background:var(--grad);z-index:1;
-  animation:pulse 2.4s ease-in-out infinite;}
-@keyframes spin{to{transform:rotate(360deg)}}
-@keyframes pulse{0%,100%{opacity:.85;transform:scale(1)}50%{opacity:.5;transform:scale(.82)}}
-.brand{font-weight:700;letter-spacing:.14em;font-size:15px}
-.brand small{display:block;font-weight:400;letter-spacing:.02em;color:var(--dim);font-size:11px;margin-top:1px}
-#status{margin-left:auto;font-size:12px;color:var(--dim);display:flex;align-items:center;gap:6px}
-#status .dot{width:7px;height:7px;border-radius:50%;background:var(--mint);box-shadow:0 0 8px rgba(15,183,127,.6)}
-#status.thinking .dot{background:var(--amber);box-shadow:0 0 8px rgba(232,145,45,.6)}
-#legacy{font-size:12px;color:var(--dimmer);text-decoration:none;border:1px solid var(--line);
-  padding:5px 10px;border-radius:8px;transition:.2s;background:#fff}
-#legacy:hover{color:var(--text);border-color:var(--dimmer)}
-#livestrip{display:flex;border-bottom:1px solid var(--line);background:linear-gradient(90deg,rgba(15,183,127,.06),rgba(59,110,240,.06));}
-#livestrip[hidden]{display:none}
-.ls-cell{flex:1;text-align:center;padding:8px 4px;border-right:1px solid var(--line)}
-.ls-cell:last-of-type{border-right:none}
-.ls-v{font-size:17px;font-weight:700;font-variant-numeric:tabular-nums}
-.ls-v em{font-style:normal;font-size:10px;color:var(--dim);margin-left:2px}
-.ls-l{font-size:10px;color:var(--dimmer);margin-top:1px;letter-spacing:.08em}
-#ls-end{flex:none;padding:0 14px;border:none;background:none;color:var(--red);font-size:12px;cursor:pointer}
-#stream{flex:1;overflow-y:auto;padding:18px 14px 8px;scroll-behavior:smooth}
-#stream::-webkit-scrollbar{width:4px}
-#stream::-webkit-scrollbar-thumb{background:rgba(15,23,42,.15);border-radius:2px}
-.wrap{max-width:760px;margin:0 auto}
-.msg{display:flex;gap:10px;margin-bottom:18px;animation:rise .25s ease}
-@keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-.msg.user{flex-direction:row-reverse}
-.avatar{width:30px;height:30px;border-radius:50%;flex:none;margin-top:2px;
-  background:conic-gradient(from 120deg,#0fb77f,#3b6ef0,#7c5cf0,#0fb77f);position:relative}
-.avatar::after{content:'';position:absolute;inset:2.5px;border-radius:50%;background:#fff}
-.avatar::before{content:'';position:absolute;inset:8px;border-radius:50%;background:var(--grad);z-index:1}
-.bubble{max-width:82%;padding:11px 14px;border-radius:16px;font-size:14.5px;line-height:1.65;
-  word-break:break-word;white-space:pre-wrap}
-.msg.mark .bubble{background:#fff;border:1px solid var(--line);border-top-left-radius:4px;
-  box-shadow:0 1px 3px rgba(15,23,42,.05)}
-.msg.user .bubble{background:linear-gradient(135deg,#3b6ef0,#5b8cff);color:#fff;
-  border-top-right-radius:4px;box-shadow:0 2px 8px rgba(59,110,240,.25)}
-.msg .meta{display:flex;gap:8px;align-items:center;margin-top:5px;font-size:11px;color:var(--dimmer)}
-.lane{border:1px solid var(--line);border-radius:20px;padding:1px 8px;background:#fff}
-.tag-live{color:var(--mint);border-color:rgba(15,183,127,.4)}
-.tag-urgent{color:var(--red);border-color:rgba(224,82,82,.4)}
-.say{cursor:pointer;color:var(--dimmer);border:1px solid var(--line);border-radius:20px;background:#fff;font-size:11px;padding:1px 8px}
-.say:hover{color:var(--mint);border-color:rgba(15,183,127,.4)}
-.dots{display:inline-flex;gap:5px;padding:4px 2px}
-.dots i{width:7px;height:7px;border-radius:50%;background:var(--mint);animation:bounce 1.2s infinite}
-.dots i:nth-child(2){animation-delay:.15s;background:var(--blue)}
-.dots i:nth-child(3){animation-delay:.24s;background:var(--violet)}
-@keyframes bounce{0%,60%,100%{transform:translateY(0);opacity:.5}30%{transform:translateY(-6px);opacity:1}}
-.think-label{font-size:12px;color:var(--dim);margin-top:4px;min-height:16px}
-.card{max-width:82%;margin:-8px 0 18px 40px;background:#fff;border:1px solid var(--line);
-  border-radius:14px;padding:14px 16px;animation:rise .25s ease;
-  box-shadow:0 2px 10px rgba(15,23,42,.06)}
-.card h4{font-size:12px;color:var(--dim);font-weight:500;letter-spacing:.06em;margin-bottom:10px;
-  display:flex;align-items:center;gap:6px}
-.card h4::before{content:'';width:6px;height:6px;border-radius:2px;background:var(--grad)}
-.metric-row{display:flex;gap:18px;flex-wrap:wrap}
-.metric .v{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;background:var(--grad);
-  -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
-.metric .v em{font-style:normal;font-size:11px;-webkit-text-fill-color:var(--dim);font-weight:400;margin-left:2px}
-.metric .l{font-size:11px;color:var(--dimmer);margin-top:2px}
-.wtemp{font-size:26px;font-weight:700}
-.wtemp span{font-size:14px;color:var(--dim)}
-.wdesc{color:var(--dim);font-size:13px;margin-top:4px}
-.step{display:flex;gap:10px;padding:7px 0;border-bottom:1px dashed var(--line);font-size:13px}
-.step:last-child{border-bottom:none}
-.step .n{flex:none;width:20px;height:20px;border-radius:50%;border:1px solid var(--line);
-  display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--dim)}
-.step .d{margin-left:auto;color:var(--dimmer);font-size:12px;flex:none}
-.route-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
-.route-head .km{font-size:22px;font-weight:700;background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
-.route-head .min{color:var(--dim);font-size:12px}
-.card .go{margin-top:10px;width:100%;padding:9px;border:none;border-radius:10px;background:var(--grad);
-  color:#fff;font-weight:600;font-size:13px;cursor:pointer}
-#chips{padding:8px 14px 4px;overflow-x:auto;white-space:nowrap;scrollbar-width:none}
-#chips::-webkit-scrollbar{display:none}
-#chips .wrap{display:flex;gap:8px}
-.chip{flex:none;border:1px solid var(--line);background:#fff;color:var(--dim);
-  font-size:12.5px;padding:7px 14px;border-radius:20px;cursor:pointer;transition:.2s}
-.chip:hover{color:var(--text);border-color:var(--dimmer)}
-.chip.hot{color:#fff;background:var(--grad);border-color:transparent}
-.chip.danger{color:var(--red);border-color:rgba(224,82,82,.4)}
-footer{padding:10px 14px calc(12px + env(safe-area-inset-bottom));border-top:1px solid var(--line);
-  background:rgba(255,255,255,.85);backdrop-filter:blur(14px)}
-footer .wrap{display:flex;gap:9px;align-items:flex-end}
-#input{flex:1;resize:none;border:1px solid var(--line);background:#fff;color:var(--text);
-  border-radius:18px;padding:11px 15px;font-size:14.5px;line-height:1.4;max-height:110px;
-  font-family:inherit;outline:none;transition:border-color .2s}
-#input:focus{border-color:rgba(59,110,240,.5)}
-.roundbtn{flex:none;width:42px;height:42px;border-radius:50%;border:1px solid var(--line);
-  background:#fff;color:var(--dim);cursor:pointer;display:flex;align-items:center;
-  justify-content:center;transition:.2s}
-.roundbtn:hover{color:var(--text)}
-.roundbtn svg{width:18px;height:18px;fill:currentColor}
-#send{background:var(--grad);border:none}
-#send svg{fill:#fff}
-#mic.listening{color:var(--red);border-color:var(--red);animation:pulse 1s infinite}
-@media (min-width:761px){body{align-items:center}header,#livestrip,#stream,#chips,footer{width:100%;max-width:820px}
-  #stream{border-left:1px solid var(--line);border-right:1px solid var(--line)}}
-</style>
+:root{--bg:#09131f;--s:#101d2c;--s2:#16283d;--line:rgba(220,235,250,.12);--text:#f3f7fb;--muted:#9eb1c4;--sub:#6e8397;--cyan:#65e4d1;--blue:#849dff;--violet:#bf9cff;--red:#ff7d86;--amber:#f6ca72;--grad:linear-gradient(135deg,#65e4d1,#849dff 58%,#bf9cff);--shadow:0 24px 60px rgba(0,0,0,.24);color-scheme:dark}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}html,body{height:100%;overflow:hidden}body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;background:radial-gradient(900px 500px at 85% -10%,rgba(132,157,255,.18),transparent 65%),var(--bg);color:var(--text);font-size:14px;line-height:1.5}button,textarea{font:inherit}button{border:0;color:inherit;cursor:pointer}button:focus-visible,a:focus-visible,textarea:focus-visible{outline:2px solid var(--cyan);outline-offset:3px}
+.app{height:100%;display:grid;grid-template-columns:244px minmax(0,1fr)}.side{border-right:1px solid var(--line);padding:26px 18px 18px;background:rgba(9,19,31,.82);display:flex;flex-direction:column}.brand-row{display:flex;align-items:center;gap:12px;padding:0 10px 32px}.orb{width:38px;height:38px;border-radius:13px;background:conic-gradient(var(--cyan),var(--blue),var(--violet),var(--cyan));position:relative;box-shadow:0 0 26px rgba(101,228,209,.2)}.orb:after{content:"";position:absolute;inset:3px;border-radius:10px;background:var(--bg)}.orb:before{content:"";position:absolute;inset:10px;border-radius:7px;background:var(--grad);z-index:1;animation:pulse 2.8s infinite}@keyframes pulse{50%{opacity:.55;transform:scale(.72)}}.brand{font-size:16px;font-weight:800;letter-spacing:.2em}.brand small{display:block;color:var(--muted);font-weight:400;font-size:11px;letter-spacing:.02em;margin-top:3px}.nav-label{color:var(--sub);font-size:10px;letter-spacing:.16em;text-transform:uppercase;padding:0 12px 10px}.nav{display:grid;gap:5px}.nav button{display:flex;align-items:center;gap:12px;width:100%;padding:11px 12px;border-radius:12px;background:transparent;color:var(--muted);text-align:left;transition:.2s}.nav button:hover{background:rgba(132,157,255,.1);color:var(--text)}.nav button.active{background:linear-gradient(90deg,rgba(132,157,255,.2),rgba(101,228,209,.08));color:var(--text);box-shadow:inset 3px 0 var(--cyan)}svg{fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.nav svg{width:18px;height:18px}.side-spacer{flex:1}.service-card{margin:20px 4px 14px;padding:14px;border:1px solid var(--line);border-radius:16px;background:rgba(22,40,61,.75)}.service-title{display:flex;justify-content:space-between;font-size:12px}.service-dot{width:8px;height:8px;border-radius:50%;background:var(--cyan);box-shadow:0 0 12px var(--cyan)}.service-card p{color:var(--muted);font-size:11px;line-height:1.6;margin-top:8px}.side-foot{padding:0 10px;color:var(--sub);font-size:11px}.side-foot a{color:inherit;text-decoration:none}.main{min-width:0;height:100%;display:flex;flex-direction:column;overflow:hidden}.top{height:78px;display:flex;align-items:center;gap:15px;padding:0 34px;border-bottom:1px solid var(--line);background:rgba(9,19,31,.6);backdrop-filter:blur(18px)}.mobile-menu{display:none;width:38px;height:38px;border:1px solid var(--line);border-radius:11px;background:var(--s)}.heading{min-width:0}.kicker,.eyebrow{color:var(--cyan);font-size:10px;letter-spacing:.14em;text-transform:uppercase}.heading h1{font-size:22px;margin-top:2px}.top-actions{margin-left:auto;display:flex;align-items:center;gap:12px}.status{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px}.status .dot{width:8px;height:8px;border-radius:50%;background:var(--cyan);box-shadow:0 0 12px var(--cyan)}.status.thinking .dot{background:var(--amber);box-shadow:0 0 12px var(--amber)}.top-icon{width:36px;height:36px;border:1px solid var(--line);border-radius:11px;background:var(--s);display:grid;place-items:center;color:var(--muted)}.top-icon svg{width:17px;height:17px}.view{display:none;flex:1;min-height:0;overflow:auto;padding:30px 34px 42px}.view.active{display:block}.inner{max-width:1240px;margin:0 auto}.muted{color:var(--muted)}
+.hero{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(260px,.65fr);gap:16px}.hero-card,.orbit-card,.panel,.ride-card{border:1px solid var(--line);background:rgba(16,29,44,.82);box-shadow:var(--shadow)}.hero-card{position:relative;overflow:hidden;min-height:278px;padding:30px;border-radius:26px;background:linear-gradient(135deg,rgba(22,40,61,.97),rgba(24,35,62,.9))}.hero-card:after{content:"";position:absolute;width:330px;height:330px;right:-120px;top:-140px;border-radius:50%;background:radial-gradient(circle,rgba(132,157,255,.3),transparent 68%)}.hero-card h2{font-size:clamp(28px,3.2vw,42px);line-height:1.12;letter-spacing:-.04em;margin:14px 0 10px;max-width:650px}.hero-card p{max-width:570px;color:var(--muted);font-size:15px;line-height:1.7}.hero-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:26px}.primary,.ghost,.danger{min-height:44px;padding:0 17px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;gap:9px;transition:.2s}.primary{background:var(--grad);color:#07131d;font-weight:750;box-shadow:0 10px 24px rgba(101,228,209,.14)}.primary:hover{filter:brightness(1.08);transform:translateY(-1px)}.ghost{border:1px solid rgba(220,235,250,.2);background:rgba(255,255,255,.04)}.ghost:hover{background:rgba(255,255,255,.08)}.danger{border:1px solid rgba(255,125,134,.35);background:rgba(255,125,134,.08);color:var(--red)}.button-icon{width:17px;height:17px}.orbit-card{min-height:278px;padding:22px;border-radius:26px;display:flex;flex-direction:column;justify-content:space-between}.orbit-head,.panel-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.tiny-tag,.ride-badge{padding:3px 8px;border:1px solid rgba(101,228,209,.28);border-radius:20px;color:var(--cyan);font-size:10px}.orbit{position:relative;width:150px;height:150px;margin:10px auto;border:1px solid rgba(132,157,255,.28);border-radius:50%;display:grid;place-items:center;background:radial-gradient(circle,rgba(132,157,255,.16),transparent 60%)}.orbit:before,.orbit:after{content:"";position:absolute;border:1px solid rgba(101,228,209,.25);border-radius:50%}.orbit:before{inset:18px}.orbit:after{inset:38px;border-color:rgba(191,156,255,.3)}.orbit-core{width:56px;height:56px;border-radius:18px;background:var(--grad);color:#07131d;display:grid;place-items:center;font-weight:900;letter-spacing:.1em}.orbit-foot{display:flex;justify-content:space-between;color:var(--muted);font-size:11px}.orbit-foot strong{display:block;color:var(--text);font-size:18px;margin-top:3px}.section-head{display:flex;justify-content:space-between;align-items:end;margin:28px 0 12px}.section-head h3{font-size:17px}.section-head span{color:var(--muted);font-size:11px}.grid{display:grid;grid-template-columns:1.15fr .85fr .85fr;gap:15px}.panel{padding:19px;border-radius:19px}.panel h4{font-size:13px;margin-bottom:15px}.panel-icon,.device-glyph{width:36px;height:36px;border-radius:12px;background:rgba(101,228,209,.1);color:var(--cyan);display:grid;place-items:center}.panel-icon svg,.device-glyph svg{width:18px;height:18px}.panel-value{font-size:30px;font-weight:760;letter-spacing:-.04em}.panel-value small{font-size:12px;color:var(--muted);font-weight:500;margin-left:4px}.panel-note{color:var(--muted);font-size:11px;margin-top:5px}.metric-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:16px}.metric-tile{padding:11px;border:1px solid var(--line);border-radius:13px;background:rgba(255,255,255,.025)}.metric-tile strong{font-size:19px}.metric-tile span{display:block;color:var(--muted);font-size:11px;margin-top:3px}.weather-line{display:flex;align-items:center;gap:11px}.weather-temp{font-size:32px;font-weight:760;letter-spacing:-.05em}.weather-copy strong{display:block;font-size:13px}.weather-copy span{display:block;color:var(--muted);font-size:11px;margin-top:3px}.device-row{display:flex;align-items:center;gap:10px}.device-row strong{display:block;font-size:12px}.device-row span{display:block;color:var(--muted);font-size:11px;margin-top:2px}.device-state{margin-left:auto;color:var(--cyan);font-size:11px}.progress{height:5px;border-radius:5px;background:rgba(255,255,255,.08);overflow:hidden;margin-top:18px}.progress i{display:block;width:64%;height:100%;background:var(--grad)}.quick-list{display:grid}.quick-item{display:flex;align-items:center;justify-content:space-between;text-align:left;padding:11px 0;border-bottom:1px solid var(--line);background:none}.quick-item:last-child{border-bottom:0}.quick-copy strong{display:block;font-size:12px;transition:.2s}.quick-item:hover strong{color:var(--cyan)}.quick-copy span{display:block;color:var(--muted);font-size:11px;margin-top:2px}.chev{color:var(--sub);font-size:18px}
+#livestrip{display:flex;margin:0 34px;padding:12px 14px;border:1px solid rgba(101,228,209,.2);border-top:0;border-radius:0 0 18px 18px;background:linear-gradient(90deg,rgba(101,228,209,.1),rgba(132,157,255,.08));z-index:1}#livestrip[hidden]{display:none}.ls-cell{flex:1;text-align:center;border-right:1px solid var(--line)}.ls-v{font-size:17px;font-weight:760}.ls-v em{font-style:normal;color:var(--muted);font-size:10px;margin-left:3px}.ls-l{font-size:10px;color:var(--muted);margin-top:2px}.ls-end{flex:none;margin-left:12px;padding:0 12px;border:1px solid rgba(255,125,134,.35);border-radius:10px;background:rgba(255,125,134,.08);color:var(--red)}
+#view-coach{padding:0;overflow:hidden;display:none;flex-direction:column}#view-coach.active{display:flex}.coach-layout{height:100%;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 285px}.coach-main{display:flex;flex-direction:column;min-height:0;min-width:0}.coach-intro{padding:23px 34px 10px}.coach-intro h2{font-size:24px;letter-spacing:-.03em;margin-top:5px}.coach-intro p{color:var(--muted);margin-top:4px}.coach-side{border-left:1px solid var(--line);padding:23px 17px;overflow:auto;background:rgba(16,29,44,.35)}.context-card{padding:14px;border:1px solid var(--line);border-radius:15px;background:rgba(22,40,61,.68);margin-bottom:12px}.context-card h4{font-size:12px;margin-bottom:9px}.context-card p,.context-card li{color:var(--muted);font-size:11px;line-height:1.7}.context-card ul{padding-left:15px}.context-pill{display:flex;align-items:center;gap:6px;color:var(--cyan);font-size:11px}.context-pill i{width:6px;height:6px;border-radius:50%;background:currentColor}
+#stream{flex:1;min-height:0;overflow-y:auto;padding:16px 34px 8px;scroll-behavior:smooth}#stream::-webkit-scrollbar{width:5px}#stream::-webkit-scrollbar-thumb{background:rgba(220,235,250,.16);border-radius:4px}.wrap{max-width:760px;margin:0 auto}.msg{display:flex;gap:10px;margin-bottom:18px;animation:rise .25s ease}.msg.user{flex-direction:row-reverse}@keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}.avatar{width:30px;height:30px;border-radius:10px;flex:none;margin-top:2px;background:var(--grad);position:relative}.avatar:after{content:"";position:absolute;inset:4px;border-radius:7px;background:var(--bg)}.avatar:before{content:"";position:absolute;inset:9px;border-radius:4px;background:var(--grad);z-index:1}.bubble{max-width:82%;padding:12px 15px;border-radius:16px;font-size:14px;line-height:1.7;word-break:break-word;white-space:pre-wrap}.msg.mark .bubble{background:rgba(22,40,61,.88);border:1px solid var(--line);border-top-left-radius:5px}.msg.user .bubble{background:linear-gradient(135deg,#718dff,#9b7cff);border-top-right-radius:5px}.msg .meta{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-top:5px;font-size:11px;color:var(--sub)}.lane,.say{border:1px solid var(--line);border-radius:20px;padding:2px 8px;background:transparent;color:var(--muted);font-size:11px}.tag-live{color:var(--cyan);border-color:rgba(101,228,209,.3)}.tag-urgent{color:var(--red);border-color:rgba(255,125,134,.3)}.say{cursor:pointer}.say:hover{color:var(--cyan);border-color:rgba(101,228,209,.3)}.think-label{color:var(--muted);font-size:11px;margin-top:5px}.dots{display:inline-flex;gap:4px}.dots i{width:5px;height:5px;border-radius:50%;background:var(--cyan);animation:dot 1.2s infinite}.dots i:nth-child(2){animation-delay:.16s}.dots i:nth-child(3){animation-delay:.32s}@keyframes dot{0%,70%,100%{opacity:.3;transform:translateY(0)}35%{opacity:1;transform:translateY(-3px)}}.card{max-width:82%;margin:-8px 0 18px 40px;background:rgba(22,40,61,.8);border:1px solid var(--line);border-radius:17px;padding:15px}.card h4{font-size:12px;margin-bottom:10px}.wtemp{font-size:25px;font-weight:760}.wtemp span+span{font-size:12px;color:var(--muted);font-weight:500;margin-left:8px}.wdesc{color:var(--muted);font-size:11px;margin-top:4px}.metric-row{display:flex;gap:14px;flex-wrap:wrap}.metric .v{font-size:20px;font-weight:720}.metric .v em{font-size:11px;font-style:normal;color:var(--muted);margin-left:3px}.metric .l{color:var(--muted);font-size:11px}.route-head{display:flex;align-items:baseline;gap:10px}.route-head .km{font-size:20px;font-weight:760}.route-head .min{color:var(--muted);font-size:11px}.step{display:grid;grid-template-columns:20px 1fr auto;gap:7px;padding:7px 0;border-bottom:1px solid var(--line);font-size:11px}.step .n{width:18px;height:18px;border-radius:6px;background:rgba(132,157,255,.16);color:var(--blue);display:grid;place-items:center}.step .d{color:var(--muted)}.go{margin-top:12px;width:100%;height:38px;border-radius:10px;background:var(--grad);color:#07131d;font-weight:700}
+#chips{padding:8px 34px 6px;overflow-x:auto;white-space:nowrap;scrollbar-width:none}#chips::-webkit-scrollbar{display:none}#chips .wrap{display:flex;gap:8px}.chip{flex:none;border:1px solid rgba(220,235,250,.2);background:rgba(22,40,61,.8);color:var(--muted);border-radius:20px;padding:8px 12px;font-size:11px}.chip:hover{color:var(--text);border-color:rgba(101,228,209,.5)}.chip.hot{background:var(--grad);border-color:transparent;color:#07131d;font-weight:700}.chip.danger{border-color:rgba(255,125,134,.35);color:var(--red);background:rgba(255,125,134,.08)}footer{padding:10px 34px calc(16px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:rgba(9,19,31,.74)}footer .wrap{display:flex;gap:9px;align-items:flex-end}.roundbtn{flex:none;width:42px;height:42px;border-radius:12px;border:1px solid rgba(220,235,250,.2);background:rgba(22,40,61,.9);color:var(--muted);display:grid;place-items:center}.roundbtn svg{width:18px;height:18px}#send{background:var(--grad);border-color:transparent;color:#07131d}#input{flex:1;min-width:0;resize:none;min-height:42px;max-height:110px;border:1px solid rgba(220,235,250,.2);border-radius:13px;background:rgba(22,40,61,.9);color:var(--text);padding:10px 13px;line-height:1.45;outline:none}#input::placeholder{color:var(--sub)}#input:focus{border-color:rgba(101,228,209,.55)}#mic.listening{color:var(--red);border-color:var(--red)}
+.ride-stage{max-width:930px;margin:0 auto}.ride-head{display:flex;justify-content:space-between;gap:20px}.ride-head h2{font-size:32px;letter-spacing:-.04em;margin-top:8px}.ride-head p{color:var(--muted);margin-top:5px}.ride-card{margin-top:22px;padding:30px;border-radius:26px;background:linear-gradient(135deg,rgba(22,40,61,.96),rgba(24,35,62,.9))}.ride-metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.ride-metric{padding:18px;border:1px solid var(--line);border-radius:17px;background:rgba(255,255,255,.025)}.ride-metric strong{display:block;font-size:31px;letter-spacing:-.05em}.ride-metric span{display:block;color:var(--muted);font-size:11px;margin-top:4px}.ride-coach{display:flex;align-items:center;gap:14px;margin-top:25px;padding-top:20px;border-top:1px solid var(--line)}.ride-coach .avatar{margin:0}.ride-coach-copy strong{display:block}.ride-coach-copy span{display:block;color:var(--muted);font-size:12px;margin-top:3px}.ride-actions{display:flex;gap:10px;margin-top:25px}.preflight{margin-top:18px;padding:18px;border:1px dashed rgba(220,235,250,.2);border-radius:17px;color:var(--muted);font-size:12px}.preflight strong{display:block;color:var(--text);margin-bottom:5px}.history-grid,.device-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:15px;margin-top:22px}.history-list{display:grid;gap:10px;margin-top:14px}.history-item{display:flex;align-items:center;justify-content:space-between;padding:14px 0;border-bottom:1px solid var(--line)}.history-item strong{display:block}.history-item span{display:block;color:var(--muted);font-size:11px;margin-top:3px}.history-value{font-size:18px;font-weight:720}.device-card{min-height:180px}.device-card .device-glyph{margin-bottom:18px}.device-card h3{font-size:16px}.device-card p{color:var(--muted);font-size:12px;line-height:1.65;margin-top:6px}.device-card .device-state{display:inline-block;margin:16px 0 0}
+.mobile-nav{display:none}@media(max-width:1050px){.hero{grid-template-columns:1fr}.orbit-card{min-height:220px}.grid{grid-template-columns:repeat(2,1fr)}.grid .panel:first-child{grid-column:1/-1}.coach-layout{grid-template-columns:1fr}.coach-side{display:none}}@media(max-width:760px){.app{display:block}.side{display:none}.top{height:68px;padding:0 16px}.mobile-menu{display:grid;place-items:center}.heading h1{font-size:18px}.top-icon{display:none}.view{padding:20px 16px 100px}.hero{display:block}.hero-card{min-height:320px;padding:23px;border-radius:22px}.hero-card h2{font-size:30px}.orbit-card{margin-top:12px;border-radius:22px;min-height:235px}.grid{display:block}.panel{margin-top:12px;border-radius:18px}.section-head{margin-top:24px}#livestrip{margin:0 16px;padding:10px 8px}.ls-v{font-size:14px}.ls-end{padding:0 8px;margin-left:7px}.coach-intro{padding:18px 16px 8px}.coach-intro h2{font-size:22px}#stream{padding:12px 16px 8px}#chips{padding:8px 16px 6px}footer{padding-left:16px;padding-right:16px}.ride-head h2{font-size:26px}.ride-card{padding:18px;border-radius:20px}.ride-metrics{grid-template-columns:repeat(2,1fr)}.ride-metric strong{font-size:25px}.history-grid,.device-grid{grid-template-columns:1fr}.mobile-nav{position:fixed;display:grid;grid-template-columns:repeat(5,1fr);left:10px;right:10px;bottom:10px;height:62px;border:1px solid rgba(220,235,250,.2);border-radius:20px;background:rgba(16,29,44,.94);z-index:10;box-shadow:0 14px 34px rgba(0,0,0,.3)}.mobile-nav button{background:none;color:var(--sub);font-size:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}.mobile-nav button.active{color:var(--cyan)}.mobile-nav svg{width:18px;height:18px}}@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.001ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition:none!important}}
 
+/* Home refinement: reference-led composition; other workspaces retain their identity. */
+@font-face{font-family:Archivo;src:url('/fonts/archivo-latin-800-normal.woff2') format('woff2');font-weight:800;font-display:swap}
+#view-dashboard{--home-mint:#d6f5e8;--home-ink:#113f35;--home-surface:#111f2b;--home-soft:#a6b8c4;padding-top:28px}
+#view-dashboard ::selection{background:var(--cyan);color:#09251e}
+#view-dashboard{scrollbar-width:thin;scrollbar-color:#405663 transparent}
+.home-welcome{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:24px}
+.home-welcome h2{font-size:24px;font-weight:650;letter-spacing:-.02em}.home-welcome p{color:var(--home-soft);font-size:13px;margin-top:5px}.home-welcome time{font-size:12px;color:var(--home-soft);white-space:nowrap}
+.home-stage{display:grid;grid-template-columns:minmax(0,2.1fr) minmax(270px,.9fr);gap:18px}
+.home-hero{position:relative;display:flex;min-height:350px;background:var(--home-mint);color:var(--home-ink);border-radius:16px;overflow:hidden}
+.home-hero-copy{position:relative;z-index:1;padding:38px 0 26px 34px;width:60%;display:flex;flex-direction:column;align-items:flex-start}
+.home-hero h2{font-size:clamp(28px,2.7vw,42px);font-weight:700;line-height:1.38;letter-spacing:-.025em;white-space:nowrap;margin-bottom:17px}
+.home-hero p{font-size:14px;line-height:1.85;color:#3a6255}.home-hero .hero-actions{margin-top:24px;gap:10px}
+.home-hero .primary{background:#153f34;color:#fff;box-shadow:none;border-radius:10px;min-height:46px;padding:0 18px;font-weight:600}
+.home-hero .primary:hover{background:#215345;filter:none;transform:translateY(-2px)}
+.home-hero .ghost{background:#ecfcf4;color:#174735;border:0;min-height:46px;border-radius:10px;padding:0 15px;gap:14px}.home-hero .ghost:hover{background:#fff}
+.home-hero button:focus-visible{outline-color:#154535;outline-offset:4px}
+.home-hero-note{display:flex;align-items:center;gap:7px;font-size:11px;color:#42695b;margin-top:auto;padding-top:23px}.home-hero-note svg{width:14px;height:14px}
+.home-art{position:absolute;right:0;top:0;width:43%;height:100%;overflow:hidden;color:#1d8468;pointer-events:none}
+.home-art-type{position:absolute;top:30px;left:12px;font-family:Archivo,sans-serif;font-weight:800;font-size:clamp(40px,4vw,60px);line-height:.95;letter-spacing:-.04em;color:#2b8068;opacity:.18}
+.home-track{position:absolute;right:-10px;top:21px;width:100%;height:calc(100% - 48px);overflow:visible}
+.track-under{stroke:#b0e4d0;stroke-width:46;fill:none}.track-line{stroke:#338b70;stroke-width:2;fill:none;stroke-dasharray:4 7}.track-start{fill:#123f32;stroke:#d6f5e8;stroke-width:5}.track-end{fill:#fff;stroke:#338b70;stroke-width:3}
+.home-art-caption{position:absolute;bottom:20px;left:16px;font-family:Archivo,sans-serif;font-weight:800;font-size:10px;letter-spacing:.12em;color:#326d59}
+.home-companion{background:var(--home-surface);border:1px solid var(--line);border-radius:16px;padding:24px;display:flex;flex-direction:column;min-width:0}
+.home-companion-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:23px}.home-avatar{font-family:Archivo,sans-serif;font-size:33px;line-height:1;letter-spacing:-.04em;color:var(--cyan)}.home-avatar span{color:var(--violet)}.home-companion .tiny-tag{font-size:11px;padding:4px 9px;color:#b3e8d7;border-color:#3e6059;background:#1d3832}
+.home-companion h3{font-size:23px;font-weight:600;letter-spacing:-.02em}.home-companion-desc{color:var(--home-soft);font-size:12px;margin-top:6px}
+.home-message{margin-top:23px;border-top:1px solid var(--line);padding-top:15px}.home-message>span{font-family:Archivo,sans-serif;color:var(--cyan);font-size:10px;letter-spacing:.08em}.home-message p{font-size:13px;line-height:1.85;color:#d0dce4;margin-top:7px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden}
+.home-companion-bottom{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:auto;padding-top:20px}.home-wave{display:flex;gap:3px;height:25px;align-items:center;color:var(--cyan)}.home-wave i{width:3px;height:8px;background:currentColor;border-radius:3px}.home-wave i:nth-child(2n){height:16px}.home-wave i:nth-child(3n){height:24px}
+.home-chat-link{display:flex;align-items:center;gap:12px;min-height:44px;font-size:12px;background:none;color:#d6e8e2}.home-chat-link svg{width:17px;height:17px}.home-chat-link:hover{color:var(--cyan)}
+#view-dashboard .section-head{margin:26px 0 13px;align-items:center}#view-dashboard .section-head h3{font-size:16px;font-weight:600}#view-dashboard .section-head>span{font-size:12px;color:var(--home-soft)}
+.home-text-link{display:inline-flex;align-items:center;gap:7px;font-size:12px;background:none;color:var(--home-soft);min-height:44px}.home-text-link svg{width:15px;height:15px}.home-text-link:hover{color:var(--cyan)}
+.home-overview{display:grid;grid-template-columns:1.35fr 1fr 1fr;gap:18px}.home-overview article{min-width:0;padding:21px 22px;border:1px solid var(--line);border-radius:14px;background:var(--home-surface);min-height:186px}
+.home-card-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:16px}.home-card-heading h4{font-size:12px;font-weight:500;color:var(--home-soft)}.home-card-heading svg{width:18px;height:18px;color:var(--cyan)}
+.home-week-stats{display:flex;align-items:center;gap:20px;font-variant-numeric:tabular-nums}.home-week-stats>div{min-width:0}.home-week-stats strong{font-family:Archivo,-apple-system,sans-serif;font-weight:800;font-size:20px;line-height:1.35;white-space:nowrap}.home-week-stats span{display:block;font-size:11px;color:var(--home-soft);margin-top:4px}.home-week-stats .home-main-stat{flex:1}.home-main-stat strong{font-size:40px;letter-spacing:-.03em}.home-main-stat small{font-family:inherit;font-size:12px;font-weight:400;color:var(--home-soft);margin-left:5px}
+#view-dashboard .panel-note{font-size:11px;line-height:1.7;color:var(--home-soft);margin-top:14px}#view-dashboard .weather-line{margin-top:4px}#view-dashboard .weather-temp{font-family:Archivo,sans-serif;font-size:40px;font-weight:800;letter-spacing:-.03em}#view-dashboard .weather-copy strong{font-weight:500}#view-dashboard .weather-copy span{color:var(--home-soft)}
+.home-readiness>strong{display:block;font-size:17px;font-weight:600}.home-readiness>p{font-size:12px;color:var(--home-soft);line-height:1.8;margin-top:8px}.home-readiness .home-text-link{margin-top:3px;color:var(--cyan)}
+#view-dashboard .home-quick-heading{margin-top:22px}.home-commands{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.home-command{display:flex;align-items:center;gap:13px;padding:22px 16px;background:none;text-align:left;min-width:0}.home-command:first-child{padding-left:0}.home-command+.home-command{border-left:1px solid var(--line)}.home-command-icon{width:22px;height:22px;flex-shrink:0;color:#93cec0}.home-command>span{min-width:0}.home-command strong{display:block;font-size:13px;font-weight:500}.home-command small{display:block;font-size:11px;color:var(--home-soft);margin-top:5px}.home-arrow{width:17px;height:17px;margin-left:auto;flex-shrink:0;color:var(--home-soft);transition:transform .2s}.home-command:hover{background:#142b33}.home-command:hover .home-arrow{transform:translateX(3px);color:var(--cyan)}
+.home-footer{display:flex;justify-content:space-between;gap:12px;padding-top:22px;font-size:10px;color:var(--home-soft)}
+@media(min-width:761px) and (max-width:1180px){.home-stage{grid-template-columns:minmax(0,1.7fr) minmax(235px,1fr)}.home-hero-copy{padding-left:24px;width:72%}.home-hero h2{font-size:30px}.home-art{width:35%}.home-art-type{font-size:44px;opacity:.12}.home-track{opacity:.6;right:-45px}.home-art-caption{display:none}.home-companion{padding:22px}.home-overview{grid-template-columns:1.3fr 1fr}.home-overview .home-readiness{grid-column:1/-1;min-height:0;display:grid;grid-template-columns:1fr 1fr;align-items:center;gap:4px 20px}.home-readiness .home-card-heading{grid-column:1;grid-row:1;margin:0}.home-readiness>strong{grid-column:1;grid-row:2}.home-readiness>p{grid-column:2;grid-row:1/3;margin:0}.home-readiness .home-text-link{grid-column:1/-1;margin:0}.home-command{gap:9px;padding-right:10px;padding-left:10px}.home-command small{font-size:10px}.home-command-icon{display:none}}
+@media(max-width:760px){.main{height:100dvh}.top{flex-shrink:0}#view-dashboard{padding:21px 18px calc(106px + env(safe-area-inset-bottom));}.home-welcome{margin-bottom:19px;align-items:flex-start}.home-welcome h2{font-size:21px}.home-welcome p{font-size:12px}.home-welcome time{font-size:10px;margin-top:6px}.home-stage{grid-template-columns:1fr;gap:14px}.home-hero{min-height:330px}.home-hero-copy{width:78%;padding:28px 0 24px 24px}.home-hero h2{font-size:30px;margin-bottom:14px}.home-hero p{font-size:12px}.home-hero .hero-actions{margin-top:24px;gap:8px}.home-hero .primary,.home-hero .ghost{font-size:13px;padding:0 14px}.home-art{width:37%;opacity:.65}.home-art-type{top:18px;left:10px;font-size:46px;opacity:.14}.home-track{right:-51px;width:180px;top:36px;opacity:.7}.home-art-caption{display:none}.home-hero-note{font-size:10px;padding-top:23px}.home-companion{padding:20px;min-height:0}.home-companion-top{margin-bottom:13px}.home-avatar{font-size:27px}.home-companion h3{font-size:21px}.home-companion-desc{font-size:12px}.home-message{margin-top:14px;padding-top:12px}.home-message p{-webkit-line-clamp:2}.home-companion-bottom{padding-top:8px}.home-overview{grid-template-columns:1fr;gap:12px}.home-overview article{min-height:0;padding:20px}.home-week-stats{gap:26px}.home-week-stats .home-main-stat{flex:1}.home-weather{display:grid;grid-template-columns:1fr 1fr}.home-weather .home-card-heading{grid-column:1/-1;margin-bottom:10px}.home-weather .panel-note{align-self:center;margin:0!important;padding-left:12px}.home-readiness>p br{display:none}.home-commands{grid-template-columns:1fr}.home-command,.home-command:first-child{padding:18px 0}.home-command+.home-command{border-left:0;border-top:1px solid var(--line)}.home-command small{font-size:12px}.home-command strong{font-size:14px}.home-footer{font-size:10px}.home-footer>span:last-child{display:none}#livestrip{margin:0 16px;padding:10px 8px}#view-coach{padding-bottom:calc(88px + env(safe-area-inset-bottom))}.mobile-nav{bottom:max(10px,env(safe-area-inset-bottom))}}
+@media(max-width:360px){#view-dashboard{padding-left:12px;padding-right:12px}.home-welcome{gap:6px}.home-welcome h2{font-size:19px}.home-hero-copy{padding-left:20px}.home-hero h2{font-size:27px}.home-week-stats{gap:16px}.home-week-stats strong{font-size:18px}.home-main-stat strong{font-size:36px}}
+
+
+/* Voice HMI: states follow capture, request and playback events. */
+.coach-main{min-height:0}.coach-intro{display:none}
+.voice-stage{flex:none;position:relative;display:grid;grid-template-columns:minmax(220px,.9fr) minmax(240px,1.1fr);align-items:center;gap:24px;padding:25px 34px 23px;border-bottom:1px solid var(--line);background:#0e1c28;--voice-color:#65e4d1}
+.voice-visual{position:relative;min-width:0;height:180px;display:grid;place-items:center;overflow:hidden}
+.voice-visual svg{width:100%;max-width:360px;height:180px;overflow:visible;color:var(--voice-color)}
+.voice-field{fill:none;stroke:currentColor;stroke-width:.7;opacity:.16}.voice-bar{fill:currentColor;transition:fill .25s}
+.voice-stage[data-state="thinking"],.voice-stage[data-state="transcribing"],.voice-stage[data-state="preparing"]{--voice-color:#a6b2ff}
+.voice-stage[data-state="error"]{--voice-color:#ff9aa3}
+.voice-copy{min-width:0}.voice-state{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--voice-color);margin-bottom:7px}.voice-dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.voice-copy h2{font-size:clamp(23px,2.4vw,31px);letter-spacing:-.02em;font-weight:650;line-height:1.35}.voice-copy p{font-size:12px;line-height:1.7;color:#b2c3d0;margin-top:9px;max-width:42ch;min-height:40px}
+.voice-actions{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-top:15px}.voice-actions button{min-height:44px;border-radius:10px;padding:0 15px;font-size:12px;font-weight:600}.voice-main{background:#c9f5e5;color:#123f34;display:inline-flex;align-items:center;gap:8px;touch-action:manipulation}.voice-main svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8}.voice-stop,.voice-toggle{border:1px solid #405664;background:transparent;color:#d6e2eb}.voice-actions button:disabled{opacity:.5;cursor:wait}.voice-actions button:focus-visible{outline:2px solid var(--cyan);outline-offset:4px}.voice-stop[hidden]{display:none}.voice-toggle[aria-pressed="false"]{color:#b2c3d0}
+#view-coach #stream{padding-top:18px}#view-coach .msg>div:not(.avatar){min-width:0;max-width:82%}#view-coach .bubble{max-width:100%}.voice-stage[data-state="listening"] .voice-main{background:#f4c97c;color:#36240a}
+@media(max-width:1100px){.voice-stage{gap:12px;padding:20px 24px;grid-template-columns:minmax(170px,.8fr) minmax(230px,1.2fr)}.voice-visual{height:150px}.voice-visual svg{height:150px}}
+@media(max-width:760px){.voice-stage{padding:12px 16px 15px;grid-template-columns:100px minmax(0,1fr);gap:12px}.voice-visual{height:120px}.voice-visual svg{width:100%;height:120px;max-width:none}.voice-copy h2{font-size:21px}.voice-state{font-size:11px;margin-bottom:5px}.voice-copy p{font-size:11px;margin-top:6px;min-height:0}.voice-actions{gap:7px;margin-top:11px}.voice-actions button{font-size:11px;padding:0 10px;min-height:44px}.voice-toggle{flex-basis:auto}#view-coach #stream{padding-top:14px}}
+@media(max-height:640px){.voice-stage{padding-top:8px;padding-bottom:8px}.voice-visual{height:90px}.voice-copy p{display:none}}
+@media(prefers-reduced-motion:reduce){.voice-bar{transition:none}#view-coach .msg,#view-coach .dots i{animation:none}#view-coach #stream{scroll-behavior:auto}}
+
+
+.voice-settings{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:12px;color:#c4d5df;font-size:12px}.voice-settings label{display:inline-flex;align-items:center;gap:7px}.voice-settings select,.voice-settings button{min-height:44px;border:1px solid #526a78;border-radius:9px;background:#152d3b;color:#e3eef3;padding:0 10px;font:inherit}.voice-settings select{max-width:190px}.voice-settings :focus-visible{outline:2px solid var(--cyan);outline-offset:3px}.voice-source{flex-basis:100%;color:#c4d5df;font-size:11px}.ride-save{margin-top:16px;color:var(--text);font-size:13px;line-height:1.7}.ride-save button,.history-retry,.history-review{min-height:44px;padding:0 12px;margin:8px 8px 0 0;border:1px solid #526a78;border-radius:9px;background:#193848;color:#e3eef3;font:inherit}.ride-save button[hidden]{display:none}
+@media(max-width:760px){.voice-stage{grid-template-columns:64px minmax(0,1fr);gap:8px}.voice-settings{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;margin-top:8px}.voice-settings label{font-size:0;min-width:0}.voice-settings select{font-size:11px;width:100%;max-width:none;padding:0 6px}.voice-settings button{font-size:11px;padding:0 8px}.voice-source{grid-column:1 / -1}.voice-actions{margin-top:8px;gap:6px}.voice-actions button{padding:0 8px}}
+</style>
 </head>
 <body>
-<header>
-  <div class="orb"></div>
-  <div class="brand">MARK<small>你的运动陪伴智能体</small></div>
-  <div id="status"><span class="dot" id="status-dot"></span><span id="status-text">在线</span></div>
-  <a id="legacy" href="/ride">旧版工作台</a>
-</header>
-<div id="livestrip" hidden>
-  <div class="ls-cell"><div class="ls-v"><span id="ls-speed">--</span><em>km/h</em></div><div class="ls-l">速度</div></div>
-  <div class="ls-cell"><div class="ls-v"><span id="ls-hr">--</span><em>bpm</em></div><div class="ls-l">心率</div></div>
-  <div class="ls-cell"><div class="ls-v"><span id="ls-dist">--</span><em>km</em></div><div class="ls-l">距离</div></div>
-  <div class="ls-cell"><div class="ls-v"><span id="ls-time">--</span><em>min</em></div><div class="ls-l">时长</div></div>
-  <button id="ls-end">结束</button>
-</div>
-<main id="stream"><div class="wrap" id="stream-inner"></div></main>
-<div id="chips"><div class="wrap" id="chips-inner"></div></div>
-<footer><div class="wrap">
-  <button class="roundbtn" id="mic" title="按住说话">
-    <svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12h-2z"/></svg>
-  </button>
-  <textarea id="input" rows="1" placeholder="和 Mark 说点什么…"></textarea>
-  <button class="roundbtn" id="send" title="发送">
-    <svg viewBox="0 0 24 24"><path d="M3 20v-6l9-2-9-2V4l19 8z"/></svg>
-  </button>
-</div></footer>
+<div class="app">
+<aside class="side"><div class="brand-row"><div class="orb"></div><div class="brand">MARK<small>运动智能陪伴中枢</small></div></div><div class="nav-label">工作台</div><nav class="nav" aria-label="主导航">
+<button class="active" data-view="dashboard"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>今天</button><button data-view="ride"><svg viewBox="0 0 24 24"><circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="M6 17l4-8h4l4 8M10 9l-2-3h4l2 3M10 12h5"/></svg>开始运动</button><button data-view="coach"><svg viewBox="0 0 24 24"><path d="M5 5h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-4 3v-5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/><path d="M7 10h10M7 14h6"/></svg>和 Mark 对话</button><button data-view="history"><svg viewBox="0 0 24 24"><path d="M4 5h16v15H4z"/><path d="M8 3v4M16 3v4M8 11h8M8 15h5"/></svg>运动记录</button><button data-view="devices"><svg viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="3"/><path d="M10 6h4M10 18h4"/></svg>设备与能力</button></nav><div class="side-spacer"></div><div class="service-card"><div class="service-title"><span>Mark 服务</span><span class="service-dot"></span></div><p>语音输入、播报与运动上下文已准备<br>设备能力按真实连接状态展示</p></div><div class="side-foot"><a id="legacy" href="/ride">打开旧版工作台</a></div></aside>
+<main class="main"><header class="top"><button class="mobile-menu" id="mobile-menu" aria-label="打开导航"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><div class="heading"><div class="kicker" id="page-kicker">MARK / TODAY</div><h1 id="page-title">今天的状态</h1></div><div class="top-actions"><div id="status" class="status"><span class="dot" id="status-dot"></span><span id="status-text">在线</span></div><button class="top-icon" data-view="devices" title="设备"><svg viewBox="0 0 24 24"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/><circle cx="12" cy="12" r="4"/></svg></button></div></header>
+<div id="livestrip" hidden><div class="ls-cell"><div class="ls-v"><span id="ls-speed">--</span><em>km/h</em></div><div class="ls-l">速度</div></div><div class="ls-cell"><div class="ls-v"><span id="ls-hr">--</span><em>bpm</em></div><div class="ls-l">心率</div></div><div class="ls-cell"><div class="ls-v"><span id="ls-dist">--</span><em>km</em></div><div class="ls-l">距离</div></div><div class="ls-cell"><div class="ls-v"><span id="ls-time">--</span><em>min</em></div><div class="ls-l">时长</div></div><button id="ls-end" class="ls-end">结束</button></div>
+<section class="view active" id="view-dashboard">
+<div class="inner home-inner">
+  <div class="home-welcome"><div><h2 id="home-greeting">今天，去外面走走。</h2><p>少一点看屏幕，多一点在路上。</p></div><time id="home-date"></time></div>
+  <div class="home-stage">
+    <div class="home-hero">
+      <div class="home-hero-copy"><h2 id="dash-greeting">你尽管出发。<br>Mark 陪你一路。</h2><p id="dash-copy">记录每次骑行，听你随时发问。<br>从出发到复盘，让运动多一个搭档。</p>
+        <div class="hero-actions"><button id="start-ride-primary" class="primary"><svg class="button-icon" viewBox="0 0 24 24"><path d="m9 5 10 7-10 7Z"/></svg>开始运动</button><button id="question-primary" class="ghost">问 Mark<svg class="button-icon" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></svg></button></div>
+        <div class="home-hero-note"><svg viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3ZM5 10v2a7 7 0 0 0 14 0v-2M12 19v3"/></svg>用声音陪伴，不必一直盯着屏幕</div>
+      </div>
+      <div class="home-art" aria-hidden="true"><div class="home-art-type">GO<br>OUTSIDE.</div>
+        <svg class="home-track" viewBox="0 0 320 340"><path class="track-under" d="M98 65h101c65 0 85 68 43 105l-94 82c-33 29-16 64 19 64h93"/><path class="track-line" d="M98 65h101c65 0 85 68 43 105l-94 82c-33 29-16 64 19 64h93"/><circle class="track-start" cx="98" cy="65" r="10"/><circle class="track-end" cx="260" cy="316" r="8"/><path d="m218 205 17-14-2 18-15-4Z" fill="currentColor" stroke="none"/></svg>
+        <span class="home-art-caption">YOUR PACE. YOUR WAY.</span>
+      </div>
+    </div>
+    <aside class="home-companion"><div class="home-companion-top"><span class="home-avatar">m<span>·</span></span><span class="tiny-tag" id="companion-state">待命</span></div><h3>随时，说一声。</h3><p class="home-companion-desc">路线、天气，或者今天的想法。</p><div class="home-message"><span>MARK</span><p id="home-mark-preview">想去哪里？或者先聊聊今天的运动计划。</p></div><div class="home-companion-bottom"><div class="home-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><button class="home-chat-link" data-view="coach">开始对话<svg viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></svg></button></div></aside>
+  </div>
+  <div class="section-head"><h3>出发前，看一眼</h3><button class="home-text-link" data-view="history">运动记录<svg viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></svg></button></div>
+  <div class="home-overview">
+    <article class="home-week"><div class="home-card-heading"><h4>这一周，动起来的时间</h4><svg viewBox="0 0 24 24"><path d="M4 17 9 12l4 3 7-10M15 5h5v5"/></svg></div><div class="home-week-stats"><div class="home-main-stat"><strong id="dash-week-min">--<small>分钟</small></strong></div><div><strong id="dash-week-count">--</strong><span>运动次数</span></div><div><strong id="dash-week-km">--</strong><span>累计距离</span></div></div><p class="panel-note" id="dash-week-note">正在读取真实运动记录…</p></article>
+    <article class="home-weather"><div class="home-card-heading"><h4>出行天气</h4><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M5 19l1.5-1.5M17.5 6.5 19 5"/></svg></div><div class="weather-line"><div class="weather-temp" id="dash-temp">--°</div><div class="weather-copy"><strong id="dash-weather">等待定位</strong><span id="dash-city">开始运动后按授权获取</span></div></div><p class="panel-note" id="dash-weather-note">没有位置数据时，不猜测当地天气。</p></article>
+    <article class="home-readiness"><div class="home-card-heading"><h4>出发小提示</h4><svg viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M8 14a6 6 0 1 1 8 0l-1 2H9Z"/></svg></div><strong id="next-action">先热身 5 分钟</strong><p>检查车况，带好饮水。<br>骑行中请优先留意真实路况。</p><button class="home-text-link" data-view="devices">查看设备与能力<svg viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></svg></button></article>
+  </div>
+  <div class="section-head home-quick-heading"><h3>交给 Mark</h3><span>从一个具体问题开始</span></div>
+  <div class="home-commands">
+    <button class="home-command" data-prompt="今天适合出去骑车吗？"><svg class="home-command-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19"/></svg><span><strong>今天适合骑车吗？</strong><small>先看看天气，再决定出发</small></span><svg class="home-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></svg></button>
+    <button class="home-command" data-prompt="给我做个本周复盘"><svg class="home-command-icon" viewBox="0 0 24 24"><path d="M4 19V5M4 19h16M8 15v-4M12 15V7M16 15v-2M20 15V9"/></svg><span><strong>这周骑得怎么样？</strong><small>从真实记录里，找到下一步</small></span><svg class="home-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></svg></button>
+    <button class="home-command" data-prompt="帮我规划一条骑行路线"><svg class="home-command-icon" viewBox="0 0 24 24"><path d="M5 6h9a4 4 0 0 1 0 8H9a4 4 0 0 0 0 8h10M5 3v6M16 19l3 3-3 3" transform="translate(0 -2)"/></svg><span><strong>下一程，去哪里？</strong><small>说出目的地，让 Mark 帮你规划</small></span><svg class="home-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></svg></button>
+  </div>
+  <div class="home-footer"><span>MARK · 少看屏幕，多感受生活。</span><span>按自己的节奏出发</span></div>
+</div></section>
+<section class="view" id="view-coach"><div class="coach-layout"><div class="coach-main"><section class="voice-stage" id="voice-stage" data-state="idle" aria-label="Mark 语音助手"><div class="voice-visual" aria-hidden="true"><svg viewBox="0 0 360 180"><ellipse class="voice-field" cx="180" cy="90" rx="163" ry="62"/><ellipse class="voice-field" cx="180" cy="90" rx="140" ry="44"/><rect class="voice-bar" x="36" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="44" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="52" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="60" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="68" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="76" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="84" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="92" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="100" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="108" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="116" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="124" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="132" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="140" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="148" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="156" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="164" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="172" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="180" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="188" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="196" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="204" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="212" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="220" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="228" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="236" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="244" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="252" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="260" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="268" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="276" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="284" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="292" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="300" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="308" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/><rect class="voice-bar" x="316" y="-5" width="4" height="10" rx="2" transform="translate(0 90)"/></svg></div><div class="voice-copy"><div class="voice-state"><span class="voice-dot"></span><span id="voice-label" role="status" aria-live="polite">待命 · 麦克风未开启</span></div><h2 id="voice-title">说吧，我在。</h2><p id="voice-detail">点击开始说话，再点一次结束。也可以在下方打字。</p><div class="voice-actions"><button class="voice-main" id="voice-main" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11v1a7 7 0 0 0 14 0v-1M12 19v3"/></svg><span id="voice-main-text">开始说话</span></button><button class="voice-stop" id="voice-stop" type="button" hidden>停止播报</button><button class="voice-toggle" id="voice-toggle" type="button" aria-pressed="true">朗读开启</button></div><div class="voice-settings"><label for="voice-choice">声音<select id="voice-choice"><option value="Ethan">Mark · 男声</option><option value="Cherry">Cherry · 女声</option><option value="Serena">Serena · 女声</option></select></label><button type="button" id="voice-preview">试听声音</button><span class="voice-source" id="voice-source" role="status">优先使用云端音色；不可用时会标明系统声音。</span></div></div></section><main id="stream"><div class="wrap" id="stream-inner"></div></main><div id="chips"><div class="wrap" id="chips-inner"></div></div><footer><div class="wrap"><button class="roundbtn" id="mic" title="按住说话"><svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12h-2z"/></svg></button><textarea id="input" rows="1" placeholder="和 Mark 说点什么…"></textarea><button class="roundbtn" id="send" title="发送"><svg viewBox="0 0 24 24"><path d="M3 20v-6l9-2-9-2V4l19 8z"/></svg></button></div></footer></div><aside class="coach-side"><div class="eyebrow">LIVE CONTEXT</div><div class="context-card"><h4>当前能力</h4><div class="context-pill"><i></i><span id="context-mode">日常陪伴</span></div><p style="margin-top:9px">Mark 不会假装连接不存在的设备；每一条能力都以当前可验证的服务为准。</p></div><div class="context-card"><h4>最近一条建议</h4><p id="latest-mark">还没有新的运动提醒，先问我一个问题吧。</p></div><div class="context-card"><h4>建议问法</h4><ul><li>今天适合出去骑车吗？</li><li>我这周练了多少？</li><li>导航去附近的公园</li></ul></div></aside></div></section>
+<section class="view" id="view-ride"><div class="ride-stage"><div class="ride-head"><div><div class="eyebrow">MARK / LIVE RIDE</div><h2>运动中，少看屏幕。</h2><p>Mark 负责关注定位、节奏、路况和必要提醒。</p></div><span class="ride-badge" id="ride-live-state">尚未开始</span></div><div class="ride-card"><div class="ride-metrics"><div class="ride-metric"><strong id="ride-speed">--</strong><span>当前速度 km/h</span></div><div class="ride-metric"><strong id="ride-hr">--</strong><span>心率 bpm</span></div><div class="ride-metric"><strong id="ride-dist">0.0</strong><span>本次距离 km</span></div><div class="ride-metric"><strong id="ride-time">0</strong><span>本次时长 min</span></div></div><div class="ride-coach"><div class="avatar"></div><div class="ride-coach-copy"><strong id="ride-last-message">准备好后，点击开始运动。</strong><span>语音提醒会优先处理安全和路线信息</span></div></div><div class="ride-actions"><button id="ride-start" class="primary">开始运动</button><button id="ride-end" class="danger">结束运动</button><button id="ride-open-chat" class="ghost">查看对话</button></div><div class="ride-save"><p id="ride-save-status" role="status">结束后自动保存记录；未测得的距离和心率保持为空。记录保存在此设备，尚未云同步。</p><button type="button" id="ride-save-retry" hidden>重试保存</button><button type="button" id="ride-save-export" hidden>下载记录备份</button><button type="button" id="ride-draft-discard" hidden>放弃损坏草稿</button></div><div class="preflight"><strong>开始前检查</strong>定位权限可用后会记录距离；语音播报是加分项，文字状态始终保留。</div></div></div></section>
+<section class="view" id="view-history"><div class="inner"><div class="eyebrow">MARK / HISTORY</div><h2 style="font-size:30px;margin-top:8px">运动记录</h2><p class="muted" style="margin-top:6px">记录保存在本机；下方统计基于最近 20 条真实记录。</p><div class="history-grid"><div class="panel"><h4>已载入记录</h4><div class="panel-value" id="history-total">--<small>次</small></div><div class="panel-note">最近 20 条真实记录</div></div><div class="panel"><h4>本周次数</h4><div class="panel-value" id="history-count">--<small>次</small></div><div class="panel-note">按自然周统计</div></div><div class="panel"><h4>本周时长</h4><div class="panel-value" id="history-min">--<small>分钟</small></div><div class="panel-note">打开页面后自动读取</div></div></div><div class="panel" style="margin-top:16px"><div class="panel-top"><h4>最近活动</h4><span class="muted" style="font-size:11px">来自 Mark 运动记录</span></div><div id="history-list" class="history-list"><div class="history-item"><div><strong>正在读取记录</strong><span>不会伪造一条不存在的运动</span></div><div class="history-value">--</div></div></div></div></div></section>
+<section class="view" id="view-devices"><div class="inner"><div class="eyebrow">MARK / DEVICE ECOSYSTEM</div><h2 style="font-size:30px;margin-top:8px">设备与能力</h2><p class="muted" style="margin-top:6px;max-width:680px">先把手机端的核心体验做实，再按真实供应链和连接协议接入眼镜、耳机、戒指，不用虚构“已连接”。</p><div class="device-grid"><div class="panel device-card"><div class="device-glyph"><svg viewBox="0 0 24 24"><path d="M7 3h10v18H7zM10 6h4M10 18h4"/></svg></div><h3>手机端 Mark</h3><p>对话、语音、天气、路线、实时运动和复盘已作为当前主能力。</p><span class="device-state">● 已就绪</span></div><div class="panel device-card"><div class="device-glyph"><svg viewBox="0 0 24 24"><path d="M4 10h16v4H4zM7 10V7a5 5 0 0 1 10 0v3M7 14v3a5 5 0 0 0 10 0v-3"/></svg></div><h3>AI 眼镜</h3><p>规划能力：免手交互、主动提醒、路线与环境上下文。接入前必须完成供应商验证。</p><span class="device-state" style="color:var(--amber)">○ 规划中</span></div><div class="panel device-card"><div class="device-glyph"><svg viewBox="0 0 24 24"><path d="M4 9a8 8 0 0 1 16 0v6a8 8 0 0 1-16 0zM8 12h8"/></svg></div><h3>耳机 / 戒指</h3><p>规划能力：更低注意力交互、按压/手势输入、运动状态补充。暂不展示虚假连接状态。</p><span class="device-state" style="color:var(--amber)">○ 规划中</span></div></div></div></section>
+</main></div>
+<nav class="mobile-nav"><button class="active" data-view="dashboard"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>今天</button><button data-view="ride"><svg viewBox="0 0 24 24"><circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="M6 17l4-8h4l4 8M10 9l-2-3h4l2 3M10 12h5"/></svg>运动</button><button data-view="coach"><svg viewBox="0 0 24 24"><path d="M5 5h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-4 3v-5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/><path d="M7 10h10M7 14h6"/></svg>Mark</button><button data-view="history"><svg viewBox="0 0 24 24"><path d="M4 5h16v15H4z"/><path d="M8 3v4M16 3v4M8 11h8M8 15h5"/></svg>记录</button><button data-view="devices"><svg viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="3"/><path d="M10 6h4M10 18h4"/></svg>设备</button></nav>
 <script>
+
+
+
 'use strict';
 /* ================= 基础 ================= */
 const $=id=>document.getElementById(id);
+const VIEW_META={dashboard:['MARK / TODAY','今天的状态'],coach:['MARK / CONVERSATION','和 Mark 对话'],ride:['MARK / LIVE RIDE','实时运动'],history:['MARK / HISTORY','运动记录'],devices:['MARK / DEVICE ECOSYSTEM','设备与能力']};
+let activeView='dashboard';
+function setView(view){if(!VIEW_META[view])view='dashboard';activeView=view;document.querySelectorAll('.view').forEach(el=>el.classList.toggle('active',el.id==='view-'+view));document.querySelectorAll('[data-view]').forEach(el=>el.classList.toggle('active',el.getAttribute('data-view')===view));const meta=VIEW_META[view];if($('page-kicker'))$('page-kicker').textContent=meta[0];if($('page-title'))$('page-title').textContent=meta[1];if(view==='history')loadHistory();if(view==='coach')setTimeout(scrollDown,0);renderVoice();}
+function updateRidePanel(){const state=$('ride-live-state');if(state)state.textContent=riding?'进行中':'尚未开始';const msg=$('ride-last-message');if(msg&&riding)msg.textContent='Mark 正在关注你的定位和运动状态。';const mode=$('context-mode');if(mode)mode.textContent=riding?'实时运动陪伴':'日常陪伴';const companion=$('companion-state');if(companion)companion.textContent=riding?'陪伴中':'待命';const next=$('next-action');if(next)next.textContent=riding?'保持节奏，少看屏幕':'先热身 5 分钟';}
+function updateDashboard(){updateRidePanel();if(lastWeather){if($('dash-temp'))$('dash-temp').textContent=String(lastWeather.day_temp??'--')+'°';if($('dash-weather'))$('dash-weather').textContent=String(lastWeather.day_weather||'天气已更新');if($('dash-city'))$('dash-city').textContent=String(lastWeather.city||'当前位置');if($('dash-weather-note'))$('dash-weather-note').textContent='白天 '+String(lastWeather.day_weather||'--')+' · 夜间 '+String(lastWeather.night_weather||'--');}}
+async function loadHistory(){const list=$('history-list');if(!list||list.dataset.loading==='1'||list.dataset.loaded==='1')return;list.dataset.loading='1';try{const sessions=await fetchSessions();const stats=localStats(sessions);if($('history-total'))$('history-total').firstChild.textContent=String(stats.total);if($('history-count'))$('history-count').firstChild.textContent=String(stats.weekCount);if($('history-min'))$('history-min').firstChild.textContent=String(stats.weekMin);if($('dash-week-min'))$('dash-week-min').firstChild.textContent=String(stats.weekMin);if($('dash-week-note'))$('dash-week-note').textContent=stats.weekCount?'按最近 20 条真实记录统计，不含模拟数据':'本周还没有运动记录，从第一次出发开始。';if($('dash-week-count'))$('dash-week-count').textContent=String(stats.weekCount);if($('dash-week-km'))$('dash-week-km').textContent=stats.weekKm===null?'--':String(stats.weekKm)+' km';list.textContent='';const real=sessions.filter(m=>m&&m.source!=='simulated'&&typeof m.started_at==='string').slice(0,8);if(!real.length){const item=node('div','history-item');const copy=node('div');copy.appendChild(node('strong','', '还没有真实运动记录'));copy.appendChild(node('span','', '开始一次运动后，Mark 会把它沉淀在这里。'));item.appendChild(copy);item.appendChild(node('div','history-value','--'));list.appendChild(item);}for(const session of real){const summary=session.summary||{};const item=node('div','history-item');const copy=node('div');const date=new Date(session.started_at);copy.appendChild(node('strong','',Number.isNaN(date.getTime())?'最近一次运动':date.toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})));copy.appendChild(node('span','',String(summary.activity||session.activity||'运动')+' · '+Math.round(Number(summary.duration_s)||0)+' 秒'));const review=node('button','history-review','回顾这次运动');review.onclick=()=>{setView('coach');$('input').value='这次运动有哪些值得回顾的？';send(session.id);};copy.appendChild(review);item.appendChild(copy);item.appendChild(node('div','history-value',typeof summary.distance_m==='number'?(summary.distance_m/1000).toFixed(1)+' km':'距离未记录'));list.appendChild(item);}list.dataset.loaded='1';}catch(_){if($('dash-week-note'))$('dash-week-note').textContent='记录读取失败，请到运动记录重试。';list.textContent='';list.appendChild(node('p','','记录暂时无法读取，不代表没有记录。'));const retry=node('button','history-retry','重新加载记录');retry.onclick=()=>loadHistory();list.appendChild(retry);}finally{list.dataset.loading='0';}}
+function askFromDashboard(text){setView('coach');$('input').value=text;autogrow();send();}
+document.querySelectorAll('[data-view]').forEach(el=>el.addEventListener('click',()=>setView(el.getAttribute('data-view'))));document.querySelectorAll('[data-prompt]').forEach(el=>el.addEventListener('click',()=>askFromDashboard(el.getAttribute('data-prompt'))));$('start-ride-primary')?.addEventListener('click',()=>{startRide();setView('ride');});$('ride-start')?.addEventListener('click',()=>{startRide();setView('ride');});$('ride-end')?.addEventListener('click',()=>{endRide();setView('coach');});$('ride-open-chat')?.addEventListener('click',()=>setView('coach'));$('question-primary')?.addEventListener('click',()=>setView('coach'));$('mobile-menu')?.addEventListener('click',()=>setView('dashboard'));
+
 const stream=$('stream-inner');
 const TZ=-new Date().getTimezoneOffset();
 const CONV_ID='conv-'+Math.random().toString(36).slice(2,10)+Date.now().toString(36);
-let token=null, ttsAvailable=true, asrAvailable=false;
+let token=null, tokenPromise=null, ttsAvailable=true, asrAvailable=false;
+function fetchWithTimeout(url,options,timeoutMs=10000){
+  const opts=Object.assign({},options||{});
+  const controller=new AbortController();
+  const externalSignal=opts.signal;
+  if(externalSignal){
+    if(externalSignal.aborted)controller.abort();
+    else externalSignal.addEventListener('abort',()=>controller.abort(),{once:true});
+  }
+  opts.signal=controller.signal;
+  const timer=setTimeout(()=>controller.abort(),timeoutMs);
+  return fetch(url,opts).finally(()=>clearTimeout(timer));
+}
 async function getToken(){
   if(token)return token;
-  const r=await fetch('/api/coach/config',{cache:'no-store'});
-  const d=await r.json();
-  token=d.token;ttsAvailable=!!d.tts_available;asrAvailable=!!d.asr_available;
-  return token;
+  if(tokenPromise)return tokenPromise;
+  tokenPromise=(async()=>{
+    const r=await fetchWithTimeout('/api/coach/config',{cache:'no-store'},8000);
+    const d=await r.json();
+    if(!r.ok||!d||typeof d.token!=='string'||!d.token)throw new Error('config');
+    token=d.token;ttsAvailable=!!d.tts_available;asrAvailable=!!d.asr_available;
+    return token;
+  })();
+  try{return await tokenPromise;}finally{tokenPromise=null;}
 }
 function scrollDown(){const s=$('stream');s.scrollTop=s.scrollHeight;}
 /* 统一用 DOM 构建，不拼接 HTML 串：模型文本与外部数据只走 textContent。 */
 function node(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined&&text!==null)e.textContent=String(text);return e;}
 /* ================= 语音播报 ================= */
-let voiceSeq=0,currentAudio=null;
-function speak(text){
-  if(!text)return;
-  const seq=++voiceSeq;
-  if(currentAudio){try{currentAudio.pause();}catch(_){/* */}}
-  if('speechSynthesis' in window){
-    window.speechSynthesis.cancel();
-    const u=new SpeechSynthesisUtterance(text);u.lang='zh-CN';u.rate=1.08;u.pitch=1.0;
-    window.speechSynthesis.speak(u);
-    return;
+/* Voice state is explicit; animated bars are input level or a playback indicator, never fake sensor data. */
+function preferenceRead(key,fallback){try{return localStorage.getItem(key)||fallback;}catch(_){return fallback;}}
+function preferenceWrite(key,value){try{localStorage.setItem(key,value);return true;}catch(_){return false;}}
+let voiceChoice=preferenceRead('mark.voice','Ethan');
+if(!['Ethan','Cherry','Serena'].includes(voiceChoice))voiceChoice='Ethan';
+let voiceState='idle',voiceCapture='idle',voiceOutput='idle',voiceNotice='',voiceLevel=0,voiceAuto=preferenceRead('mark.voiceAuto','true')!=='false',voiceFrame=0,voiceFrameAt=0,micPending=false,micLimit=null;
+const voiceBars=Array.from(document.querySelectorAll('.voice-bar'));
+const voiceReduced=matchMedia('(prefers-reduced-motion: reduce)');
+const VOICE_COPY={idle:['待命 · 麦克风未开启','说吧，我在。','点击开始说话，再点一次结束。也可以在下方打字。'],permission:['等待麦克风','允许我听见你。','请在浏览器中允许麦克风；没有授权时不会录音。'],listening:['正在聆听','我在听。','说完点“结束并发送”。最长录音 30 秒。'],transcribing:['正在识别','把声音变成文字。','录音已结束，正在识别你刚才说的话。'],thinking:['正在思考','让我想一想。','正在处理你的问题，回答会保留在下方记录中。'],preparing:['准备语音','正在准备声音。','文字答案已保留；只有声音真正开始播放才显示播报中。'],speaking:['正在播报','听我说。','下方是完整回答。点击开始说话可以打断播报。'],error:['需要处理','换一种方式继续。','可以重试语音，或在下方输入文字。']};
+function voicePaint(time){
+  voiceFrame=0;
+  if(time-voiceFrameAt>40){
+    voiceFrameAt=time;
+    voiceBars.forEach((bar,i)=>{
+      const envelope=Math.sin((i+1)/37*Math.PI);
+      let height=5+envelope*5;
+      if(!voiceReduced.matches){
+        if(voiceState==='listening')height=6+voiceLevel*95*envelope*(.65+.35*Math.sin(i*.7+time*.009));
+        else if(voiceState==='speaking')height=9+envelope*(12+19*(.5+.5*Math.sin(time*.005+i*.5)));
+        else if(['thinking','transcribing','preparing'].includes(voiceState))height=6+20*Math.pow(.5+.5*Math.sin(i*.23-time*.004),5);
+      }else if(voiceState!=='idle')height=8+envelope*15;
+      bar.setAttribute('transform','translate(0 90) scale(1 '+(height/10).toFixed(2)+')');
+    });
   }
-  if(!ttsAvailable||!token)return;
-  (async()=>{
-    try{
-      const r=await Promise.race([
-        fetch('/api/coach/ride/speak',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify({text})}),
-        new Promise((_,rej)=>setTimeout(()=>rej(new Error('t')),8000))]);
-      const d=await r.json().catch(()=>null);
-      if(seq!==voiceSeq)return;
-      if(d&&d.tts_status==='not_configured')ttsAvailable=false;
-      if(!r.ok||!d||d.tts_status!=='ok'||typeof d.audio_url!=='string')throw new Error('tts');
-      const a=new Audio(d.audio_url);currentAudio=a;
-      a.onended=a.onerror=()=>{if(currentAudio===a)currentAudio=null;};
-      await a.play();
-    }catch(_){/* 静默：语音是加分项，文字永远在 */}
-  })();
+  if(activeView==='coach'&&!document.hidden&&!voiceReduced.matches&&voiceState!=='idle'&&voiceState!=='error')voiceFrame=requestAnimationFrame(voicePaint);
+}
+function renderVoice(){
+  const next=voiceCapture!=='idle'?voiceCapture:thinkingEl?'thinking':voiceOutput!=='idle'?voiceOutput:voiceNotice?'error':'idle';
+  const copy=VOICE_COPY[next];voiceState=next;
+  $('voice-stage').dataset.state=next;$('voice-label').textContent=copy[0];$('voice-title').textContent=copy[1];
+  $('voice-detail').textContent=next==='error'?voiceNotice:copy[2];
+  const busy=['permission','transcribing','thinking'].includes(next);
+  $('voice-main').disabled=busy;$('voice-main').setAttribute('aria-pressed',String(next==='listening'));
+  $('voice-main-text').textContent=next==='listening'?'结束并发送':busy?'请稍候':'开始说话';
+  $('voice-stop').hidden=voiceOutput==='idle';
+  if(voiceFrame)cancelAnimationFrame(voiceFrame);voiceFrameAt=0;voicePaint(performance.now());
+}
+function voiceError(text){voiceNotice=text;renderVoice();}
+document.addEventListener('visibilitychange',renderVoice);
+voiceReduced.addEventListener('change',renderVoice);
+let speechQueue=[],speechPlaying=false,currentAudio=null,currentSpeech=null,speechGeneration=0,speechWaitCancel=null;
+function speechPriority(opts){return opts&&Number.isFinite(opts.priority)?opts.priority:30;}
+function cancelSpeech(tag){
+  if((!tag||(currentSpeech&&currentSpeech.tag===tag))&&speechWaitCancel)speechWaitCancel();
+  if(tag){
+    speechQueue=speechQueue.filter(item=>item.tag!==tag);
+    if(currentSpeech&&currentSpeech.tag===tag){
+      speechGeneration++;
+      try{if(currentAudio)currentAudio.pause();}catch(_){/* */}
+      currentAudio=null;
+      if('speechSynthesis' in window)window.speechSynthesis.cancel();
+      currentSpeech=null;speechPlaying=false;
+    }
+  }else{
+    speechGeneration++;
+    speechQueue=[];
+    try{if(currentAudio)currentAudio.pause();}catch(_){/* */}
+    currentAudio=null;currentSpeech=null;speechPlaying=false;
+    if('speechSynthesis' in window)window.speechSynthesis.cancel();
+  }
+  if(!speechPlaying)voiceOutput='idle';renderVoice();
+  if(speechQueue.length)setTimeout(pumpSpeech,0);
+}
+function speak(text,opts){
+  text=String(text||'').trim();
+  if(!text)return;
+  opts=opts||{};voiceNotice='';
+  const priority=speechPriority(opts);
+  if(priority>=90)cancelSpeech();
+  const item={text,tag:opts.tag||'general',priority,generation:speechGeneration};
+  const duplicate=(currentSpeech&&currentSpeech.text===text)||speechQueue.some(q=>q.text===text);
+  if(duplicate)return;
+  speechQueue.push(item);
+  speechQueue.sort((a,b)=>b.priority-a.priority);
+  pumpSpeech();
+}
+function speechParts(text){
+  const clean=String(text).replace(/[\x00-\x1f\x7f]+/g,' ').replace(/[*#`]+/g,'').trim();
+  const parts=[];let rest=clean;
+  while(rest.length){let end=Math.min(240,rest.length);if(rest.length>end){const prefix=rest.slice(0,end);const match=prefix.match(/[。！？；，.!?;](?=[^。！？；，.!?;]*$)/);if(match&&match.index>60)end=match.index+1;if(/[\uD800-\uDBFF]/.test(rest[end-1]))end--;}
+    parts.push(rest.slice(0,end));rest=rest.slice(end).trim();}
+  return parts;
+}
+function waitForAudio(audio){
+  return new Promise((resolve,reject)=>{
+    let done=false;let timer;
+    const finish=(error)=>{if(done)return;done=true;clearTimeout(timer);audio.onended=audio.onerror=null;if(speechWaitCancel===cancel)speechWaitCancel=null;error?reject(error):resolve();};
+    const cancel=()=>finish();speechWaitCancel=cancel;
+    audio.onended=()=>finish();audio.onerror=()=>finish(new Error('audio'));
+    timer=setTimeout(()=>{audio.pause();finish(new Error('audio_timeout'));},120000);
+  });
+}
+function browserSpeech(text,generation){
+  if(!('speechSynthesis' in window))return Promise.reject(new Error('no_voice'));
+  $('voice-source').textContent='正在使用系统声音（云端未连接或播放受限），不是所选云端音色。';
+  return new Promise((resolve,reject)=>{
+    let done=false;let timer;
+    const finish=(error)=>{if(done)return;done=true;clearTimeout(timer);if(speechWaitCancel===cancel)speechWaitCancel=null;error?reject(error):resolve();};
+    const cancel=()=>finish();speechWaitCancel=cancel;
+    const u=new SpeechSynthesisUtterance(text);u.lang='zh-CN';u.rate=1.0;u.pitch=1.0;
+    const voices=typeof window.speechSynthesis.getVoices==='function'?window.speechSynthesis.getVoices():[];
+    u.voice=voices.find(v=>/^zh[-_]CN/i.test(v.lang)&&/Natural|Online|Xiaoxiao|Yunxi/i.test(v.name))||voices.find(v=>/^zh[-_]CN/i.test(v.lang))||null;
+    u.onstart=()=>{if(generation===speechGeneration){voiceOutput='speaking';renderVoice();}};
+    u.onend=()=>finish();u.onerror=()=>finish(new Error('system_voice'));
+    timer=setTimeout(()=>{window.speechSynthesis.cancel();finish(new Error('voice_timeout'));},Math.max(8000,text.length*500));
+    window.speechSynthesis.speak(u);
+  });
+}
+async function pumpSpeech(){
+  if(speechPlaying||!speechQueue.length)return;
+  const item=speechQueue.shift(),generation=item.generation;
+  if(generation!==speechGeneration){setTimeout(pumpSpeech,0);return;}
+  speechPlaying=true;currentSpeech=item;voiceOutput='preparing';renderVoice();
+  try{
+    let useCloud=ttsAvailable;
+    for(const part of speechParts(item.text)){
+      if(generation!==speechGeneration)return;
+      let audioStarted=false;
+      if(useCloud){
+        try{
+          const t=token||await getToken();
+          if(generation!==speechGeneration)return;
+          if(!ttsAvailable)throw new Error('not_configured');
+          const r=await fetchWithTimeout('/api/coach/ride/speak',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':t},body:JSON.stringify({text:part,voice:voiceChoice})},15000);
+          const d=await r.json().catch(()=>null);
+          if(d&&d.tts_status==='not_configured')ttsAvailable=false;
+          if(!r.ok||!d||d.tts_status!=='ok'||typeof d.audio_url!=='string')throw new Error('tts');
+          if(generation!==speechGeneration)return;
+          const a=new Audio(d.audio_url);currentAudio=a;
+          a.onplaying=()=>{if(generation===speechGeneration){audioStarted=true;voiceOutput='speaking';$('voice-source').textContent='云端自然音色 · '+voiceChoice;renderVoice();}};
+          // Install end/error handlers before play, including very short audio.
+          const finished=waitForAudio(a);finished.catch(()=>{});
+          try{await a.play();await finished;}catch(error){if(speechWaitCancel)speechWaitCancel();a.pause();throw error;}
+          currentAudio=null;
+          continue;
+        }catch(error){
+          if(generation!==speechGeneration)return;
+          if(audioStarted)throw error; // Never replay a line that was partly spoken.
+          useCloud=false;
+        }
+      }
+      if(generation!==speechGeneration)return;
+      await browserSpeech(part,generation);
+    }
+  }catch(_){if(generation===speechGeneration)voiceError('声音未能播放，文字答案已保留。可点击“听”重试。');}
+  finally{
+    if(currentSpeech===item)currentSpeech=null;
+    if(generation===speechGeneration){speechPlaying=false;currentAudio=null;voiceOutput='idle';renderVoice();pumpSpeech();}
+  }
 }
 /* ================= 消息渲染 ================= */
 const LANE_NAME={personal:'翻了你的记录',knowledge:'查了运动知识库',general:'自由聊',live:'看了实时数据',planner:'检索了历史'};
@@ -245,6 +363,7 @@ function addMsg(role,text,opts){
   }
   div.appendChild(col);
   stream.appendChild(div);
+  if(role==='mark'){if($('home-mark-preview'))$('home-mark-preview').textContent=String(text);if($('latest-mark'))$('latest-mark').textContent=String(text);if($('ride-last-message'))$('ride-last-message').textContent=String(text);}
   scrollDown();
   return div;
 }
@@ -267,13 +386,14 @@ function addThinking(labels){
   stream.appendChild(thinkingEl);
   let i=0;
   thinkingTimer=setInterval(()=>{i=(i+1)%labels.length;labelEl.textContent=labels[i];},1400);
+  voiceNotice='';renderVoice();
   $('status').classList.add('thinking');$('status-text').textContent='思考中';
   scrollDown();
 }
 function removeThinking(){
   if(thinkingTimer){clearInterval(thinkingTimer);thinkingTimer=null;}
   if(thinkingEl){thinkingEl.remove();thinkingEl=null;}
-  $('status').classList.remove('thinking');$('status-text').textContent='在线';
+  $('status').classList.remove('thinking');$('status-text').textContent='在线';renderVoice();
 }
 /* 卡片 */
 function addCard(title){
@@ -314,34 +434,37 @@ function routeCard(route,onGo){
   head.appendChild(node('span','km',(route.distance_m/1000).toFixed(1)+' km'));
   head.appendChild(node('span','min','约 '+Math.max(1,Math.round(route.duration_s/60))+' 分钟 · '+route.steps.length+' 个转向'));
   card.appendChild(head);
-  route.steps.slice(0,8).forEach((s,i)=>{
+  route.steps.forEach((s,i)=>{
     const step=node('div','step');
     step.appendChild(node('span','n',String(i+1)));
     step.appendChild(node('span','',s.instruction));
     step.appendChild(node('span','d',Math.round(s.distance_m)+'m'));
     card.appendChild(step);
   });
-  const go=node('button','go','开始导航');
+  card.appendChild(node('p','','这是出发前路线预览，不提供实时转弯、偏航或剩余距离导航。请使用地图应用导航。'));
+  const go=node('button','go','开始运动记录');
   go.onclick=onGo;
   card.appendChild(go);
 }
 /* ================= 上下文数据 ================= */
-let lastWeather=null;
+let lastWeather=null,weatherFetchedAt=0;
 async function ensureWeather(){
-  if(lastWeather)return lastWeather;
+  if(lastWeather&&Date.now()-weatherFetchedAt<600000)return lastWeather;
+  lastWeather=null;
   const pos=await new Promise((res,rej)=>navigator.geolocation.getCurrentPosition(res,rej,{timeout:4000,maximumAge:300000}));
   const c=pos&&pos.coords;if(!c)throw new Error('geo');
   const t=await getToken();
-  const r=await fetch('/api/coach/ride/weather',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':t},body:JSON.stringify({lat:c.latitude,lng:c.longitude})});
+  const r=await fetchWithTimeout('/api/coach/ride/weather',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':t},body:JSON.stringify({lat:c.latitude,lng:c.longitude})},10000);
   const d=await r.json().catch(()=>null);
-  if(r.ok&&d&&d.weather_status==='ok'&&d.weather){lastWeather=d.weather;return lastWeather;}
+  if(r.ok&&d&&d.weather_status==='ok'&&d.weather){lastWeather=d.weather;weatherFetchedAt=Date.now();updateDashboard();return lastWeather;}
   throw new Error('weather');
 }
 async function fetchSessions(){
   const t=await getToken();
-  const r=await fetch('/api/coach/ride/sessions',{cache:'no-store',headers:{'X-Coach-Token':t}});
+  const r=await fetchWithTimeout('/api/coach/ride/sessions',{cache:'no-store',headers:{'X-Coach-Token':t}},10000);
   const d=await r.json();
-  return Array.isArray(d.sessions)?d.sessions:[];
+  if(!r.ok||!d||!Array.isArray(d.sessions))throw new Error('history');
+  return d.sessions;
 }
 function localStats(sessions){
   const real=sessions.filter(m=>m&&m.source!=='simulated'&&typeof m.started_at==='string');
@@ -370,34 +493,32 @@ function thinkLabelsFor(q){
 /* ================= 导航状态 ================= */
 let navRoute=null;
 function navFacts(){
-  if(!navRoute)return null;
-  const step=navRoute.steps[navRoute.index];
-  const facts={destination:navRoute.destination,remaining_km:Math.round(navRoute.remaining_m/100)/10,
-    step_index:navRoute.index+1,step_count:navRoute.steps.length,off_route:false};
-  if(step){facts.next_instruction=step.instruction;facts.next_distance_m=Math.round(step.distance_m);}
-  return facts;
+  // Route planning is not live navigation. Do not send static distances as live facts.
+  return null;
 }
 /* ================= 发送主流程 ================= */
 let sending=false;
-async function send(){
+async function send(sessionId=null){
   const q=$('input').value.trim();
   if(!q||sending)return;
+  if(micPending||micSession||voiceCapture==='transcribing'){voiceError('请先结束当前录音，再发送文字。');return;}
   typeSeq++;
+  cancelSpeech();voiceNotice='';
   sending=true;$('input').value='';autogrow();
   addMsg('user',q);
   if(RE_STARTRIDE.test(q)&&!riding){sending=false;startRide();return;}
   if(RE_ENDRIDE.test(q)&&riding){sending=false;endRide();return;}
-  if(/复盘|周报/.test(q)&&!riding){
+  if(/周报|(?:本周|这周).*(?:复盘|总结)|(?:复盘|总结).*(?:本周|这周)|^(?:帮我)?复盘$/.test(q)&&!riding&&typeof sessionId!=='string'){
     addThinking(['正在汇总你这周的数据…','正在写复盘…']);
     try{
       const nowD=new Date(),dow=(nowD.getDay()+6)%7;
       const mon=new Date(nowD.getFullYear(),nowD.getMonth(),nowD.getDate()-dow);
       const ws=mon.getFullYear()+'-'+String(mon.getMonth()+1).padStart(2,'0')+'-'+String(mon.getDate()).padStart(2,'0');
       const t=await getToken();
-      const r=await fetch('/api/coach/ride/weekly',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':t},body:JSON.stringify({week_start:ws})});
+      const r=await fetchWithTimeout('/api/coach/ride/weekly',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':t},body:JSON.stringify({week_start:ws})},12000);
       const d=await r.json().catch(()=>null);
       removeThinking();
-      if(r.ok&&d&&typeof d.speech==='string'&&d.speech.trim()){addMsg('mark',d.speech,{lane:'personal'});speak(d.speech);}
+      if(r.ok&&d&&typeof d.speech==='string'&&d.speech.trim()){addMsg('mark',d.speech,{lane:'personal'});if(voiceAuto)speak(d.speech);}
       else addMsg('mark','这周还没有记录，去骑一圈我就能给你复盘了。');
     }catch(_){removeThinking();addMsg('mark','复盘服务暂时不可用，稍后再试。');}
     sending=false;refreshChips();return;
@@ -410,17 +531,19 @@ async function send(){
   }
   addThinking(thinkLabelsFor(q));
   try{
-    if(RE_WEATHER.test(q)&&!lastWeather){try{await ensureWeather();}catch(_){/* 没天气照样聊 */}}
+    if(RE_WEATHER.test(q)&&(!lastWeather||Date.now()-weatherFetchedAt>=600000)){try{await ensureWeather();}catch(_){/* 没天气照样聊 */}}
     const body={question:q,conv_id:CONV_ID,tz_offset_min:TZ};
-    if(riding&&liveId)body.live_id=liveId;
+    if(typeof sessionId!=='string'&&/(?:上次|最近一次|最近的一次|刚才这次)/.test(q)&&!riding){const sessions=await fetchSessions();const latest=sessions.find(m=>m&&m.source!=='simulated');if(latest)sessionId=latest.id;}
+    if(typeof sessionId==='string')body.session_id=sessionId;
+    else if(riding)body.live_id=liveFixReady()&&liveId?liveId:'mark-no-current-data';
     if(lastWeather)body.weather=lastWeather;
     const nf=navFacts();if(nf)body.nav=nf;
     const t=await getToken();
-    const r=await fetch('/api/coach/ride/chat',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':t},body:JSON.stringify(body)});
+    const r=await fetchWithTimeout('/api/coach/ride/chat',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':t},body:JSON.stringify(body)},15000);
     const d=await r.json().catch(()=>null);
     removeThinking();
     if(r.ok&&d&&d.speech_status==='ok'&&typeof d.speech==='string'&&d.speech.trim()){
-      addMsg('mark',d.speech,{lane:d.lane});
+      addMsg('mark',d.speech,{lane:d.lane});if(voiceAuto)speak(d.speech);
       if(RE_WEATHER.test(q)&&lastWeather)weatherCard(lastWeather);
       if(RE_RECORD.test(q)){try{statsCard(localStats(await fetchSessions()));}catch(_){/* 卡片是加分项 */}}
     }else{
@@ -428,7 +551,7 @@ async function send(){
     }
   }catch(_){
     removeThinking();
-    addMsg('mark','网络好像断了，我先缓缓，你再说一次？');
+    addMsg('mark','网络好像断了，我先缓缓，你再说一次？');voiceError('网络请求未完成，请重试，或稍后再问。');
   }
   sending=false;refreshChips();
 }
@@ -437,90 +560,215 @@ async function planRoute(dest){
   const pos=await new Promise((res,rej)=>navigator.geolocation.getCurrentPosition(res,rej,{enableHighAccuracy:true,timeout:15000,maximumAge:60000})).catch(()=>{throw new Error('geo');});
   const c=pos.coords;
   const t=await getToken();
-  const r=await fetch('/api/coach/ride/route',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':t},
-    body:JSON.stringify({origin:c.longitude.toFixed(6)+','+c.latitude.toFixed(6),destination_address:dest,mode:'bicycling'})});
+  const r=await fetchWithTimeout('/api/coach/ride/route',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':t},
+    body:JSON.stringify({origin:c.longitude.toFixed(6)+','+c.latitude.toFixed(6),destination_address:dest,mode:'bicycling'})},15000);
   const d=await r.json().catch(()=>null);
   removeThinking();
   if(!r.ok||!d||d.route_status!=='ok'||!Array.isArray(d.steps)||!d.steps.length){
-    addMsg('mark','这条路线我没规划出来，换个说法或者确认下目的地名字。');return;
+    const message='这条路线我没规划出来，换个说法或者确认下目的地名字。';addMsg('mark',message);if(voiceAuto)speak(message);return;
   }
   const steps=d.steps.map(s=>({instruction:String(s.instruction||''),distance_m:Number(s.distance_m)||0})).filter(s=>s.instruction);
   navRoute={destination:dest,distance_m:d.distance_m,duration_s:d.duration_s,steps,index:0,remaining_m:d.distance_m};
-  addMsg('mark','到'+dest+'，全程'+(d.distance_m/1000).toFixed(1)+'公里，约'+Math.max(1,Math.round(d.duration_s/60))+'分钟。路线放下面了，点开始导航我就一路提醒你。');
+  const summary='到'+dest+'，全程'+(d.distance_m/1000).toFixed(1)+'公里，约'+Math.max(1,Math.round(d.duration_s/60))+'分钟。路线预览放下面了。目前不提供实时转弯导航，可点击开始运动记录。';
+  addMsg('mark',summary);if(voiceAuto)speak(summary);
   routeCard({destination:dest,distance_m:d.distance_m,duration_s:d.duration_s,steps},()=>{
-    addMsg('mark','导航开始，转弯我会提前说。',{tag:'live'});speak('导航开始');
     if(!riding)startRide();
+    if(riding)addMsg('mark','已开始运动记录。路线仅供出发前参考，实时导航请使用地图应用。',{tag:'live'});
   });
 }
 /* ================= 骑行模式 ================= */
-let riding=false,liveId=null,liveTimer=null,watchId=null,lastFix=null,rideStart=0,rideDist=0,prevFix=null;
+let ridePoints=[],rideRecordId=null,pendingRide=null,rideSaving=false;
+let checkpointAt=0,recoveryProblem=false;
+const PENDING_RIDE_KEY="mark.pendingRide",ACTIVE_RIDE_KEY="mark.activeRide";
+const GPS_FRESH_MS=15000;
+let riding=false,liveId=null,liveTimer=null,watchId=null,lastFix=null,lastFixAt=0,rideStart=0,rideDist=0,prevFix=null;
+let rideSeq=0,liveBusy=false,liveAbort=null,lastLiveSpeech='',lastLiveSpeechAt=0,geoNotice='';
+function announceGeo(text){
+  if(geoNotice===text)return;
+  geoNotice=text;
+  addMsg('mark',text,{tag:'live'});
+}
+function buildRideRecord(ended){
+  const duration=(ended-rideStart)/1000,points=ridePoints.filter(p=>p.t<=duration);
+  let distance=0,maxSpeed=0;
+  for(let i=1;i<points.length;i++){const a=points[i-1],b=points[i],segment=hav(a.lat,a.lng,b.lat,b.lng);distance+=segment;maxSpeed=Math.max(maxSpeed,segment/(b.t-a.t));}
+  const measured=points.length>=2;
+  const hasGap=points.some((p,i)=>i>0&&p.t-points[i-1].t>30);
+  return {schema_version:'luma-ride-memory/3',id:rideRecordId,started_at:new Date(rideStart).toISOString(),ended_at:new Date(ended).toISOString(),samples_hz:1,series:points,summary:{duration_s:duration,avg_hr:null,max_hr:null,time_in_zone_s:null,zone_target:null,gaps:0,alerts:0,avg_cadence:null,avg_power:null,max_power:null,distance_m:measured?distance:null,avg_speed_mps:measured?distance/duration:null,max_speed_mps:measured?maxSpeed:null},coach_notes:hasGap?['GPS 存在超过30秒的采样间隔；里程仅按已收到点连线估算，不代表完整轨迹。']:[],persona_version:'mark-gps/1',source:'web_gps',activity:'ride'};
+}
+function checkpointRide(force=false){
+  if(!riding)return;
+  const now=Date.now();
+  if(!force&&now-checkpointAt<5000)return;
+  const cached=preferenceWrite(ACTIVE_RIDE_KEY,JSON.stringify(buildRideRecord(Math.max(now,rideStart+1))));
+  if(cached){checkpointAt=now;$('ride-save-status').textContent='运动进行中；已写入本机检查点。网页后台可能暂停，中断后只能恢复已缓存片段。';}
+  else $('ride-save-status').textContent='浏览器无法保存检查点。关闭或刷新可能丢失本次记录，请尽快结束并保存。';
+}
+function clearRideCheckpoint(id){
+  try{const draft=JSON.parse(localStorage.getItem(ACTIVE_RIDE_KEY)||'null');if(draft&&draft.id===id)localStorage.removeItem(ACTIVE_RIDE_KEY);}catch(_){/* Preserve unreadable drafts for export. */}
+}
+function restoreInterruptedRide(){
+  if(pendingRide)return;
+  const raw=preferenceRead(ACTIVE_RIDE_KEY,'');
+  if(!raw)return;
+  try{
+    const draft=JSON.parse(raw),start=Date.parse(draft.started_at),end=Date.parse(draft.ended_at);
+    if(draft.schema_version!=='luma-ride-memory/3'||draft.source!=='web_gps'||draft.activity!=='ride'||!/^mark-[a-zA-Z0-9-]+$/.test(draft.id)||!Number.isFinite(start)||!Number.isFinite(end)||end<start||!draft.summary||Math.abs(draft.summary.duration_s-(end-start)/1000)>0.000001||!Array.isArray(draft.series)||draft.series.length>20000)throw new Error('draft');
+    let previous=-1;
+    for(const point of draft.series){if(!Number.isFinite(point.t)||point.t<=previous||point.t>draft.summary.duration_s||!Number.isFinite(point.lat)||Math.abs(point.lat)>90||!Number.isFinite(point.lng)||Math.abs(point.lng)>180)throw new Error('point');previous=point.t;}
+    if(!Array.isArray(draft.coach_notes)||draft.coach_notes.length>=200)throw new Error('notes');
+    const note='本条由中断检查点恢复，结束时间为最后缓存时刻；后续运动和轨迹未知。';
+    if(!draft.coach_notes.includes(note))draft.coach_notes.push(note);
+    pendingRide=draft;
+    $('ride-save-status').textContent='发现中断的运动：仅恢复至 '+new Date(end).toLocaleString('zh-CN')+' 的本机检查点，未自动继续或保存。暂停期间轨迹未知；请确认后保存，或下载备份。';
+    $('ride-save-retry').hidden=false;$('ride-save-export').hidden=false;
+  }catch(_){
+    recoveryProblem=true;
+    $('ride-save-status').textContent='运动检查点损坏，尚未覆盖。请下载备份；确认放弃后才能开始新的运动。';
+    $('ride-save-export').hidden=false;$('ride-draft-discard').hidden=false;
+  }
+}
+function gpsIsFresh(fix=lastFix){return !!fix&&Number.isFinite(fix.timestamp)&&Date.now()-fix.timestamp>=-1000&&Date.now()-fix.timestamp<=GPS_FRESH_MS;}
+function liveFixReady(fix=lastFix){return gpsIsFresh(fix)&&Number.isFinite(fix.coords.speed)&&fix.coords.speed>=0&&fix.coords.speed<=30;}
 function startRide(){
   if(riding)return;
-  riding=true;rideStart=Date.now();rideDist=0;prevFix=null;liveId=null;
-  $('livestrip').hidden=false;
-  watchId=navigator.geolocation.watchPosition(p=>{lastFix=p;
+  if(recoveryProblem){setView('ride');return;}
+  if(pendingRide||rideSaving){setView('ride');$('ride-save-status').textContent='请先保存上一条记录，避免覆盖尚未保存的数据。';return;}
+  if(!navigator.geolocation){addMsg('mark','当前浏览器不支持定位，无法开始 GPS 运动记录。');return;}
+  ridePoints=[];rideRecordId='mark-'+crypto.randomUUID();
+  $('ride-save-status').textContent='运动进行中；结束后保存至本机。没有心率设备时不生成心率。';
+  setView('ride');
+  riding=true;rideSeq++;rideStart=Date.now();checkpointAt=0;rideDist=0;prevFix=null;lastFix=null;lastFixAt=0;liveId=null;geoNotice='';
+  for(const id of ['ls-speed','ls-hr','ride-speed','ride-hr'])$(id).textContent='--';
+  for(const id of ['ls-dist','ride-dist'])$(id).textContent='--';
+  for(const id of ['ls-time','ride-time'])$(id).textContent='0';
+  $('livestrip').hidden=false;$('status-text').textContent='运动中';updateRidePanel();
+  addMsg('mark','已开始记录，正在获取定位。定位成功后会记录速度和里程；我会根据已收到的数据提醒你，不提供实时路况感知。',{tag:'live'});
+  speak('已开始记录，正在获取定位。',{tag:'ride',priority:35});
+  checkpointRide(true);
+  const gpsSeq=rideSeq;
+  watchId=navigator.geolocation.watchPosition(p=>{
+    if(!riding||gpsSeq!==rideSeq||!gpsIsFresh(p))return;
+    const c=p.coords,elapsed=(p.timestamp-rideStart)/1000;
+    const previous=ridePoints[ridePoints.length-1];
+    if(!Number.isFinite(elapsed)||elapsed<0||elapsed>(Date.now()-rideStart)/1000+1||!Number.isFinite(c.latitude)||!Number.isFinite(c.longitude)||Math.abs(c.latitude)>90||Math.abs(c.longitude)>180||!Number.isFinite(c.accuracy)||c.accuracy>80)return;
+    if(previous&&(elapsed-previous.t<1||hav(previous.lat,previous.lng,c.latitude,c.longitude)/(elapsed-previous.t)>70))return;
+    if(ridePoints.length>=20000){endRide();return;}
+    const point={t:elapsed,lat:c.latitude,lng:c.longitude};
+    ridePoints.push(point);
+    lastFix=p;lastFixAt=Date.now();
+    if(!geoNotice||/等待|过期|恢复/.test(geoNotice))announceGeo('定位已连接，开始记录路线。');
     if(prevFix){rideDist+=hav(prevFix.coords.latitude,prevFix.coords.longitude,p.coords.latitude,p.coords.longitude);}
-    prevFix=p;renderStrip();
-  },()=>{},{enableHighAccuracy:true,maximumAge:3000});
+    prevFix=p;renderStrip();checkpointRide();
+  },()=>{if(riding&&gpsSeq===rideSeq&&!lastFix)announceGeo('正在等待定位，暂时无法计算距离。请保持定位权限开启。');},{enableHighAccuracy:true,maximumAge:3000});
   liveTimer=setInterval(liveBeat,10000);
   refreshChips();
-  /* 出发简报：结合真实天气，本地确定性生成，立即开口 */
+  const seq=rideSeq;
+  /* 天气是补充信息，不能阻塞已经开始的运动。 */
   (async()=>{
     let w=null;
-    try{w=await ensureWeather();}catch(_){/* 没天气也照常出发 */}
-    let briefing='出发了，我一路盯着：速度、里程、路况，有事随时喊我。';
+    try{w=await ensureWeather();}catch(_){/* 天气失败不影响运动 */}
+    if(!riding||seq!==rideSeq)return;
     if(w){
       const temp=(w.day_temp!==undefined&&w.day_temp!==null)?('，气温'+w.day_temp+'度'):'';
-      briefing='出发了。'+String(w.city||'')+'今天白天'+String(w.day_weather||'')+temp+'。';
+      let briefing=String(w.city||'')+'今天白天'+String(w.day_weather||'')+temp+'。';
       const bad=/雨|雪|雷|冰|霾/.test(String(w.day_weather||''));
-      if(bad)briefing+='天不算好，路滑慢点，视线差就别抢。';
-      else briefing+='天不错，放心骑。';
-      briefing+='速度、里程、路况我都盯着，有事随时喊我。';
+      briefing+=bad?'路面和视线可能受影响，慢一点。':'天气可以，按自己的节奏骑。';
+      addMsg('mark',briefing,{tag:'live'});
+      speak(briefing,{tag:'ride',priority:35});
     }
-    addMsg('mark',briefing,{tag:'live'});
-    speak(briefing);
   })();
 }
 function endRide(){
-  riding=false;
+  if(!riding)return;
+  checkpointRide(true);
+  riding=false;rideSeq++;
+  if(liveAbort){try{liveAbort.abort();}catch(_){/* */}liveAbort=null;}
+  cancelSpeech('ride');
   if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null;}
   if(liveTimer){clearInterval(liveTimer);liveTimer=null;}
-  $('livestrip').hidden=true;liveId=null;
-  const min=Math.round((Date.now()-rideStart)/60000);
-  addMsg('mark','这次骑了'+min+'分钟、'+(rideDist/1000).toFixed(1)+'公里。想聊细节随时问。');
-  refreshChips();
+  const ended=Math.max(Date.now(),rideStart+1);
+  pendingRide=buildRideRecord(ended);
+  const {duration_s:duration,distance_m:distance}=pendingRide.summary,measured=distance!==null;
+  const cached=preferenceWrite(PENDING_RIDE_KEY,JSON.stringify(pendingRide));
+  $('livestrip').hidden=true;$('status-text').textContent='在线';liveId=null;lastFix=null;lastFixAt=0;prevFix=null;updateRidePanel();
+  const summary='本次运动 '+Math.round(duration/60)+' 分钟，'+(measured?'GPS 估算 '+(distance/1000).toFixed(1)+' 公里。':'定位样本不足，距离未记录。');
+  $('ride-last-message').textContent=summary;
+  addMsg('mark',summary+'正在保存记录。');
+  if(voiceAuto)speak(summary);
+  $('ride-save-status').textContent=cached?'正在保存；失败时此浏览器保留待保存记录。':'正在保存；浏览器无法保留备份，请不要关闭页面。';
+  savePendingRide();refreshChips();
 }
+async function savePendingRide(){
+  if(!pendingRide||rideSaving)return;
+  rideSaving=true;const record=pendingRide;
+  $('ride-save-retry').hidden=true;$('ride-save-export').hidden=false;
+  try{
+    const t=await getToken();
+    const r=await fetchWithTimeout('/api/coach/ride/session',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':t},body:JSON.stringify(record)},12000);
+    const d=await r.json().catch(()=>null);
+    if(!r.ok||!d||d.status!=='saved'||d.id!==record.id)throw new Error('save');
+    clearRideCheckpoint(record.id);
+    pendingRide=null;ridePoints=[];
+    try{localStorage.removeItem(PENDING_RIDE_KEY);}catch(_){/* */}
+    $('ride-save-status').textContent='已保存至本机 · 可在运动记录中查看，并用于问答与本周复盘。尚未云同步。';
+    $('ride-save-export').hidden=true;
+    addMsg('mark','本次记录已保存。可以问我“最近一次骑行怎么样”，或查看运动记录。');
+    restoreInterruptedRide();
+    $('history-list').dataset.loaded='';await loadHistory();
+  }catch(_){
+    $('ride-save-status').textContent='尚未确认保存成功。请重试，或下载记录备份；重试不会产生重复记录。';
+    $('ride-save-retry').hidden=false;
+  }finally{rideSaving=false;refreshChips();}
+}
+
 function renderStrip(){
   if(!lastFix)return;
-  const c=lastFix.coords;
-  $('ls-speed').textContent=(typeof c.speed==='number'&&c.speed>=0)?(c.speed*3.6).toFixed(1):'--';
-  $('ls-dist').textContent=(rideDist/1000).toFixed(1);
+  const c=lastFix.coords,fresh=gpsIsFresh();
+  $('ls-speed').textContent=(fresh&&Number.isFinite(c.speed)&&c.speed>=0&&c.speed<=30)?(c.speed*3.6).toFixed(1):'--';
+  $('ls-dist').textContent=ridePoints.length>=2?(rideDist/1000).toFixed(1):'--';
   $('ls-time').textContent=String(Math.round((Date.now()-rideStart)/60000));
+  if($('ride-speed'))$('ride-speed').textContent=$('ls-speed').textContent;if($('ride-dist'))$('ride-dist').textContent=$('ls-dist').textContent;if($('ride-time'))$('ride-time').textContent=$('ls-time').textContent;if($('ride-hr'))$('ride-hr').textContent=$('ls-hr').textContent;
 }
-setInterval(()=>{if(riding)renderStrip();},5000);
+setInterval(()=>{if(riding){renderStrip();checkpointRide();}},5000);
+document.addEventListener('visibilitychange',()=>{if(riding){checkpointRide(true);if(!document.hidden&&!gpsIsFresh())announceGeo('定位尚未恢复，当前速度未知；正在等待新的定位。');}});
+window.addEventListener('pagehide',()=>checkpointRide(true));
 async function liveBeat(){
-  if(!riding||!lastFix)return;
+  if(!riding||!lastFix||liveBusy)return;
+  if(!gpsIsFresh()){renderStrip();announceGeo('定位已过期，当前速度未知；暂停实时播报，等待新的定位。');return;}
+  const fix=lastFix;
+  if(!liveFixReady(fix)){announceGeo('当前速度未测得，暂停实时播报；GPS 轨迹仍会记录。');return;}
+  const requestSeq=rideSeq;
+  const requestLiveId=liveId||('live-'+Math.random().toString(36).slice(2,10)+Date.now().toString(36));
+  liveId=requestLiveId;liveBusy=true;
+  const controller=new AbortController();liveAbort=controller;
   try{
-    if(!liveId)liveId='live-'+Math.random().toString(36).slice(2,10)+Date.now().toString(36);
-    const c=lastFix.coords;
-    const point={t:Date.now()/1000,lat:c.latitude,lng:c.longitude,speed_mps:typeof c.speed==='number'&&c.speed>=0?c.speed:0};
+    const c=fix.coords;
+    const point={t:fix.timestamp/1000,lat:c.latitude,lng:c.longitude,speed_mps:c.speed};
     if(typeof c.altitude==='number'&&Number.isFinite(c.altitude))point.alt=c.altitude;
     const t=await getToken();
-    const r=await fetch('/api/coach/ride/live',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':t},body:JSON.stringify({live_id:liveId,activity:'ride',point})});
+    if(!riding||requestSeq!==rideSeq||!gpsIsFresh(fix))return;
+    const r=await fetchWithTimeout('/api/coach/ride/live',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':t},body:JSON.stringify({live_id:requestLiveId,activity:'ride',point}),signal:controller.signal},12000);
     const d=await r.json().catch(()=>null);
-    if(!r.ok||!d||!Array.isArray(d.calls))return;
+    if(!r.ok||!d||!Array.isArray(d.calls)||!riding||requestSeq!==rideSeq||requestLiveId!==liveId||!gpsIsFresh(fix))return;
     for(const call of d.calls){
-      if(call&&typeof call.speech==='string'&&call.speech.trim()){
-        const urgent=call.urgent===true;
-        addMsg('mark',call.speech,{tag:urgent?'urgent':'live'});
-        speak(call.speech);
-      }
+      const text=call&&typeof call.speech==='string'?call.speech.trim():'';
+      if(!text)continue;
+      const urgent=call.urgent===true;
+      if(text===lastLiveSpeech&&Date.now()-lastLiveSpeechAt<30000)continue;
+      lastLiveSpeech=text;lastLiveSpeechAt=Date.now();
+      addMsg('mark',text,{tag:urgent?'urgent':'live'});
+      speak(text,{tag:'ride',priority:urgent?100:40});
     }
-  }catch(_){/* 网络抖动，下一拍再来 */}
+  }catch(_){/* 网络抖动不打断骑行 */}
+  finally{
+    if(liveAbort===controller)liveAbort=null;
+    liveBusy=false;
+  }
 }
 function hav(a,b,c2,d){const R=6371000,r=Math.PI/180;
   const h=Math.sin((c2-a)*r/2)**2+Math.cos(a*r)*Math.cos(c2*r)*Math.sin((d-b)*r/2)**2;
-  return 2*R*Math.asin(Math.sqrt(h));}
+  return 2*R*Math.asin(Math.min(1,Math.sqrt(h)));}
 /* ================= 语音输入 ================= */
 const SpeechEngine=window.SpeechRecognition||window.webkitSpeechRecognition;
 function resampleTo16k(chunks,rate){
@@ -551,11 +799,17 @@ function micStop(){
   const s=micSession;micSession=null;
   window.removeEventListener('pointerup',micStop);
   window.removeEventListener('pointercancel',micStop);
+  clearTimeout(micLimit);micLimit=null;voiceCapture='transcribing';voiceLevel=0;renderVoice();
   btn.classList.remove('listening');
   $('status-text').textContent='识别中…';
-  Promise.resolve(s.stop()).finally(()=>{$('status-text').textContent='在线';});
+  Promise.resolve(s.stop()).catch(()=>voiceError('语音识别失败，请重试或打字。')).finally(()=>{voiceCapture='idle';renderVoice();$('status-text').textContent=riding?'运动中':'在线';});
 }
-async function micStart(){
+async function micStart(tap=false){
+  if(micSession||micPending||voiceCapture==='transcribing'||sending)return;
+  micPending=true;voiceNotice='';
+  cancelSpeech();
+  voiceCapture='permission';renderVoice();
+  try{
   const btn=$('mic');
   if(micSession)return;
   /* 打断：用户一开口，播报立即让位 */
@@ -564,7 +818,7 @@ async function micStart(){
   if(asrAvailable&&navigator.mediaDevices&&(window.AudioContext||window.webkitAudioContext)){
     let stream2=null,released=false;
     const earlyRelease=()=>{released=true;};
-    window.addEventListener('pointerup',earlyRelease,{once:true});
+    if(!tap)window.addEventListener('pointerup',earlyRelease,{once:true});
     try{
       stream2=await navigator.mediaDevices.getUserMedia({audio:true});
     }catch(e){
@@ -585,14 +839,14 @@ async function micStart(){
       const src=ctx.createMediaStreamSource(stream2);
       const proc=ctx.createScriptProcessor(4096,1,1);
       const chunks=[];
-      proc.onaudioprocess=e=>chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+      proc.onaudioprocess=e=>{const pcm=e.inputBuffer.getChannelData(0);chunks.push(new Float32Array(pcm));let power=0;for(const v of pcm)power+=v*v;voiceLevel=Math.min(1,Math.sqrt(power/pcm.length)*7);};
       src.connect(proc);proc.connect(ctx.destination);
       btn.classList.add('listening');
       const t0=Date.now();
       $('status-text').textContent='正在听… 0s';
       const tick=setInterval(()=>{$('status-text').textContent='正在听… '+((Date.now()-t0)/1000).toFixed(0)+'s';},500);
-      window.addEventListener('pointerup',micStop);
-      window.addEventListener('pointercancel',micStop);
+      if(!tap){window.addEventListener('pointerup',micStop);window.addEventListener('pointercancel',micStop);}
+      voiceCapture='listening';renderVoice();micLimit=setTimeout(micStop,30000);
       const rate=ctx.sampleRate;
       /* 流式识别：每 1.6s 把新录到的音频段发上去，松手时基本只剩尾巴 */
       const asrId='asr-'+Math.random().toString(36).slice(2,10)+Date.now().toString(36);
@@ -605,17 +859,17 @@ async function micStart(){
         const delta=all.subarray(sentSamples);sentSamples=len;
         const pcm=resampleTo16k([delta],rate);
         if(!pcm.length)return Promise.resolve();
-        return getToken().then(t=>fetch('/api/coach/ride/asr/segment',{method:'POST',
+        return getToken().then(t=>fetchWithTimeout('/api/coach/ride/asr/segment',{method:'POST',
           headers:{'Content-Type':'audio/wav','X-Coach-Token':t,'X-ASR-Id':asrId},
           body:wavFromPcm(pcm,16000)})).then(r=>{if(!r.ok)segBroken=true;}).catch(()=>{segBroken=true;});
       };
       const segTimer=setInterval(()=>{if(!segBroken)segChain=segChain.then(()=>flushSegment(false));},1600);
       micSession={stop:async()=>{
-        clearInterval(segTimer);
-        try{proc.disconnect();src.disconnect();await ctx.close();}catch(_){/* */}
+        clearInterval(tick);clearInterval(segTimer);
         stream2.getTracks().forEach(t=>t.stop());
+        try{proc.disconnect();src.disconnect();await ctx.close();}catch(_){/* */}
         const secs=chunks.length*4096/rate;
-        if(secs<0.4){$('status-text').textContent='太短了，按住说完再松手';return;}
+        if(secs<0.4){voiceError('录音太短，请说完一句话再结束。');return;}
         try{
           const t=await getToken();
           let text='';
@@ -623,7 +877,7 @@ async function micStart(){
             await segChain;            /* 等已发出的段落落地 */
             await flushSegment(true);  /* 补上尾巴 */
             if(!segBroken){
-              const r=await fetch('/api/coach/ride/asr/finish',{method:'POST',
+              const r=await fetchWithTimeout('/api/coach/ride/asr/finish',{method:'POST',
                 headers:{'Content-Type':'application/json','X-Coach-Token':t},
                 body:JSON.stringify({asr_id:asrId})});
               const d=await r.json().catch(()=>null);
@@ -634,13 +888,13 @@ async function micStart(){
           if(segBroken){
             /* 流式管道坏了就整段重传，保证任何情况下都能识别 */
             const pcm=resampleTo16k(chunks,rate);
-            const r=await fetch('/api/coach/ride/asr',{method:'POST',headers:{'Content-Type':'audio/wav','X-Coach-Token':t},body:wavFromPcm(pcm,16000)});
+            const r=await fetchWithTimeout('/api/coach/ride/asr',{method:'POST',headers:{'Content-Type':'audio/wav','X-Coach-Token':t},body:wavFromPcm(pcm,16000)});
             const d=await r.json().catch(()=>null);
             if(d&&d.asr_status==='ok'&&typeof d.text==='string')text=d.text.trim();
           }
-          if(text){$('input').value=text;autogrow();send();}
-          else addMsg('mark','我没听清，靠近一点再说一次？');
-        }catch(_){addMsg('mark','识别服务暂时不可用，打字告诉我吧。');}
+          if(text){voiceCapture='idle';renderVoice();$('input').value=text;autogrow();send();}
+          else {addMsg('mark','我没听清，靠近一点再说一次？');voiceError('没有识别到清晰语音，请靠近麦克风再试。');}
+        }catch(_){addMsg('mark','识别服务暂时不可用，打字告诉我吧。');voiceError('识别服务暂时不可用，可以先打字。');}
       }};
       return;
     }catch(_){
@@ -653,12 +907,17 @@ async function micStart(){
   const rec=new SpeechEngine();rec.lang='zh-CN';rec.interimResults=false;
   btn.classList.add('listening');
   $('status-text').textContent='正在听…';
-  micSession={stop:()=>{try{rec.stop();}catch(_){/* */}}};
+  let recognitionDone;const recognitionEnd=new Promise(resolve=>{recognitionDone=resolve;});
+  micSession={stop:()=>{try{rec.stop();}catch(_){recognitionDone();}return recognitionEnd;}};
+  if(!tap){window.addEventListener('pointerup',micStop);window.addEventListener('pointercancel',micStop);}
+  let recognitionText='';
   rec.onresult=e=>{const text=e.results[0]&&e.results[0][0]&&e.results[0][0].transcript;
-    if(text){$('input').value=text.trim();autogrow();send();}};
-  rec.onend=()=>{btn.classList.remove('listening');micSession=null;};
-  rec.onerror=rec.onend;
-  try{rec.start();}catch(_){btn.classList.remove('listening');micSession=null;}
+    if(text)recognitionText=text.trim();};
+  rec.onstart=()=>{voiceCapture='listening';renderVoice();$('voice-detail').textContent='浏览器语音识别中；此模式不提供真实音量。';micLimit=setTimeout(micStop,30000);};
+  rec.onend=()=>{clearTimeout(micLimit);window.removeEventListener('pointerup',micStop);window.removeEventListener('pointercancel',micStop);btn.classList.remove('listening');micSession=null;voiceCapture='idle';voiceLevel=0;renderVoice();$('status-text').textContent=riding?'运动中':'在线';recognitionDone();if(recognitionText){const text=recognitionText;recognitionText='';$('input').value=text;autogrow();send();}};
+  rec.onerror=e=>{recognitionText='';voiceError(e.error==='not-allowed'?'麦克风未获授权，请允许权限或打字。':'没有完成语音识别，请重试或打字。');rec.onend();};
+  try{rec.start();}catch(_){rec.onend();voiceError('语音无法启动，请重试或使用文字。');}
+  }finally{micPending=false;if(!micSession&&voiceCapture==='permission'){voiceCapture='idle';voiceError('麦克风尚未开启，请检查权限，或使用文字输入。');}}
 }
 /* ================= 建议 chips ================= */
 function refreshChips(){
@@ -686,12 +945,36 @@ $('input').addEventListener('input',autogrow);
 $('input').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}});
 $('send').onclick=send;
 const micBtn=$('mic');
-micBtn.addEventListener('pointerdown',e=>{e.preventDefault();micStart();});
+micBtn.addEventListener('pointerdown',e=>{e.preventDefault();if(micSession)micStop();else micStart();});
+micBtn.addEventListener('keydown',e=>{if((e.key===' '||e.key==='Enter')&&!e.repeat){e.preventDefault();micStart();}});
+micBtn.addEventListener('keyup',e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();micStop();}});
+$('voice-main').onclick=()=>{if(micSession)micStop();else micStart(true);};
+$('voice-stop').onclick=()=>{cancelSpeech();};
+function renderVoicePreference(){$('voice-toggle').setAttribute('aria-pressed',String(voiceAuto));$('voice-toggle').textContent=voiceAuto?'回答朗读开启':'回答仅看文字';}
+$('voice-choice').value=voiceChoice;
+$('voice-choice').onchange=()=>{cancelSpeech();voiceChoice=$('voice-choice').value;preferenceWrite('mark.voice',voiceChoice);$('voice-source').textContent='已选择 '+voiceChoice+'，点击试听确认声音。';};
+$('voice-preview').onclick=()=>{cancelSpeech();speak('你好，我是 Mark。按你的节奏来，我会陪着你。');};
+$('voice-toggle').onclick=()=>{voiceAuto=!voiceAuto;preferenceWrite('mark.voiceAuto',String(voiceAuto));renderVoicePreference();if(!voiceAuto)cancelSpeech();};
+renderVoicePreference();
+$('ride-save-retry').onclick=savePendingRide;
+$('ride-save-export').onclick=()=>{const raw=pendingRide?JSON.stringify(pendingRide,null,2):preferenceRead(ACTIVE_RIDE_KEY,'');if(!raw)return;const url=URL.createObjectURL(new Blob([raw],{type:'application/json'}));const a=node('a');a.href=url;a.download=(pendingRide?pendingRide.id:'mark-interrupted-backup')+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+try{const draft=JSON.parse(preferenceRead(PENDING_RIDE_KEY,'null'));if(draft&&draft.source==='web_gps'&&typeof draft.id==='string'&&draft.summary){pendingRide=draft;$('ride-save-status').textContent='发现上一条未确认保存的记录。请重试保存；重复提交不会重复生成记录。';$('ride-save-retry').hidden=false;$('ride-save-export').hidden=false;}}catch(_){/* Ignore corrupt browser draft; server still validates all saves. */}
+restoreInterruptedRide();
+$('ride-draft-discard').onclick=()=>{if(!recoveryProblem||!window.confirm('确认放弃损坏的运动检查点？建议先下载备份。'))return;try{localStorage.removeItem(ACTIVE_RIDE_KEY);}catch(_){return;}recoveryProblem=false;$('ride-draft-discard').hidden=true;$('ride-save-export').hidden=true;$('ride-save-status').textContent='已放弃损坏检查点，可以开始新的运动。';};
+window.addEventListener('beforeunload',event=>{if(riding||pendingRide){event.preventDefault();event.returnValue='';}});
 $('ls-end').onclick=endRide;
 (async()=>{
-  try{await getToken();}catch(_){/* 配置拿不到也能打字试试 */}
   refreshChips();
+  renderVoice();
+  updateDashboard();
   const hour=new Date().getHours();
+  $('home-greeting').textContent=hour<6?'夜深了，记得好好休息。':hour<11?'早上好，去感受新的一天。':hour<14?'中午好，给自己一点户外时间。':hour<19?'下午好，去外面走走。':'晚上好，按自己的节奏来。';
+  $('home-date').textContent=new Date().toLocaleDateString('zh-CN',{month:'long',day:'numeric',weekday:'long'});
+  $('home-date').dateTime=new Date().toLocaleDateString('sv-SE');
+  if(!matchMedia('(prefers-reduced-motion: reduce)').matches&&$('view-dashboard').animate){
+    $('view-dashboard').querySelector('.home-stage').animate([{opacity:.65,transform:'translateY(10px)',filter:'blur(2px)'},{opacity:1,transform:'translateY(0)',filter:'blur(0)'}],{duration:600,easing:'cubic-bezier(.16,1,.3,1)'});
+  }
+  try{await getToken();}catch(_){/* 配置拿不到也能打字试试 */} try{await loadHistory();}catch(_){/* 记录是增强项，不阻塞主界面 */}
   const greet=hour<6?'还没睡？我随时在。':hour<11?'早上好。':hour<14?'中午好。':hour<19?'下午好。':'晚上好。';
   addMsg('mark',greet+'我是 Mark，你的运动陪伴。可以问我天气、让我规划路线、翻你的骑行记录，或者就随便聊聊。点开始骑行，我会一路主动播报。',{lane:'general'});
   /* 日常主动开口：定位已授权且天气合适时，主动给出运动建议 */
@@ -712,6 +995,7 @@ $('ls-end').onclick=endRide;
     }
   }catch(_){/* 主动开口是加分项，失败就安静 */}
 })();
+
 </script>
 </body>
 </html>

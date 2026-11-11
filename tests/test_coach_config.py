@@ -50,7 +50,9 @@ class CoachConfigTests(unittest.TestCase):
                 http.assert_not_called()
 
     def test_remote_explicit_warns_and_binds(self):
-        os.environ['LUMA_COACH_ALLOW_REMOTE'] = '1'
+        os.environ.update(LUMA_COACH_ALLOW_REMOTE='1',
+                          LUMA_COACH_PUBLIC_ORIGIN='https://private-test.example',
+                          LUMA_COACH_TEST_PASSWORD='synthetic-mobile-test-password-12345')
         with patch.object(server, 'ThreadingHTTPServer') as http:
             with self.assertWarnsRegex(RuntimeWarning, 'REMOTE BINDING'):
                 server.create_server(host='0.0.0.0', port=10000, app=Mock())

@@ -1,4 +1,4 @@
-"""Server-side CosyVoice proxy tests (synthetic data, no network)."""
+"""Server-side Qwen3-TTS proxy tests (synthetic data, no network)."""
 import json
 import os
 import sys
@@ -45,6 +45,23 @@ class SynthesizeTests(unittest.TestCase):
         self.assertEqual(body['input']['text'], '现在心率142。')
         self.assertEqual(body['model'], ride_tts.MODEL)
         self.assertNotIn(b'synthetic-key', post.call_args.args[0].data)
+
+    def test_documented_qwen_http_contract_and_voice_selection(self):
+        for voice in ('Ethan', 'Cherry', 'Serena'):
+            post = tts_transport()
+            result = self.call(http_post=post, voice=voice)
+            self.assertEqual(result['tts_status'], 'ok')
+            request = post.call_args.args[0]
+            self.assertTrue(request.full_url.endswith('/aigc/multimodal-generation/generation'))
+            self.assertEqual(json.loads(request.data), {
+                'model': 'qwen3-tts-flash',
+                'input': {'text': '现在心率142。', 'voice': voice, 'language_type': 'Chinese'}})
+
+    def test_invalid_voice_does_not_call_provider(self):
+        post = Mock(side_effect=AssertionError('no network'))
+        for voice in ('unknown', '', None, [], 'Ethan\n'):
+            self.assertEqual(self.call(voice=voice, http_post=post)['tts_status'], 'rejected_bad_schema')
+        post.assert_not_called()
 
     def test_not_configured_never_calls_transport(self):
         post = Mock(side_effect=AssertionError('no network'))
@@ -127,6 +144,13 @@ class SpeakEndpointTests(unittest.TestCase):
         self.assertEqual(result['tts_status'], 'ok')
         self.assertEqual(result['audio_url'], GOOD_URL)
 
+    def test_optional_voice_is_forwarded_and_bounded(self):
+        self.assertEqual(self.request({'text': '你好。', 'voice': 'Cherry'})['tts_status'], 'ok')
+        self.assertEqual(json.loads(self.post.call_args.args[0].data)['input']['voice'], 'Cherry')
+        for voice in ('unapproved', None, 42):
+            with self.assertRaises(ActionError):
+                self.request({'text': '你好。', 'voice': voice})
+
     def test_field_validation(self):
         for payload in ({}, {'text': '心率？', 'extra': 1}, {'text': ''}, {'text': '字' * 301}):
             with self.subTest(payload=repr(payload)[:40]):
@@ -157,6 +181,18 @@ class SpeakEndpointTests(unittest.TestCase):
         with self.assertRaises(ActionError) as error:
             self.request({'text': '心率142。'})
         self.assertEqual((error.exception.status, error.exception.code), (429, 'rate_limited'))
+
+
+class VoiceConfigTests(unittest.TestCase):
+    def test_browser_can_discover_configured_cloud_voice(self):
+        with tempfile.TemporaryDirectory() as folder:
+            app = coach_server.App(store=coach_server.CoachStore(Path(folder) / 'test.db'))
+            for key, expected in (('synthetic-key', True), ('', False)):
+                with patch.dict(os.environ, {'DASHSCOPE_API_KEY': key}):
+                    result = app.dispatch('GET', '/api/coach/config',
+                                          {'Host': '127.0.0.1:8794'}, b'')
+                self.assertIs(result['tts_available'], expected)
+                self.assertNotIn('synthetic-key', json.dumps(result))
 
 
 if __name__ == '__main__':

@@ -1,6 +1,6 @@
 # DEPLOY — AI Ride Coach (working title)
 
-中文摘要：Render 免费档部署步骤、环境变量、健康检查与已知限制。本地优先设计；公网部署需显式允许远程绑定，且当前无公开用户认证，仅限单用户演示。
+中文摘要：Render 免费档部署步骤、环境变量、健康检查与已知限制。本地优先设计；公网部署需显式允许远程绑定，现增加单测试者密码保护，不是公众多用户账号系统。
 
 ## Architecture
 
@@ -54,3 +54,35 @@ The repo root carries `render.yaml`. Render dashboard → **New → Blueprint** 
 - **stdlib-only encryption construction** (HKDF + HMAC-CTR + HMAC-SHA256 tag): not an audited cipher; migrate to Fernet/libsodium once dependencies are allowed.
 - Business routes still enforce loopback Host/Origin headers; this is defense-in-depth, **not** public authentication.
 - Payment, OAuth, and multi-user accounts are not implemented.
+
+
+## Private iPhone test gate — 2026-11-11 (supersedes earlier deployment instructions)
+
+This release is for a **single private tester**, not public registration or a payment service.
+Non-loopback binding OR configuring a public origin now requires `LUMA_COACH_TEST_PASSWORD`.
+Startup fails before opening a socket if the password is absent/invalid or the public origin is not HTTPS.
+Loopback development without a public origin or password is unchanged.
+
+1. Keep the existing platform variables and API keys. Add `LUMA_COACH_TEST_PASSWORD` as a platform secret.
+   Generate it locally with `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
+   It must be 32–128 URL-safe ASCII characters (`A-Z a-z 0-9 _ -`); do not reuse an API key.
+   Never put it in source control, a shared document, a URL, or a screenshot.
+2. Set `LUMA_COACH_PUBLIC_ORIGIN=https://<actual-assigned-domain>` (no path/trailing slash).
+   The platform must terminate trusted HTTPS; do not expose the backend's plain HTTP port directly.
+3. Publish the reviewed current working-tree files, not an old HEAD. No publication has been performed by preparing this change.
+4. Anonymous `GET /health` remains 200. Anonymous `/mark`, config, records and paid APIs must be 401.
+   Open `/mark` with Safari; use HTTP Basic username `boss` and the generated test password.
+   Original Host/Origin and `X-Coach-Token` checks remain required after login.
+5. Check the `X-Mark-Build` response header. Expected UI fingerprint for this release: `e24e0333cb27228a`.
+   This identifies the Mark HTML only, not the entire server or the live deployment state.
+6. A desktop browser check is not iPhone acceptance. Test foreground recording/playback, record save and refresh recovery on the phone.
+   Lock-screen/background capture is **not promised** by this web release.
+
+Only exact read-only `GET /health` bypasses the gate. Billing webhooks are also blocked without login:
+**do not apply this private-test release to a production payment service**.
+HTTP Basic has no reliable in-page logout; closing a tab may not clear the browser's cached credentials.
+Rotate the platform password and restart the service to revoke access. Do not share the password.
+This shared gate is not per-user authorization, rate limiting or a multi-user account system.
+Existing ephemeral storage remains ephemeral: export important test records before redeploy/restart;
+this change does not provision a persistent volume or preserve server records across deployment.
+No paid APIs were invoked by the gate tests; actual phone voice usage may use existing service credits.

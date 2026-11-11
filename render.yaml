@@ -16,6 +16,9 @@ services:
       # Render generates a strong master key for credential encryption.
       - key: LUMA_COACH_MASTER_KEY
         generateValue: true
+      # Single-user private test access; distinct from the master encryption key.
+      - key: LUMA_COACH_TEST_PASSWORD
+        generateValue: true
       # Fill after the first deploy assigns the public domain, e.g.
       # https://ai-ride-coach.onrender.com — without it browser requests
       # are denied by the Host/Origin allowlist (fail closed by design).

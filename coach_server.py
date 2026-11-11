@@ -1,4 +1,4 @@
-"""Loopback-first English coach MVP. Remote binding is explicit, not public authentication.
+"""Loopback-first coach MVP. Remote tests require HTTPS and private access.
 
 中文摘要：独立 SQLite 加密保存密钥（无可用后端则拒绝），严格同源和 token；复盘仅按用户请求生成。
 """
@@ -174,6 +174,8 @@ def _page(filename="coach.html"):
            "; manifest-src 'self'; img-src 'self'; connect-src 'self'"
            "; media-src https://*.aliyuncs.com http://*.aliyuncs.com"
            "; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
+    if filename == "mark.html":
+        csp += "; font-src 'self'"
     return text.encode("utf-8"), csp
 
 
@@ -192,6 +194,46 @@ def _public_origin():
             parsed.username or parsed.password or len(raw) > 253):
         raise ValueError("LUMA_COACH_PUBLIC_ORIGIN must be a bare origin like https://app.example.com")
     return parsed.scheme + "://" + parsed.netloc
+
+
+
+def _private_test_credentials(host):
+    """Startup-only gate configuration; no password in URLs, responses or logs.
+
+    HTTPS terminates at the deployment router. Forwarded headers are not trusted.
+    Loopback development stays unchanged unless a test password is explicitly set.
+    This is one shared tester credential, not a multi-user account system.
+    """
+    password = os.environ.get("LUMA_COACH_TEST_PASSWORD", "")
+    origin = _public_origin()
+    remote = not ipaddress.IPv4Address(host).is_loopback
+    if not password and not remote and origin is None:
+        return None
+    if re.fullmatch(r"[A-Za-z0-9_-]{32,128}", password) is None:
+        raise ValueError("Set LUMA_COACH_TEST_PASSWORD to a generated 32-128 character URL-safe secret")
+    if (remote and origin is None) or (origin is not None and not origin.startswith("https://")):
+        raise ValueError("Private mobile testing requires an HTTPS LUMA_COACH_PUBLIC_ORIGIN")
+    return b"boss:" + password.encode("ascii")
+
+
+def _check_private_test_access(method, path, headers, credentials):
+    # Only the exact, read-only liveness probe is public; it has no record/token.
+    if credentials is None or (method == "GET" and path == "/health"):
+        return
+    if hasattr(headers, "get_all"):
+        require(len(headers.get_all("Authorization", [])) <= 1,
+                "Duplicate authorization headers", "invalid_input")
+    raw = headers.get("Authorization", "")
+    decoded = b""
+    if isinstance(raw, str) and len(raw) <= 512:
+        scheme, _, value = raw.partition(" ")
+        if scheme.lower() == "basic":
+            try:
+                decoded = base64.b64decode(value, validate=True)
+            except (ValueError, UnicodeError):
+                pass
+    require(secrets.compare_digest(decoded, credentials),
+            "Private test login required", "test_access_required", 401)
 
 
 def _build_rule_snapshot(record):
@@ -358,6 +400,7 @@ class App:
                 return {"billing_enabled": bool(os.environ.get("CREEM_WEBHOOK_SECRET", "").strip()), "subscription_status": self.billing.current_status(), "brand_name": BRAND_NAME, "support_email": SUPPORT_EMAIL, "token": self.token, "connected": key is not None,
                         "masked_key": _masked(key), "verified": False, **self.store.encryption_status,
                         "asr_available": bool(os.environ.get("DASHSCOPE_API_KEY", "").strip()),
+                        "tts_available": bool(os.environ.get("DASHSCOPE_API_KEY", "").strip()),
                         "mode": "local_only", "external_requests": "Only after explicit list/review actions"}
             parsed = urlsplit(path)
             if parsed.path == RIDE_LIST:
@@ -846,8 +889,8 @@ class App:
         URL (24h) whose host is whitelisted by ride_tts. No key configured
         returns not_configured so the client falls back to browser speech.
         """
-        require(type(payload) is dict and set(payload) == {"text"}, "Expected text only")
-        result = tts_synthesize(payload["text"],
+        require(type(payload) is dict and {"text"} <= set(payload) <= {"text", "voice"}, "Expected text and optional voice")
+        result = tts_synthesize(payload["text"], voice=payload.get("voice", "Ethan"),
                                 api_key=os.environ.get("DASHSCOPE_API_KEY"),
                                 http_post=self.llm_post)
         if result["tts_status"] == "rejected_bad_schema":
@@ -1209,8 +1252,8 @@ def _bind_config(host=None, port=None):
     if not address.is_loopback:
         if os.environ.get("LUMA_COACH_ALLOW_REMOTE") != "1":
             raise ValueError("Non-loopback binding requires LUMA_COACH_ALLOW_REMOTE=1")
-        warnings.warn("REMOTE BINDING: single-user coach has no public user authentication; "
-                      "keep private. Business routes still require loopback Host/Origin.",
+        warnings.warn("REMOTE BINDING: private single-user testing only; "
+                      "HTTPS origin and a private test password are required.",
                       RuntimeWarning, stacklevel=2)
     return str(address), port
 
@@ -1218,6 +1261,8 @@ def _bind_config(host=None, port=None):
 def create_server(port=None, app=None, *, host=None):
     """Create a validated server; explicit arguments override environment values."""
     host, port = _bind_config(host, port)
+    credentials = _private_test_credentials(host)  # Fail before opening any socket.
+    build = hashlib.sha256((ROOT / "static" / "mark.html").read_text(encoding="utf-8-sig").encode("utf-8")).hexdigest()[:16]
     app = app if app is not None else App()
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.0"
@@ -1232,10 +1277,13 @@ def create_server(port=None, app=None, *, host=None):
             self.send_response(status)
             for key, text in {"Content-Type": mime,
                               "Content-Length": str(len(raw)), "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
-                              "X-Frame-Options": "DENY", "Referrer-Policy": "no-referrer", "Content-Security-Policy": csp}.items():
+                              "X-Frame-Options": "DENY", "Referrer-Policy": "no-referrer", "Content-Security-Policy": csp,
+                              "X-Mark-Build": build}.items():
                 self.send_header(key, text)
             if not page and value.get("retry_after") is not None:
                 self.send_header("Retry-After", value["retry_after"])
+            if not page and value.get("error_code") == "test_access_required":
+                self.send_header("WWW-Authenticate", 'Basic realm="Mark private test", charset="UTF-8"')
             self.end_headers()
             try:
                 self.wfile.write(raw)
@@ -1245,6 +1293,7 @@ def create_server(port=None, app=None, *, host=None):
         def handle_request(self):
             try:
                 self.connection.settimeout(15)
+                _check_private_test_access(self.command, self.path, self.headers, credentials)
                 length = app.preflight(self.command, self.path, self.headers, self.server.server_port)
                 body = self.rfile.read(length) if length else b""
                 self.reply(200, app.dispatch(self.command, self.path, self.headers, body, self.server.server_port))

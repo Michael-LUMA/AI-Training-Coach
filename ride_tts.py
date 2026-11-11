@@ -1,7 +1,7 @@
-"""Mark's voice: server-side CosyVoice synthesis proxy (stdlib only).
+"""Mark's voice: server-side Qwen3-TTS synthesis proxy (stdlib only).
 
 中文摘要：浏览器把已核验的播报文本 POST 给本服务端，服务端持 key 调
-DashScope CosyVoice HTTP 非流式合成，返回 24 小时有效的音频 URL。
+DashScope Qwen3-TTS HTTP 非流式合成，返回 24 小时有效的音频 URL。
 文本是数据不是指令：1..300 个可打印字符，逐字校验；key 只从显式参数
 进入，不读环境变量；无重试、不落盘、不记日志。上游 URL 过域名校验，
 防任何畸形响应外泄。
@@ -17,9 +17,10 @@ from urllib.request import Request
 
 from llm_review import MAX_RESPONSE_BYTES, TIMEOUT_S, _http_post, _json, _usage
 
-ENDPOINT = 'https://dashscope.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer'
-MODEL = 'cosyvoice-v3-flash'
-VOICE = 'longanyang'
+ENDPOINT = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation'
+MODEL = 'qwen3-tts-flash'
+VOICE = 'Ethan'
+VOICES = frozenset({'Ethan', 'Cherry', 'Serena'})
 MAX_TEXT = 300
 
 # Signed OSS URLs carry no API key; still, only DashScope's own result buckets
@@ -50,7 +51,7 @@ def _result(status, audio_url=None, expires_at=None, usage=None):
             'expires_at': expires_at, 'usage': usage}
 
 
-def synthesize(text, *, api_key, http_post=None):
+def synthesize(text, *, api_key, voice=VOICE, http_post=None):
     """Synthesize one spoken line; return a bounded audio URL or honest status.
 
     text: the exact verified speech, 1..300 printable characters.
@@ -65,11 +66,11 @@ def synthesize(text, *, api_key, http_post=None):
         return _result('upstream_error')
     try:
         text = _check_text(text)
+        if type(voice) is not str or voice not in VOICES:
+            return _result('rejected_bad_schema')
         payload = {'model': MODEL,
-                   'input': {'text': text},
-                   'parameters': {'voice': VOICE, 'format': 'mp3',
-                                  'sample_rate': 22050, 'volume': 50,
-                                  'rate': 1.0, 'pitch': 1.0}}
+                   'input': {'text': text, 'voice': voice,
+                             'language_type': 'Chinese'}}
         request = Request(ENDPOINT,
                           data=json.dumps(payload, ensure_ascii=False).encode('utf-8'),
                           headers={'Authorization': 'Bearer ' + api_key,

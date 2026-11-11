@@ -81,7 +81,7 @@ MAX_COACH_NOTES = 200
 MAX_NOTE_CHARS = 2000
 EARTH_RADIUS_M = 6371000.0  # Matches the recording client's haversine constant.
 MAX_PLAUSIBLE_SPEED_MPS = 70.0  # Generous physical ceiling, never a claim.
-SOURCES = frozenset({"ble_gatt_0x180d", "simulated", "imported_gpx", "imported_tcx"})
+SOURCES = frozenset({"ble_gatt_0x180d", "simulated", "imported_gpx", "imported_tcx", "web_gps"})
 ACTIVITIES = frozenset({"ride", "hike", "run"})
 MIN_ALT_M = -500.0
 MAX_ALT_M = 9000.0
@@ -264,11 +264,14 @@ def validate_session(session: dict[str, Any]) -> dict[str, Any]:
         if type(point) is dict:
             allowed = {"t", "hr", "gap", "cad", "pwr", "lat", "lng", "alt"} if v3 else (
                 {"t", "hr", "gap", "cad", "pwr"} if v2 else {"t", "hr", "gap"})
-            shape_ok = not (set(point) - allowed) and "t" in point and (("hr" in point) != ("gap" in point))
+            shape_ok = not (set(point) - allowed) and "t" in point and (
+                (("hr" in point) != ("gap" in point))
+                or (v3 and "lat" in point and "lng" in point
+                    and "hr" not in point and "gap" not in point))
         else:
             shape_ok = False
         _require(type(point) is dict and shape_ok,
-                 "series point requires t and exactly one of hr/gap")
+                 "series point requires t and exactly one of hr/gap, or a v3 track point")
         t = _number(point["t"], "series.t")
         _require(previous < t <= duration, "series times must increase within duration_s")
         previous = t
@@ -277,18 +280,19 @@ def validate_session(session: dict[str, Any]) -> dict[str, Any]:
                      "gap marker must be true and carry no sensor values")
             gaps += 1
         else:
-            hr = point["hr"]
-            _require(type(hr) is int and 0 <= hr <= 65535, "hr must be an unsigned GATT integer")
-            hrs.append(hr)
-            if v2:
-                if "cad" in point:
-                    _require(type(point["cad"]) is int and 0 <= point["cad"] <= 255,
-                             "cad must be an integer rpm 0..255")
-                    cads.append(point["cad"])
-                if "pwr" in point:
-                    _require(type(point["pwr"]) is int and 0 <= point["pwr"] <= 65535,
-                             "pwr must be an unsigned watt integer")
-                    pwrs.append(point["pwr"])
+            if "hr" in point:
+                hr = point["hr"]
+                _require(type(hr) is int and 0 <= hr <= 65535, "hr must be an unsigned GATT integer")
+                hrs.append(hr)
+                if v2:
+                    if "cad" in point:
+                        _require(type(point["cad"]) is int and 0 <= point["cad"] <= 255,
+                                 "cad must be an integer rpm 0..255")
+                        cads.append(point["cad"])
+                    if "pwr" in point:
+                        _require(type(point["pwr"]) is int and 0 <= point["pwr"] <= 65535,
+                                 "pwr must be an unsigned watt integer")
+                        pwrs.append(point["pwr"])
             if v3 and ("lat" in point or "lng" in point):
                 _require("lat" in point and "lng" in point,
                          "lat/lng must always appear together")
@@ -338,7 +342,7 @@ def validate_session(session: dict[str, Any]) -> dict[str, Any]:
                      "avg_speed_mps must equal distance_m/duration_s")
             _require(avg_speed <= max_speed, "avg_speed_mps cannot exceed max_speed_mps")
         else:
-            _require(not track, "Recorded coordinates require distance/speed aggregates")
+            _require(len(track) < 2, "Recorded track segments require distance/speed aggregates")
         expected_ascent = _ascent_m(track)
         if expected_ascent is not None:
             _require(summary.get("ascent_m") is not None,

@@ -30,6 +30,17 @@ class GeneralAnswerTests(unittest.TestCase):
         self.assertEqual(result['draft'], {'speech': OK_SPEECH})
         self.assertIsNone(result['fallback'])
 
+    def test_prompt_describes_actual_web_capabilities_not_future_hardware(self):
+        post = transport()
+        result = gen.build_general_answer('你能帮我做什么？', api_key='synthetic-key', http_post=post)
+        self.assertEqual(result['llm_status'], 'ok')
+        prompt = json.loads(post.call_args.args[0].data)['messages'][0]['content']
+        self.assertIn('目前通过网页提供服务', prompt)
+        self.assertIn('没有定时提醒', prompt)
+        self.assertIn('不得把建议说成已经执行', prompt)
+        self.assertIn('不得用未来规划冒充当前功能', prompt)
+        self.assertNotIn('装在运动眼镜和耳机里', prompt)
+
     def test_common_knowledge_numbers_pass(self):
         # 通用知识里的数字是开放聊天的一部分，不再是本地不可验证的负担。
         for speech in ('金字塔建于公元前2560年左右。',
