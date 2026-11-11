@@ -1,0 +1,318 @@
+{
+  "schema_version": "mark-l3-bakeoff-v1",
+  "cases": [
+    {
+      "case_id": "l3-001",
+      "scenario": "lighter",
+      "data_origin": "synthetic_fixture_not_user_measurement",
+      "data": {
+        "current": {
+          "avg_hr": 131,
+          "avg_speed_kmh": 22.5,
+          "duration_min": 42
+        },
+        "previous": {
+          "avg_hr": 135,
+          "avg_speed_kmh": 23.7,
+          "duration_min": 40
+        },
+        "profile": {
+          "total_sessions": 8,
+          "usual_distance_km": 15
+        }
+      },
+      "expected_inference": "心率低了4 bpm，均速慢了1.2公里/小时，看起来这回记录的强度在降。",
+      "required_metrics": [
+        "avg_hr",
+        "avg_speed_kmh"
+      ],
+      "must_contain_inference_word": [
+        "看起来",
+        "可能是",
+        "似乎",
+        "像是"
+      ]
+    },
+    {
+      "case_id": "l3-002",
+      "scenario": "higher-hr",
+      "data_origin": "synthetic_fixture_not_user_measurement",
+      "data": {
+        "current": {
+          "avg_hr": 145,
+          "avg_speed_kmh": 22,
+          "duration_min": 40
+        },
+        "previous": {
+          "avg_hr": 137,
+          "avg_speed_kmh": 22,
+          "duration_min": 40
+        },
+        "profile": {
+          "total_sessions": 8,
+          "usual_distance_km": 15
+        }
+      },
+      "expected_inference": "心率高了8 bpm，均速仍是22公里/小时，看起来同速时心率偏高。",
+      "required_metrics": [
+        "avg_hr",
+        "avg_speed_kmh"
+      ],
+      "must_contain_inference_word": [
+        "看起来",
+        "可能是",
+        "似乎",
+        "像是"
+      ]
+    },
+    {
+      "case_id": "l3-003",
+      "scenario": "recorded-climb",
+      "data_origin": "synthetic_fixture_not_user_measurement",
+      "data": {
+        "current": {
+          "avg_hr": 142,
+          "avg_speed_kmh": 17,
+          "ascent_m": 240
+        },
+        "previous": {
+          "avg_hr": 136,
+          "avg_speed_kmh": 21,
+          "ascent_m": 80
+        },
+        "profile": {
+          "total_sessions": 8,
+          "usual_distance_km": 15
+        }
+      },
+      "expected_inference": "累计爬升多了160米，均速慢了4公里/小时，可能是路段差异影响。",
+      "required_metrics": [
+        "ascent_m",
+        "avg_speed_kmh"
+      ],
+      "must_contain_inference_word": [
+        "看起来",
+        "可能是",
+        "似乎",
+        "像是"
+      ]
+    },
+    {
+      "case_id": "l3-004",
+      "scenario": "longer",
+      "data_origin": "synthetic_fixture_not_user_measurement",
+      "data": {
+        "current": {
+          "distance_km": 42,
+          "duration_min": 120,
+          "avg_speed_kmh": 21
+        },
+        "previous": {
+          "distance_km": 21,
+          "duration_min": 60,
+          "avg_speed_kmh": 21
+        },
+        "profile": {
+          "total_sessions": 8,
+          "usual_distance_km": 15
+        }
+      },
+      "expected_inference": "距离多了21公里，时间多了60分钟，看起来本次记录更长。",
+      "required_metrics": [
+        "distance_km",
+        "duration_min"
+      ],
+      "must_contain_inference_word": [
+        "看起来",
+        "可能是",
+        "似乎",
+        "像是"
+      ]
+    },
+    {
+      "case_id": "l3-005",
+      "scenario": "lower-recorded-load",
+      "data_origin": "synthetic_fixture_not_user_measurement",
+      "data": {
+        "current": {
+          "avg_hr": 118,
+          "avg_speed_kmh": 18,
+          "duration_min": 30
+        },
+        "previous": {
+          "avg_hr": 138,
+          "avg_speed_kmh": 23,
+          "duration_min": 50
+        },
+        "profile": {
+          "total_sessions": 8,
+          "usual_distance_km": 15
+        }
+      },
+      "expected_inference": "心率低了20 bpm，时长少了20分钟，看起来本次记录更短。",
+      "required_metrics": [
+        "avg_hr",
+        "duration_min"
+      ],
+      "must_contain_inference_word": [
+        "看起来",
+        "可能是",
+        "似乎",
+        "像是"
+      ]
+    },
+    {
+      "case_id": "l3-006",
+      "scenario": "interval-variation",
+      "data_origin": "synthetic_fixture_not_user_measurement",
+      "data": {
+        "current": {
+          "avg_hr": 140,
+          "max_hr": 172,
+          "avg_speed_kmh": 24
+        },
+        "previous": {
+          "avg_hr": 140,
+          "max_hr": 155,
+          "avg_speed_kmh": 24
+        },
+        "profile": {
+          "total_sessions": 8,
+          "usual_distance_km": 15
+        }
+      },
+      "expected_inference": "平均心率仍是140 bpm，最高心率高了17 bpm，看起来峰值差异更突出。",
+      "required_metrics": [
+        "avg_hr",
+        "max_hr"
+      ],
+      "must_contain_inference_word": [
+        "看起来",
+        "可能是",
+        "似乎",
+        "像是"
+      ]
+    },
+    {
+      "case_id": "l3-007",
+      "scenario": "stable",
+      "data_origin": "synthetic_fixture_not_user_measurement",
+      "data": {
+        "current": {
+          "avg_hr": 135,
+          "avg_speed_kmh": 22.2,
+          "duration_min": 45
+        },
+        "previous": {
+          "avg_hr": 135,
+          "avg_speed_kmh": 22.2,
+          "duration_min": 45
+        },
+        "profile": {
+          "total_sessions": 8,
+          "usual_distance_km": 15
+        }
+      },
+      "expected_inference": "平均心率都是135 bpm，均速都是22.2公里/小时，看起来数值接近。",
+      "required_metrics": [
+        "avg_hr",
+        "avg_speed_kmh"
+      ],
+      "must_contain_inference_word": [
+        "看起来",
+        "可能是",
+        "似乎",
+        "像是"
+      ]
+    },
+    {
+      "case_id": "l3-008",
+      "scenario": "missing-hr",
+      "data_origin": "synthetic_fixture_not_user_measurement",
+      "data": {
+        "current": {
+          "avg_hr": null,
+          "avg_speed_kmh": 20,
+          "distance_km": 20
+        },
+        "previous": {
+          "avg_hr": 134,
+          "avg_speed_kmh": 22,
+          "distance_km": 22
+        },
+        "profile": {
+          "total_sessions": 8,
+          "usual_distance_km": 15
+        }
+      },
+      "expected_inference": "均速慢了2公里/小时，距离少了2公里，看起来记录更短；本次心率没记到。",
+      "required_metrics": [
+        "avg_speed_kmh",
+        "distance_km"
+      ],
+      "must_contain_inference_word": [
+        "看起来",
+        "可能是",
+        "似乎",
+        "像是"
+      ]
+    },
+    {
+      "case_id": "l3-009",
+      "scenario": "decimal-rounding",
+      "data_origin": "synthetic_fixture_not_user_measurement",
+      "data": {
+        "current": {
+          "avg_hr": 130.4,
+          "avg_speed_kmh": 21.25,
+          "duration_min": 42
+        },
+        "previous": {
+          "avg_hr": 134.8,
+          "avg_speed_kmh": 22.5,
+          "duration_min": 40
+        },
+        "profile": {
+          "total_sessions": 8,
+          "usual_distance_km": 15
+        }
+      },
+      "expected_inference": "平均心率低了4.4 bpm，均速慢了1.3公里/小时，看起来数值在降。",
+      "required_metrics": [
+        "avg_hr",
+        "avg_speed_kmh"
+      ],
+      "must_contain_inference_word": [
+        "看起来",
+        "可能是",
+        "似乎",
+        "像是"
+      ]
+    },
+    {
+      "case_id": "l3-010",
+      "scenario": "first-record",
+      "data_origin": "synthetic_fixture_not_user_measurement",
+      "data": {
+        "current": {
+          "avg_hr": 132,
+          "avg_speed_kmh": 21,
+          "duration_min": 35
+        },
+        "previous": null,
+        "profile": null
+      },
+      "expected_inference": "平均心率132 bpm，均速21公里/小时，看起来是本次的数值；时长35分钟，没有上次数据可比较。",
+      "required_metrics": [
+        "avg_hr",
+        "avg_speed_kmh"
+      ],
+      "must_contain_inference_word": [
+        "看起来",
+        "可能是",
+        "似乎",
+        "像是"
+      ]
+    }
+  ]
+}
