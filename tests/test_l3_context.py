@@ -136,3 +136,38 @@ class TrendPromptTests(unittest.TestCase):
             self.assertIn('有据趋势判断', prompt)
             self.assertIn('不确定性标记', prompt)
             self.assertIn('15字', prompt)
+
+
+class MemoryWindowTests(unittest.TestCase):
+    def test_orchestrator_explicitly_requests_five_rounds_one_hour(self):
+        from unittest.mock import patch
+        from tests.test_dialog_store import NOW
+        import dialog_store
+        import memory_service
+        with patch.object(memory_service, '_records', return_value=[]), \
+             patch.object(dialog_store, 'get_recent', return_value=None) as get:
+            memory_service.get_context_for_chat('synthetic-user', '这次呢', now=NOW)
+        self.assertEqual(get.call_args.args, ('synthetic-user',))
+        self.assertEqual(get.call_args.kwargs['n'], 5)
+        self.assertEqual(get.call_args.kwargs['within_hours'], 1)
+
+    def test_anonymous_retains_three_rounds_thirty_minutes(self):
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        import coach_server
+        app = coach_server.App(store=SimpleNamespace(path=None))
+        result = {'speech_status': 'ok', 'speech': '已记下'}
+        with patch.object(coach_server.time, 'monotonic', return_value=100):
+            for i in range(6):
+                app._dialog_record('synthetic-conv', str(i), result)
+        with patch.object(coach_server.time, 'monotonic', return_value=1899):
+            self.assertEqual([row['q'] for row in app._dialog_read('synthetic-conv')], ['3','4','5'])
+        with patch.object(coach_server.time, 'monotonic', return_value=3699):
+            self.assertIsNone(app._dialog_read('synthetic-conv'))
+
+    def test_five_context_rounds_cannot_authorize_fabricated_numbers(self):
+        import ride_chat
+        history = [{'q': '心率999?', 'a': '999'} for _ in range(5)]
+        result = ride_chat.build_ride_chat('最近心率呢', memory(), history=history,
+                 api_key='synthetic-key', http_post=transport('心率999。'))
+        self.assertEqual(result['llm_status'], 'rejected_unverifiable_number')

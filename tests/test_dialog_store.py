@@ -288,7 +288,7 @@ class DialogBudgetTests(unittest.TestCase):
     def context(self, turns):
         with patch.object(memory,"_records",return_value=[]), patch.object(dialog,"get_recent",return_value=copy.deepcopy(turns)) as get:
             value = memory.get_context_for_chat("a","继续",now=NOW)
-        get.assert_called_once_with("a",database_url=None,now=NOW)
+        get.assert_called_once_with("a",n=5,within_hours=1,database_url=None,now=NOW)
         return value
 
     def test_all_five_short_rounds_fit_budget_and_builder_projection(self):

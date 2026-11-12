@@ -263,7 +263,8 @@ def get_context_for_chat(user_id, question, database_url=None, *, now=None, sess
     context = {"matched_summaries": _matches(eligible, question, now),
                "recent_summaries": [_recent_summary(item) for item in eligible
                                      if selected is None or item["id"] != selected["id"]][-3:],
-               "recent_dialog": dialog_store.get_recent(user_id, database_url=database_url, now=now), "user_notes": [],
+               "recent_dialog": dialog_store.get_recent(user_id, n=5, within_hours=1,
+                                                        database_url=database_url, now=now), "user_notes": [],
                "profile": _brief(eligible, now) if activity == "ride" else None,
                "totals": totals, "week": week}
     current = SummarySession(selected) if selected is not None else None

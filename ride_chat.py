@@ -1,8 +1,9 @@
 """Mark's bounded Chinese Q&A layer: answer questions about recorded sessions.
 
 中文摘要：问题是数据不是指令；只发送已校验聚合事实与问题文本；回答过同一条
-反幻觉核验链，编数字即整稿拒绝，静默回退模板。对话无状态——不携带任何聊天
-历史上行，聊天记录不落盘。无 session 时只给历史聚合 facts；「没记到」是标准
+反幻觉核验链，编数字即整稿拒绝，静默回退模板。builder 无状态：调用方注入有限 recent_dialog，
+云身份最多五轮一小时；匿名最多三轮、30分钟无活动过期。历史数字不进入事实白名单。
+无 session 时只给历史聚合 facts；「没记到」是标准
 答案之一。
 """
 from __future__ import annotations
