@@ -72,11 +72,47 @@ _IDIOM_ONE = (('一共','总共'),('一起','一同'),('一会儿','片刻'),('�
 _NUM = r'[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?'
 _UNIT_RE = re.compile(r'\s*(bpm|公里|千米|分钟|小时|秒钟|秒|%|次|个|条|点|瓦|转|米|[A-Za-z]+(?:/[A-Za-z]+)?)', re.I)
 _UNITS = {'分钟':'min','小时':'h','秒钟':'s','秒':'s','次':'','个':'','条':'','点':'','瓦':'w','转':'rpm','公里':'km','千米':'km','米':'m'}
+# Keep the original strict gate for non-L3 general/knowledge/weekly lanes.
 _FORBIDDEN = re.compile(r'变强|状态提升|能力提升|训练效果|更健康|心肺功能.{0,4}(提高|改善)|'
                         r'(建议|应该|务必|请).{0,12}(减速|加速|降低心率|加大强度|服药|吃药)|'
                         r'继续保持.{0,6}(强度|心率)|燃脂效果|减脂效果|诊断|治疗|'
                         r'有氧基础|越来越(轻松|快|强)|进步明显|退步|疲劳积累|效率(高|低|提升)|'
                         r'(感觉|挺|很|非常|相当).{0,4}(轻松|吃力|累|稳)|强度(不?大|很?(高|低))|挺.{0,4}的一次')
+
+
+_FORBIDDEN_HARD = re.compile(
+    r'变强|状态提升|能力提升|训练效果|更健康|心肺功能.{0,4}(提高|改善)'
+    r'|(建议|应该|务必|请).{0,12}(减速|加速|降低心率|加大强度|服药|吃药)'
+    r'|继续保持.{0,6}(强度|心率)|燃脂效果|减脂效果|诊断|治疗'
+    r'|越来越(轻松|快|强)|进步明显|退步|疲劳积累')
+_FORBIDDEN_SOFT = re.compile(
+    r'有氧基础|效率(高|低|提升)'
+    r'|(感觉|挺|很|非常|相当).{0,4}(轻松|吃力|累|稳)'
+    r'|轻松|吃力|强度(不?大|很?(高|低))|挺.{0,4}的一次')
+_SENTENCE_END = re.compile(r'[。！？!?；;\n]|(?<!\d)\.|\.(?!\d)')
+_BASIS_NUMBER = re.compile(_NUM + r'|[' + _HAN + r']+(?:点[' + _HAN + r']+)?')
+
+
+def _nearby_basis(sentence, cue, numbers):
+    # Check complete numeric tokens, not slices (e.g. 4 must not match 140).
+    # The builder also verifies the complete speech with dimensions first.
+    idioms = [(match.start(), match.end()) for word, _ in _IDIOM_ONE
+              for match in re.finditer(re.escape(word), sentence)]
+    for number in _BASIS_NUMBER.finditer(sentence):
+        if any(start <= number.start() and number.end() <= end for start, end in idioms):
+            continue
+        gap = max(cue.start() - number.end(), number.start() - cue.end(), 0)
+        if gap <= 15 and _verified_text(_normalized_numbers(number.group()), numbers):
+            return True
+    return False
+
+
+def _soft_has_basis(speech, numbers):
+    for sentence in _SENTENCE_END.split(speech):
+        for cue in _FORBIDDEN_SOFT.finditer(sentence):
+            if not _nearby_basis(sentence, cue, numbers):
+                return False
+    return True
 
 
 def _result(status, usage=None, speech=None):
@@ -384,7 +420,7 @@ def build_ride_review(session: dict, previous_summary: dict | None = None,
             ctx.prec=100
             if not _verified_text(_normalized_numbers(speech),numbers):
                 return _result('rejected_unverifiable_number',usage)
-        if _FORBIDDEN.search(speech):
+        if _FORBIDDEN_HARD.search(speech) or not _soft_has_basis(speech, numbers):
             return _result('rejected_unsafe_speech',usage)
         if facts['source']=='simulated' and '模拟' not in speech and '合成' not in speech:
             return _result('rejected_unsafe_speech',usage)
