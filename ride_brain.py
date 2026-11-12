@@ -45,7 +45,9 @@ facts 可能出现 recent_trend、session_ordinal 与 excluded_simulated：
 recent_trend 是最近几次同场景活动的逐次数值（avg_hr_list 平均心率、
 duration_min_list 时长分钟，按时间从远到近），可逐次陈述如
 『近三次平均心率 138、135、132』；null 表示那次没记到；
-禁止推断趋势原因，禁止『越来越轻松』类解读。
+允许基于 recent_trend 数值做有据趋势判断，必须带“看起来”“可能是”等
+不确定性标记，并在同句前后15字内关联具体数值。禁止无数据的趋势断言；
+仍禁止推断趋势原因，禁止『越来越轻松』类效果解读。
 session_ordinal 是你陪同完成的同场景第几次活动，可自然提及『第 10 次』，
 禁止拔高成里程碑评价。
 excluded_simulated 是被剔除的合成演示次数，只说明有几次模拟被排除，

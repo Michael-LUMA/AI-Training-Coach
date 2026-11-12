@@ -116,3 +116,23 @@ class InferenceBasisTests(unittest.TestCase):
                 self.assertEqual(result['llm_status'], expected)
                 if expected != 'ok':
                     self.assertNotEqual(result['speech'], text)
+
+
+class TrendPromptTests(unittest.TestCase):
+    def test_grounded_trend_passes_but_effect_claim_does_not(self):
+        recents = [{'avg_hr': n} for n in (138, 135, 132)]
+        for speech, expected in [
+            ('近三次平均心率138、135、132，看起来在往下走。', 'ok'),
+            ('近三次平均心率138、135、132，你心肺功能在改善。', 'rejected_unsafe_speech'),
+            ('近三次平均心率138、135、999，看起来在往下走。', 'rejected_unverifiable_number')]:
+            with self.subTest(speech=speech):
+                result = brain.build_ride_review(memory(), recent_summaries=recents,
+                         api_key='synthetic-key', http_post=transport(speech))
+                self.assertEqual(result['llm_status'], expected)
+
+    def test_trend_prompts_keep_uncertainty_and_causality_boundary(self):
+        import ride_live
+        for prompt in (brain.SYSTEM_PROMPT, ride_live.SYSTEM_PROMPT):
+            self.assertIn('有据趋势判断', prompt)
+            self.assertIn('不确定性标记', prompt)
+            self.assertIn('15字', prompt)
