@@ -1,7 +1,9 @@
 FROM python:3.12-slim
 
-# AI Ride Coach — single stdlib Python process, no dependencies to install.
+# AI Ride Coach: stdlib service plus the opt-in PostgreSQL driver.
 WORKDIR /app
+COPY requirements-cloud.txt .
+RUN python -m pip install --no-cache-dir --disable-pip-version-check -r requirements-cloud.txt
 COPY . .
 
 # Non-root runtime user.

@@ -605,11 +605,11 @@ class ChatDialogHistoryTests(unittest.TestCase):
 
     def test_invalid_history_rejected_without_upstream(self):
         post = Mock(side_effect=AssertionError('no network'))
-        cases = ([{'q': '问' * 201, 'a': '答'}], [{'q': '问', 'a': '答' * 301}],
+        cases = ([{'q': '问' * 201, 'a': '答'}], [{'q': '问', 'a': '答' * 481}],
                  [{'q': '问'}], [{'q': '问', 'a': '答', 'x': 1}],
                  [{'q': '', 'a': '答'}], [{'q': '问', 'a': ''}],
                  [{'q': '问\n', 'a': '答'}], [{'q': '问', 'a': '答\x7f'}],
-                 [{'q': '问', 'a': '答'}] * 4, '问', 42, [{'q': 1, 'a': '答'}],
+                 [{'q': '问', 'a': '答'}] * 6, '问', 42, [{'q': 1, 'a': '答'}],
                  [['问', '答']])
         for history in cases:
             with self.subTest(history=repr(history)[:40]):

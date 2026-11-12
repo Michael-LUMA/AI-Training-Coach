@@ -184,7 +184,7 @@ class KnowledgeAnswerTests(unittest.TestCase):
 
     def test_invalid_history_rejected_without_upstream(self):
         post = Mock(side_effect=AssertionError('no network'))
-        for history in ([{'q': '问', 'a': '答'}] * 4, [{'q': '问'}], '问'):
+        for history in ([{'q': '问', 'a': '答'}] * 6, [{'q': '问'}], '问'):
             with self.subTest(history=repr(history)[:40]):
                 result = know.build_knowledge_answer('踏频是什么？', self.cards, history=history,
                                                      api_key='synthetic-key', http_post=post)

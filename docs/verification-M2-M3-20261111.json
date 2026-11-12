@@ -1,0 +1,76 @@
+{
+  "date": "2026-11-11",
+  "scope": "M2 identity HTTP + M3 user-scoped aggregate-only persistence",
+  "tests": {
+    "development": {
+      "run": 1603,
+      "passed": 1601,
+      "skipped": 2,
+      "failed": 0,
+      "seconds": 107.598,
+      "log": "E:\\luma测试\\.code\\ai_companion\\.runtime\\m2-m3-regression-20261111.log",
+      "log_sha256": "5d4f16f42987e0e7189c41d270ed37a0e47b83f26faae3b1aa1dd8e36259af9b"
+    },
+    "deployment": {
+      "run": 1578,
+      "passed": 1576,
+      "skipped": 2,
+      "failed": 0,
+      "seconds": 107.164,
+      "log": "E:\\luma测试\\.code\\coach-deploy\\.runtime\\m2-m3-regression-20261111.log",
+      "log_sha256": "995a507d0df1fc9b126076b892bab88bdeb9248022fd97f3843ca48ea28f2c62"
+    }
+  },
+  "real_loopback_http_smoke": "passed; synthetic identity and database",
+  "real_postgresql_acceptance": "not run: explicit disposable test DATABASE_URL is not configured",
+  "production_deploy": "not performed",
+  "live_8794_restart": "not performed",
+  "ui_integration": "not implemented; UI unchanged by instruction",
+  "source_deployment_parity": {
+    "files": {
+      "coach_server.py": "4f82d6ddcb303ba46f78ddc0ba0b2fcf9baa9a34d0939c5634a8a6c63f53b9fb",
+      "auth.py": "d4168bffb89efd122847c55d6263ec76da9414a3080ca283800d7644e2ca020e",
+      "db.py": "d41052c26fd879cb96f06d2ca66943157d5b5bc0dabfc7d4d232ee16071f77cf",
+      "cloud_rides.py": "bd3502c739f756592e07dc193a403e2121ee248bcf1482c2710b0eb17e91f034",
+      "ride_memory.py": "505e644bfc21a63e92a5dd3e015b436e4a886b1bf624f849ee9bc4f13c0b8420",
+      "Dockerfile": "35c39b3fa858e2434c23aff6897236d74d71a930def839952aac1fcc7fb3940a",
+      "requirements-cloud.txt": "308bb6ad80ebc6e9165f56aebf7c33d3984ea3bf0560af26208df3e370c3317f",
+      "tests/test_auth.py": "cc28f192a0ce99e845e992b00594b44ebdd89e5fe9ada3b193ebbf44b4c18193",
+      "tests/test_db.py": "7cd2db3ed9ab522ce6975ff1c81ecf86672728ab2ade3b1e0e76ec2d2d365501",
+      "tests/test_coach_server.py": "bb51bb68642b18b5ebd9ea3bb235ceb1309dc6660c9f13cdf400283e275e3d47",
+      "tests/test_coach_config.py": "9856877765b0a9d89de5144b94b74c4b03b00dccbf6aa44dde585a0baa4b9c7e",
+      "tests/test_cloud_rides.py": "a9a5ea18a75a0f7bfd87a5cc825b40a7b968e088b7cdfb299c2455c73bbad8f4",
+      "tests/test_cloud_http.py": "bd098b1fc4791417624a5c8bfc4c42a49ccea8bca3d4ada18f99b443c3fb96d0",
+      "tests/test_cloud_postgres.py": "11734f3e46f9fb1674ea031f326c91659c402297c2655cea6a6f2c6829beef34",
+      "docs/cloud-memory-M2-M3-20261111.md": "667fc9046f02ce9da767e70eff21dfdc602337d41c352d78436146b7aa6d2311"
+    },
+    "verified": true,
+    "DEPLOY.md": "cloud section appended separately; existing deployment notes preserved"
+  },
+  "test_inventory_difference": "Development-only existing modules: test_ride_console.py, test_ride_preview.py",
+  "frozen": {
+    "validate_session": "source unchanged versus pre-change backup",
+    "ride_tts.py": "unchanged",
+    "ride_nav.py": "unchanged",
+    "llm_review.py": "unchanged",
+    "static/mark.html": "unchanged"
+  },
+  "database_driver": {
+    "package": "psycopg2-binary",
+    "version": "2.9.13",
+    "installed_development": true
+  },
+  "configuration": {
+    "DATABASE_URL_present": false,
+    "MARK_TEST_DATABASE_URL_present": false
+  },
+  "separate_existing_issue": "pip check reports opencv-python-headless requires missing numpy; not changed",
+  "release_blockers": [
+    "Real PostgreSQL and container restart acceptance outstanding",
+    "Known non-secret device IDs must not recover bearer tokens in a public product; keep private gate until possession proof/pairing is implemented",
+    "Frontend explicit sync/pairing and M7 data controls outstanding"
+  ],
+  "backup": "E:\\luma测试\\.code\\backups\\mark-M2-M3-20261111-234548",
+  "paid_model_calls": 0,
+  "paid_cloud_resources_created": 0
+}

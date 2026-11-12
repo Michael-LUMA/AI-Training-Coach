@@ -218,11 +218,21 @@ def _decoupling_pct(series):
 
 def _facts(session, previous_summary, recent_summaries=None,
             activity_ordinal=None, excluded_simulated=None):
-    memory=validate_session(session)  # Detached before projecting; never send raw samples/notes/IDs.
+    from memory_service import SummarySession
+    aggregate_only = isinstance(session, SummarySession)
+    if aggregate_only:
+        # Cloud aggregates cannot prove sample counts or decoupling. Revalidate
+        # the complete cloud contract; never manufacture a local series.
+        from cloud_rides import validate_summary
+        memory = validate_summary(session.record)
+    else:
+        memory=validate_session(session)  # Detached before projecting; never send raw samples/notes/IDs.
     summary,numbers=_summary(memory['summary'])
-    count=sum('hr' in point for point in memory['series'])
-    facts={'summary':summary,'sample_count':count,'source':memory['source']}
-    numbers.append((Decimal(count),None))
+    facts={'summary':summary,'source':memory['source']}
+    if not aggregate_only:
+        count=sum('hr' in point for point in memory['series'])
+        facts['sample_count']=count
+        numbers.append((Decimal(count),None))
     display={}
     if summary.get('duration_s') is not None:
         display['duration_min']=_friendly_minutes(summary['duration_s'])
@@ -251,7 +261,7 @@ def _facts(session, previous_summary, recent_summaries=None,
             share[pct_key]=int(pct)
             numbers.append((Decimal(str(int(pct))),'%'))
         facts['zone_share']=share
-    decoupling=_decoupling_pct(memory['series'])
+    decoupling=None if aggregate_only else _decoupling_pct(memory['series'])
     if decoupling is not None:
         facts['pw_hr_decoupling_pct']=float(decoupling)
         numbers.extend([(decoupling,'%'),(abs(decoupling),'%')])

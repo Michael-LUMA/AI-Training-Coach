@@ -86,3 +86,38 @@ This shared gate is not per-user authorization, rate limiting or a multi-user ac
 Existing ephemeral storage remains ephemeral: export important test records before redeploy/restart;
 this change does not provision a persistent volume or preserve server records across deployment.
 No paid APIs were invoked by the gate tests; actual phone voice usage may use existing service credits.
+
+
+## Cloud aggregate memory M2/M3 — 2026-11-11
+
+Optional PostgreSQL persistence is isolated from the legacy SQLite credential slot.
+Install `requirements-cloud.txt` (the Dockerfile does this), then set `DATABASE_URL`
+through the host's secret configuration. No model API change is required.
+Configured database initialization must succeed before the service binds; without
+DATABASE_URL existing local features stay available, while cloud endpoints return 503.
+New `/api/auth/*` and `/api/rides/*` routes remain behind the private tester login
+and same-origin boundary. They do not make Mark a public multi-user product.
+Known device IDs currently recover existing tokens: public release requires proof
+of token possession / authorized device pairing first. Do not remove the private gate.
+Only allowlisted summaries are persisted; complete sessions and raw telemetry are
+rejected by the cloud routes. UI integration, production database acceptance and
+container-restart persistence verification are still outstanding.
+See `docs/cloud-memory-M2-M3-20261111.md` for contracts, limits and release blockers.
+
+
+## Numeric riding profiles M4 — 2026-11-12
+
+The existing opt-in PostgreSQL schema now also creates `profiles` (derived numeric
+cache). No additional model, dependency or UI setup is required. New cloud ride
+writes/deletions atomically invalidate the user's cache, then queue a bounded
+background refresh. Same-user source mutations and profile refreshes serialize
+via a users-row transaction lock; cache misses recompute on demand.
+A profile requires at least three completed, positive-duration, non-simulated
+rides. Baselines use the most recent 30 rides: integer hour mode (smallest
+hour on ties), and duration/distance/HR medians. Distance/HR baselines each
+require three observed values; lifetime distance needs only one. Totals use all
+eligible history. Missing/insufficient measurements stay null, with counts. China-first calendar
+uses UTC+08 and Monday weeks; run/hike are not mixed into riding baselines.
+Real PostgreSQL acceptance remains opt-in with a disposable `MARK_TEST_DATABASE_URL`.
+No production release, container-restart acceptance or M5 prompt wiring is implied.
+See `docs/profile-M4-20261112.md` for exact semantics, tests and remaining blockers.

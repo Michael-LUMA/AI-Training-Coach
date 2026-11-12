@@ -375,3 +375,19 @@ def validate_session(session: dict[str, Any]) -> dict[str, Any]:
     for note in notes:
         _text(note, "coach_notes item", MAX_NOTE_CHARS)
     return copy.deepcopy(session)
+
+
+def to_cloud_summary(session: dict[str, Any]) -> dict[str, Any]:
+    """Project a validated local session onto the cloud's aggregate allowlist.
+
+    This pure function performs no upload or storage. Raw samples, coordinates,
+    sensor series and local recording metadata never enter the returned object.
+    Older records retain their source and nulls; only the documented default
+    activity label is added. Notes are preserved, not interpreted as commands.
+    """
+    validated = validate_session(session)
+    return {"id": validated["id"], "started_at": validated["started_at"],
+            "ended_at": validated["ended_at"], "summary": validated["summary"],
+            "source": validated["source"],
+            "activity": validated.get("activity", "ride"),
+            "coach_notes": validated["coach_notes"]}

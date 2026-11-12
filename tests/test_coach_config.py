@@ -18,6 +18,30 @@ class CoachConfigTests(unittest.TestCase):
         env.start()
         self.addCleanup(env.stop)
 
+    def test_cloud_database_is_opt_in_and_initialized_before_socket(self):
+        with patch.object(server.cloud_db, 'init_db') as initialize, \
+                patch.object(server, 'ThreadingHTTPServer') as constructor:
+            server.create_server()
+            initialize.assert_not_called()
+            os.environ['DATABASE_URL'] = 'postgresql://user:secret@db/mark'
+            events = []
+            initialize.side_effect = lambda: events.append('db')
+            constructor.side_effect = lambda *args: (events.append('socket'), Mock())[1]
+            server.create_server()
+        self.assertEqual(events, ['db', 'socket'])
+
+    def test_cloud_initialization_failure_is_sanitized_and_never_binds(self):
+        os.environ['DATABASE_URL'] = 'postgresql://user:secret@db/mark'
+        with patch.object(server.cloud_db, 'init_db', side_effect=server.DatabaseError('password=secret')), \
+                patch.object(server.cloud_db, 'close') as close, \
+                patch.object(server, 'ThreadingHTTPServer') as constructor:
+            with self.assertRaises(ValueError) as caught:
+                server.create_server()
+        self.assertNotIn('secret', str(caught.exception))
+        self.assertNotIn('postgresql://', str(caught.exception))
+        constructor.assert_not_called()
+        close.assert_called_once_with()
+
     def test_defaults(self):
         self.assertEqual(server._bind_config(), ('127.0.0.1', 8794))
         self.assertEqual(server.CoachStore().path, server.DEFAULT_DB)

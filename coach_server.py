@@ -27,6 +27,13 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from action_cards import ActionError, require
+import auth
+import cloud_rides
+import profile_service
+import memory_service
+import dialog_store
+import db as cloud_db
+from db import DatabaseError
 from coach_icu_client import IntervalsClient, ICUClientError
 from coach_icu import normalize_activity
 from coach_demo import build_demo_review
@@ -79,6 +86,11 @@ RIDE_SPEAK = "/api/coach/ride/speak"
 RIDE_ASR = "/api/coach/ride/asr"
 RIDE_ASR_SEGMENT = "/api/coach/ride/asr/segment"
 RIDE_ASR_FINISH = "/api/coach/ride/asr/finish"
+AUTH_REGISTER = "/api/auth/register"
+AUTH_WHOAMI = "/api/auth/whoami"
+DIALOG_ROUTES = frozenset({"/api/dialog/list", "/api/dialog/delete"})
+CLOUD_RIDE_ROUTES = frozenset({"/api/rides/sync", "/api/rides/create", "/api/rides/list",
+                               "/api/rides/get", "/api/rides/delete"})
 
 
 def _usage_profile(entries):
@@ -345,11 +357,12 @@ class App:
         require(method in ("GET", "POST"), "Method not allowed", "method_not_allowed", 405)
         font_path = re.fullmatch(r"/fonts/[a-z0-9-]+\.woff2", parsed.path) if method == "GET" else None
         public = method == "GET" and (parsed.path in ("/", "/ride", "/mark", "/privacy", "/terms", "/ride.webmanifest", "/icon.svg", "/api/coach/config") or font_path is not None)
-        if not public:
+        auth_public = method == "POST" and (path in (AUTH_REGISTER, AUTH_WHOAMI) or path in CLOUD_RIDE_ROUTES)
+        if not public and not auth_public:
             token = headers.get("X-Coach-Token", "")
             require(type(token) is str and token.isascii() and secrets.compare_digest(token, self.token), "Session token required", "token_denied", 403)
         allowed = ((method == "GET" and (parsed.path in ("/", "/privacy", "/terms", "/api/coach/config", "/api/coach/activities", "/ride", "/mark", "/ride.webmanifest", "/icon.svg", RIDE_LIST, RIDE_NOTES) or font_path is not None)) or
-                   (method == "POST" and path in ("/api/coach/connect", "/api/coach/review", "/api/coach/review-l2", "/api/coach/demo-review", "/api/coach/waitlist", "/api/coach/weekly", RIDE_POST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE, RIDE_CHAT, RIDE_LIVE, RIDE_IMPORT, RIDE_WEATHER, RIDE_NOTE, RIDE_NOTE_DELETE, RIDE_SPEAK, RIDE_ASR, RIDE_ASR_SEGMENT, RIDE_ASR_FINISH)))
+                   (method == "POST" and (path in CLOUD_RIDE_ROUTES or path in DIALOG_ROUTES or path in (AUTH_REGISTER, AUTH_WHOAMI, "/api/coach/connect", "/api/coach/review", "/api/coach/review-l2", "/api/coach/demo-review", "/api/coach/waitlist", "/api/coach/weekly", RIDE_POST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE, RIDE_CHAT, RIDE_LIVE, RIDE_IMPORT, RIDE_WEATHER, RIDE_NOTE, RIDE_NOTE_DELETE, RIDE_SPEAK, RIDE_ASR, RIDE_ASR_SEGMENT, RIDE_ASR_FINISH))))
         require(allowed, "Endpoint not found", "not_found", 404)
         if method == "POST":
             asr = path in (RIDE_ASR, RIDE_ASR_SEGMENT)
@@ -360,7 +373,7 @@ class App:
             require(type(raw) is str and re.fullmatch(r"[0-9]{1,8}", raw) is not None, "Body length invalid", "body_too_large", 413)
             length = int(raw)
             limit = (MAX_IMPORT_BODY_BYTES if path == RIDE_IMPORT
-                     else MAX_RIDE_BODY_BYTES if path == RIDE_POST
+                     else MAX_RIDE_BODY_BYTES if path == RIDE_POST or path in ("/api/rides/sync", "/api/rides/create")
                      else MAX_AUDIO_BYTES if asr else MAX_BODY_BYTES)
             require(0 < length <= limit, "Body size exceeds limit", "body_too_large", 413)
             return length
@@ -430,6 +443,32 @@ class App:
             payload = strict_json(body)
         except ActionError:
             raise ActionError("invalid_json", "Strict UTF-8 JSON required") from None
+        if path in DIALOG_ROUTES:
+            self._ride_rate_limit(method, path)
+            return self._cloud_dialog_request(path, payload)
+        if path in CLOUD_RIDE_ROUTES:
+            self._ride_rate_limit(method, RIDE_POST if path in ("/api/rides/sync", "/api/rides/create") else path)
+            return self._cloud_ride_request(path, payload)
+        if path == AUTH_REGISTER:
+            require(type(payload) is dict and set(payload) in (set(), {"device_id"}),
+                    "Request fields do not match")
+            require("device_id" not in payload or type(payload["device_id"]) is str,
+                    "Invalid device_id")
+            try:
+                return auth.register_device(payload.get("device_id"))
+            except auth.InvalidDeviceId:
+                raise ActionError("invalid_input", "Invalid device_id", 400) from None
+            except (auth.AuthStorageError, DatabaseError):
+                raise ActionError("storage_unavailable", "Identity storage unavailable", 503) from None
+        if path == AUTH_WHOAMI:
+            require(type(payload) is dict and set(payload) == {"token"},
+                    "Request fields do not match")
+            try:
+                return {"user_id": auth.whoami(payload["token"])}
+            except auth.InvalidToken:
+                raise ActionError("invalid_token", "身份令牌无效", 401) from None
+            except (auth.AuthStorageError, DatabaseError):
+                raise ActionError("storage_unavailable", "Identity storage unavailable", 503) from None
         if path == RIDE_POST:
             return self._save_ride(payload)
         if path == RIDE_IMPORT:
@@ -508,53 +547,90 @@ class App:
                 lambda **kw: build_llm_review(copy.deepcopy(review), http_post=self.llm_post, **kw))
         return result
 
+    def _memory_identity(self, payload):
+        """Optional CLOUD token, distinct from the browser's X-Coach-Token."""
+        require(type(payload) is dict, "Expected request object")
+        if "token" not in payload:
+            return None, payload
+        try:
+            user_id = auth.whoami(payload["token"])
+        except auth.InvalidToken:
+            raise ActionError("invalid_token", "Invalid identity token", 401) from None
+        except (auth.AuthStorageError, DatabaseError):
+            raise ActionError("storage_unavailable", "Identity storage unavailable", 503) from None
+        return user_id, {key: value for key, value in payload.items() if key != "token"}
+
+    def _cloud_memory(self, operation):
+        try:
+            return operation()
+        except cloud_rides.CloudRideNotFound:
+            raise ActionError("not_found", "Ride not found", 404) from None
+        except dialog_store.DialogCapacityError:
+            raise ActionError("dialog_export_required",
+                              "Dialog limit reached: export via /api/dialog/list before confirming cleanup", 409) from None
+        except DatabaseError:
+            raise ActionError("storage_unavailable", "Cloud memory unavailable", 503) from None
+        except ValueError:
+            raise ActionError("invalid_input", "Invalid or oversized cloud memory", 400) from None
+
     def _review_ride(self, payload):
         """Read a validated snapshot under lock; never hold disk lock during cloud I/O."""
+        user_id, payload = self._memory_identity(payload)
         require(type(payload) is dict and set(payload) == {"session_id"}, "Expected session_id only")
         identifier = payload["session_id"]
         require(type(identifier) is str and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", identifier) is not None,
                 "Invalid session_id")
-        with self._ride_lock:
-            directory = self.ride_dir
-            require(not directory.is_symlink(), "Ride storage unavailable", "storage_unavailable", 503)
-            path = directory / (identifier + ".json")
-            require(not path.is_symlink(), "Session not found", "not_found", 404)
-            try:
-                require(path.stat().st_size <= MAX_RIDE_BODY_BYTES, "Invalid stored session", "storage_unavailable", 503)
-                memory = validate_session(strict_json(path.read_bytes()))
-                require(memory["id"] == identifier, "Invalid stored session", "storage_unavailable", 503)
-            except FileNotFoundError:
-                raise ActionError("not_found", "Session not found", 404) from None
-            except (RideMemoryError, OSError):
-                raise ActionError("storage_unavailable", "Ride storage unavailable", 503) from None
-            current_time = datetime.fromisoformat(memory["started_at"].replace("Z", "+00:00"))
-            activity = memory.get("activity", "ride")
-            previous, previous_time = None, None
-            history = []  # (when, summary) of non-simulated same-activity earlier sessions
-            excluded_simulated = 0
-            for candidate in directory.glob("*.json"):
-                if candidate == path or candidate.is_symlink():
-                    continue
+        if user_id is not None:
+            stored = self._cloud_memory(lambda: cloud_rides.get_ride(user_id, identifier))["ride"]
+            memory = memory_service.SummarySession(stored)
+            require(cloud_rides._instant(stored["ended_at"]) <= datetime.now(timezone.utc),
+                    "Ride is not complete")
+            context = self._cloud_memory(lambda: memory_service.get_context_for_review(user_id, memory))
+            previous = context["previous_summary"]
+            recent = context["recent_summaries"]
+            ordinal, excluded_simulated = None, 0
+        else:
+            with self._ride_lock:
+                directory = self.ride_dir
+                require(not directory.is_symlink(), "Ride storage unavailable", "storage_unavailable", 503)
+                path = directory / (identifier + ".json")
+                require(not path.is_symlink(), "Session not found", "not_found", 404)
                 try:
-                    if candidate.stat().st_size > MAX_RIDE_BODY_BYTES:
+                    require(path.stat().st_size <= MAX_RIDE_BODY_BYTES, "Invalid stored session", "storage_unavailable", 503)
+                    memory = validate_session(strict_json(path.read_bytes()))
+                    require(memory["id"] == identifier, "Invalid stored session", "storage_unavailable", 503)
+                except FileNotFoundError:
+                    raise ActionError("not_found", "Session not found", 404) from None
+                except (RideMemoryError, OSError):
+                    raise ActionError("storage_unavailable", "Ride storage unavailable", 503) from None
+                current_time = datetime.fromisoformat(memory["started_at"].replace("Z", "+00:00"))
+                activity = memory.get("activity", "ride")
+                previous, previous_time = None, None
+                history = []  # (when, summary) of non-simulated same-activity earlier sessions
+                excluded_simulated = 0
+                for candidate in directory.glob("*.json"):
+                    if candidate == path or candidate.is_symlink():
                         continue
-                    stored = validate_session(strict_json(candidate.read_bytes()))
-                    when = datetime.fromisoformat(stored["started_at"].replace("Z", "+00:00"))
-                    if stored["id"] != identifier and when < current_time and (previous_time is None or when > previous_time):
-                        previous, previous_time = stored["summary"], when
-                    if stored["id"] == identifier or when >= current_time:
+                    try:
+                        if candidate.stat().st_size > MAX_RIDE_BODY_BYTES:
+                            continue
+                        stored = validate_session(strict_json(candidate.read_bytes()))
+                        when = datetime.fromisoformat(stored["started_at"].replace("Z", "+00:00"))
+                        if stored["id"] != identifier and when < current_time and (previous_time is None or when > previous_time):
+                            previous, previous_time = stored["summary"], when
+                        if stored["id"] == identifier or when >= current_time:
+                            continue
+                        if stored.get("activity", "ride") != activity:
+                            continue
+                        if stored["source"] == "simulated":
+                            excluded_simulated += 1
+                            continue
+                        history.append((when, stored["summary"]))
+                    except (RideMemoryError, ActionError, OSError, ValueError):
                         continue
-                    if stored.get("activity", "ride") != activity:
-                        continue
-                    if stored["source"] == "simulated":
-                        excluded_simulated += 1
-                        continue
-                    history.append((when, stored["summary"]))
-                except (RideMemoryError, ActionError, OSError, ValueError):
-                    continue
-            history.sort(key=lambda entry: entry[0])
-            recent = [summary for _, summary in history[-3:]]
-            ordinal = len(history) + 1
+                history.sort(key=lambda entry: entry[0])
+                recent = [summary for _, summary in history[-3:]]
+                ordinal = len(history) + 1
         result = llm_router.run(
             'review',
             lambda **kw: build_ride_review(copy.deepcopy(memory), copy.deepcopy(previous),
@@ -571,8 +647,15 @@ class App:
 
         The question is data, never an instruction channel: bounded and validated
         by build_ride_chat. Optional conv_id carries at most _CONV_MAX_TURNS
-        recent turns as context — memory-only, TTL-bounded, never persisted.
+        recent turns as context. Anonymous history is TTL-only; authenticated
+        history is user-scoped PostgreSQL text, budgeted upstream of builders.
         """
+        user_id, payload = self._memory_identity(payload)
+        prune_confirmed = payload.get("dialog_prune_confirmed", False)
+        require(type(prune_confirmed) is bool and
+                ("dialog_prune_confirmed" not in payload or user_id is not None),
+                "Cleanup confirmation requires cloud identity and a boolean")
+        payload = {key: value for key, value in payload.items() if key != "dialog_prune_confirmed"}
         require(type(payload) is dict and set(payload) - {"weather", "nav", "tz_offset_min"} in ({"question"}, {"question", "session_id"},
                                                         {"question", "live_id"}, {"question", "conv_id"},
                                                         {"question", "session_id", "conv_id"},
@@ -603,97 +686,117 @@ class App:
         if conv_id is not None:
             require(type(conv_id) is str and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", conv_id) is not None,
                     "Invalid conv_id")
+        if user_id is not None:
+            # Cloud history must never read or write the shared anonymous TTL.
+            conv_id = None
+            if live_id is not None:
+                live_id = (user_id, live_id)
         dialog = self._dialog_read(conv_id)
         question_for_record = payload["question"]
-        with self._ride_lock:
-            directory = self.ride_dir
-            require(not directory.is_symlink(), "Ride storage unavailable", "storage_unavailable", 503)
+        if user_id is not None:
+            self._cloud_memory(lambda: dialog_store.check_capacity(
+                user_id, prune_confirmed=prune_confirmed))
             memory = None
             if identifier is not None:
-                path = directory / (identifier + ".json")
-                require(not path.is_symlink(), "Session not found", "not_found", 404)
+                stored = self._cloud_memory(lambda: cloud_rides.get_ride(user_id, identifier))["ride"]
+                memory = memory_service.SummarySession(stored)
+            context = self._cloud_memory(lambda: memory_service.get_context_for_chat(
+                user_id, payload["question"], session_id=identifier, selected_session=memory))
+            dialog = context["recent_dialog"]
+            recent, profile = context["recent_summaries"], context["profile"]
+            totals, week = context["totals"], context["week"]
+            user_notes, searchable = [], []
+            ordinal, excluded_simulated = None, 0
+        else:
+            with self._ride_lock:
+                directory = self.ride_dir
+                require(not directory.is_symlink(), "Ride storage unavailable", "storage_unavailable", 503)
+                memory = None
+                if identifier is not None:
+                    path = directory / (identifier + ".json")
+                    require(not path.is_symlink(), "Session not found", "not_found", 404)
+                    try:
+                        require(path.stat().st_size <= MAX_RIDE_BODY_BYTES, "Invalid stored session", "storage_unavailable", 503)
+                        memory = validate_session(strict_json(path.read_bytes()))
+                        require(memory["id"] == identifier, "Invalid stored session", "storage_unavailable", 503)
+                    except FileNotFoundError:
+                        raise ActionError("not_found", "Session not found", 404) from None
+                    except (RideMemoryError, OSError):
+                        raise ActionError("storage_unavailable", "Ride storage unavailable", 503) from None
+                activity = memory.get("activity", "ride") if memory is not None else None
+                history = []  # (when, summary) of non-simulated sessions in scope
+                searchable = []  # planner-visible descriptors: when/summary/activity
+                excluded_simulated = 0
+                for candidate in directory.glob("*.json"):
+                    if candidate.is_symlink():
+                        continue
+                    try:
+                        if candidate.stat().st_size > MAX_RIDE_BODY_BYTES:
+                            continue
+                        stored = validate_session(strict_json(candidate.read_bytes()))
+                        if stored["id"] != candidate.stem:
+                            continue
+                        if memory is not None and stored["id"] == identifier:
+                            continue
+                        if activity is not None and stored.get("activity", "ride") != activity:
+                            continue
+                        when = datetime.fromisoformat(stored["started_at"].replace("Z", "+00:00"))
+                        if stored["source"] == "simulated":
+                            excluded_simulated += 1
+                            continue
+                        history.append((when, stored["summary"]))
+                        searchable.append({"when": when, "summary": stored["summary"],
+                                           "activity": stored.get("activity", "ride")})
+                    except (RideMemoryError, ActionError, OSError, ValueError):
+                        continue
+                history.sort(key=lambda entry: entry[0])
+                recent = [summary for _, summary in history[-3:]]
+                ordinal = len(history) + (1 if memory is not None else 0)
+                # Cumulative + current-month aggregates over the same honest scope:
+                # real sessions only; distance only when every session recorded it.
+                entries = list(history)
+                if memory is not None and memory["source"] != "simulated":
+                    when_memory = datetime.fromisoformat(memory["started_at"].replace("Z", "+00:00"))
+                    entries.append((when_memory, memory["summary"]))
+                    searchable.append({"when": when_memory, "summary": memory["summary"],
+                                       "activity": memory.get("activity", "ride")})
+                totals = None
+                week = None
+                if entries:
+                    month_start = self.today().replace(day=1)
+
+                    def _minutes(pairs):
+                        seconds = sum(summary.get("duration_s") or 0 for _, summary in pairs)
+                        return int((Decimal(str(seconds)) / 60).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+                    def _kilometers(pairs):
+                        distances = [summary.get("distance_m") for _, summary in pairs]
+                        if not distances or any(type(d) not in (int, float) or not -1e15 < d < 1e15 for d in distances):
+                            return None
+                        total = (Decimal(str(sum(distances))) / 1000).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+                        return int(total) if total == total.to_integral() else float(total)
+
+                    month_entries = [entry for entry in entries
+                                     if entry[0].astimezone().date().replace(day=1) == month_start]
+                    totals = {"sessions_count": len(entries), "duration_min": _minutes(entries),
+                              "distance_km": _kilometers(entries), "month_sessions": len(month_entries),
+                              "month_duration_min": _minutes(month_entries),
+                              "month_distance_km": _kilometers(month_entries)}
+                    monday = self.today() - timedelta(days=self.today().weekday())
+                    week_entries = [entry for entry in entries
+                                    if entry[0].astimezone().date() >= monday]
+                    week = {"sessions": len(week_entries), "duration_min": _minutes(week_entries),
+                            "distance_km": _kilometers(week_entries) if week_entries else None}
+                # Usage profile: medians over the same honest scope (real sessions
+                # only). Below three records Mark stays silent about "usual".
+                profile = _usage_profile(entries)
+                # User-voiced notes: verbatim context for the answer. A corrupt
+                # note store degrades to no notes — the notes panel reports the
+                # error honestly, but one bad file never blocks a question.
                 try:
-                    require(path.stat().st_size <= MAX_RIDE_BODY_BYTES, "Invalid stored session", "storage_unavailable", 503)
-                    memory = validate_session(strict_json(path.read_bytes()))
-                    require(memory["id"] == identifier, "Invalid stored session", "storage_unavailable", 503)
-                except FileNotFoundError:
-                    raise ActionError("not_found", "Session not found", 404) from None
-                except (RideMemoryError, OSError):
-                    raise ActionError("storage_unavailable", "Ride storage unavailable", 503) from None
-            activity = memory.get("activity", "ride") if memory is not None else None
-            history = []  # (when, summary) of non-simulated sessions in scope
-            searchable = []  # planner-visible descriptors: when/summary/activity
-            excluded_simulated = 0
-            for candidate in directory.glob("*.json"):
-                if candidate.is_symlink():
-                    continue
-                try:
-                    if candidate.stat().st_size > MAX_RIDE_BODY_BYTES:
-                        continue
-                    stored = validate_session(strict_json(candidate.read_bytes()))
-                    if stored["id"] != candidate.stem:
-                        continue
-                    if memory is not None and stored["id"] == identifier:
-                        continue
-                    if activity is not None and stored.get("activity", "ride") != activity:
-                        continue
-                    when = datetime.fromisoformat(stored["started_at"].replace("Z", "+00:00"))
-                    if stored["source"] == "simulated":
-                        excluded_simulated += 1
-                        continue
-                    history.append((when, stored["summary"]))
-                    searchable.append({"when": when, "summary": stored["summary"],
-                                       "activity": stored.get("activity", "ride")})
-                except (RideMemoryError, ActionError, OSError, ValueError):
-                    continue
-            history.sort(key=lambda entry: entry[0])
-            recent = [summary for _, summary in history[-3:]]
-            ordinal = len(history) + (1 if memory is not None else 0)
-            # Cumulative + current-month aggregates over the same honest scope:
-            # real sessions only; distance only when every session recorded it.
-            entries = list(history)
-            if memory is not None and memory["source"] != "simulated":
-                when_memory = datetime.fromisoformat(memory["started_at"].replace("Z", "+00:00"))
-                entries.append((when_memory, memory["summary"]))
-                searchable.append({"when": when_memory, "summary": memory["summary"],
-                                   "activity": memory.get("activity", "ride")})
-            totals = None
-            week = None
-            if entries:
-                month_start = self.today().replace(day=1)
-
-                def _minutes(pairs):
-                    seconds = sum(summary.get("duration_s") or 0 for _, summary in pairs)
-                    return int((Decimal(str(seconds)) / 60).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
-
-                def _kilometers(pairs):
-                    distances = [summary.get("distance_m") for _, summary in pairs]
-                    if not distances or any(type(d) not in (int, float) or not -1e15 < d < 1e15 for d in distances):
-                        return None
-                    total = (Decimal(str(sum(distances))) / 1000).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
-                    return int(total) if total == total.to_integral() else float(total)
-
-                month_entries = [entry for entry in entries
-                                 if entry[0].astimezone().date().replace(day=1) == month_start]
-                totals = {"sessions_count": len(entries), "duration_min": _minutes(entries),
-                          "distance_km": _kilometers(entries), "month_sessions": len(month_entries),
-                          "month_duration_min": _minutes(month_entries),
-                          "month_distance_km": _kilometers(month_entries)}
-                monday = self.today() - timedelta(days=self.today().weekday())
-                week_entries = [entry for entry in entries
-                                if entry[0].astimezone().date() >= monday]
-                week = {"sessions": len(week_entries), "duration_min": _minutes(week_entries),
-                        "distance_km": _kilometers(week_entries) if week_entries else None}
-            # Usage profile: medians over the same honest scope (real sessions
-            # only). Below three records Mark stays silent about "usual".
-            profile = _usage_profile(entries)
-            # User-voiced notes: verbatim context for the answer. A corrupt
-            # note store degrades to no notes — the notes panel reports the
-            # error honestly, but one bad file never blocks a question.
-            try:
-                user_notes = [entry["text"] for entry in load_notes(self.notes_path)]
-            except NoteError:
-                user_notes = []
+                    user_notes = [entry["text"] for entry in load_notes(self.notes_path)]
+                except NoteError:
+                    user_notes = []
         # Two lanes, one door: personal-record questions try the private lane
         # first; everything else tries the grounded knowledge library. The
         # other lane is consulted once when the preferred one cannot answer.
@@ -704,8 +807,8 @@ class App:
         # degrades to no search; the base bundle answers exactly as before.
         # None = 未检索（基础包照常作答）；[] = 检索落空（该时段无记录，这本身
         # 是事实）；非空列表 = 检索命中。
-        matched_sessions = None
-        if (os.environ.get("AGENT_PLANNER", "on") != "off"
+        matched_sessions = context["matched_summaries"] if user_id is not None else None
+        if (user_id is None and os.environ.get("AGENT_PLANNER", "on") != "off"
                 and SEARCH_HINTS.search(question)):
             known_dates = sorted({entry["when"].astimezone().date().isoformat()
                                   for entry in searchable}, reverse=True)
@@ -739,17 +842,21 @@ class App:
                         if name in entry[3]:
                             live_facts[name] = entry[3][name]
             if live_facts is None:
-                return {"speech_status": "ok", "speech": LIVE_TEMPLATE,
-                        "fallback": "template", "usage": None, "lane": "live"}
+                result = {"speech_status": "ok", "speech": LIVE_TEMPLATE,
+                          "fallback": "template", "usage": None, "lane": "live"}
+                # Preserve anonymous behavior, but persist successful cloud replies.
+                if user_id is not None:
+                    self._remember_chat(user_id, conv_id, question_for_record, result, prune_confirmed)
+                return result
             live = llm_router.run(
                 'live_answer',
                 lambda **kw: build_live_answer(question, live_facts, history=dialog,
                                                http_post=self.llm_post, **kw))
             result = {"speech_status": live["llm_status"], "speech": live["speech"],
                       "fallback": live["fallback"], "usage": live["usage"], "lane": "live"}
-            self._dialog_record(conv_id, question_for_record, result)
+            self._remember_chat(user_id, conv_id, question_for_record, result, prune_confirmed)
             return result
-        prefer_personal = nav_intent or (
+        prefer_personal = (user_id is not None and identifier is not None) or nav_intent or (
             any(marker in question for marker in _PERSONAL_MARKERS)
             and any(word in question for word in _RECORD_WORDS)
             and not any(marker in question for marker in _ADVICE_MARKERS)
@@ -763,7 +870,7 @@ class App:
             final = {"speech_status": "ok",
                      "speech": "我现在看不到天气——打开定位权限，我就能查你那儿的天。",
                      "fallback": None, "usage": None, "lane": "personal" if prefer_personal else "general"}
-            self._dialog_record(conv_id, question_for_record, final)
+            self._remember_chat(user_id, conv_id, question_for_record, final, prune_confirmed)
             return final
 
         def personal():
@@ -807,7 +914,7 @@ class App:
                                "rejected_bad_schema", "rejected_unsafe_speech")
         if prefer_personal:
             lane, result = personal()
-            if result["llm_status"] in ("upstream_error", "no_knowledge"):
+            if user_id is None and result["llm_status"] in ("upstream_error", "no_knowledge"):
                 lane, result = knowledge()
                 if result["llm_status"] in _KNOWLEDGE_FALLBACK:
                     lane, result = general()
@@ -820,8 +927,29 @@ class App:
         final = {"speech_status": result["llm_status"],
                  "speech": result["draft"]["speech"] if result["draft"] else None,
                  "fallback": result["fallback"], "usage": result["usage"], "lane": lane}
-        self._dialog_record(conv_id, question_for_record, final)
+        self._remember_chat(user_id, conv_id, question_for_record, final, prune_confirmed)
         return final
+
+    def _cloud_dialog_request(self, path, payload):
+        user_id, data = self._memory_identity(payload)
+        require(user_id is not None, "Cloud identity required", "invalid_token", 401)
+        if path == "/api/dialog/list":
+            require(set(data) <= {"limit", "export"}, "Expected token and optional limit/export")
+            return self._cloud_memory(lambda: dialog_store.list_turns(
+                user_id, data.get("limit", 100), export=data.get("export", False)))
+        require(set(data) in ({"id"}, {"all"}), "Expected token and id or all")
+        if "id" in data:
+            return self._cloud_memory(lambda: dialog_store.delete_one(user_id, data["id"]))
+        require(data["all"] is True, "Explicit all=true required")
+        return self._cloud_memory(lambda: dialog_store.delete_all(user_id))
+
+    def _remember_chat(self, user_id, conv_id, question, result, prune_confirmed=False):
+        if user_id is None:
+            return self._dialog_record(conv_id, question, result)
+        if result.get("speech_status") != "ok" or not result.get("speech"):
+            return
+        self._cloud_memory(lambda: dialog_store.save_exchange(
+            user_id, question, result["speech"], prune_confirmed=prune_confirmed))
 
     def _dialog_read(self, conv_id):
         """Recent turns for this conversation, or None when unknown/expired."""
@@ -904,6 +1032,7 @@ class App:
         cloud request happens after state update. Anti-spam is the product:
         at most one spoken call per live session per _LIVE_SILENCE_S.
         """
+        user_id, payload = self._memory_identity(payload)
         require(type(payload) is dict and set(payload) in ({"live_id", "point"}, {"live_id", "point", "activity"}),
                 "Expected live_id and point")
         activity = payload.get("activity", "ride")
@@ -911,6 +1040,8 @@ class App:
         live_id = payload["live_id"]
         require(type(live_id) is str and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", live_id) is not None,
                 "Invalid live_id")
+        if user_id is not None:
+            live_id = (user_id, live_id)
         require(type(payload["point"]) is dict, "Invalid telemetry point")
         now = time.monotonic()
         entry_point = dict(payload["point"])
@@ -942,6 +1073,14 @@ class App:
         urgent = any(event.get("type") in _LIVE_URGENT_TYPES for event in events)
         if not events or (not urgent and last_call is not None and now - last_call < _LIVE_SILENCE_S):
             return {"calls": []}
+        if user_id is not None:
+            descriptor = {"started_at": datetime.fromtimestamp(session._start_t, timezone.utc).isoformat(),
+                          "activity": session.activity}
+            context = self._cloud_memory(lambda: memory_service.get_context_for_live(user_id, descriptor))
+            if context["previous_summary"] is not None:
+                speech_facts["previous"] = context["previous_summary"]
+            if context["profile_brief"] is not None:
+                speech_facts["profile"] = context["profile_brief"]
         result = llm_router.run(
             'live',
             lambda **kw: build_live_speech(events, speech_facts,
@@ -1089,6 +1228,36 @@ class App:
                 error.retry_after = str(max(1, int(60 - (now - bucket[0])) + 1))
                 raise error
             bucket.append(now)
+
+    def _cloud_ride_request(self, path, payload):
+        """Authenticate first; client-supplied user IDs are never accepted."""
+        fields = {"/api/rides/sync": {"token", "rides"},
+                  "/api/rides/create": {"token", "ride"},
+                  "/api/rides/get": {"token", "id"},
+                  "/api/rides/delete": {"token", "id"}}
+        allowed = ({"token"}, {"token", "limit"}) if path == "/api/rides/list" else (fields[path],)
+        require(type(payload) is dict and set(payload) in allowed, "Request fields do not match")
+        try:
+            user_id = auth.whoami(payload["token"])
+            if path == "/api/rides/sync":
+                return cloud_rides.sync(user_id, payload["rides"])
+            if path == "/api/rides/create":
+                return cloud_rides.sync(user_id, [payload["ride"]])
+            if path == "/api/rides/list":
+                return cloud_rides.list_rides(user_id, payload.get("limit", 20))
+            if path == "/api/rides/get":
+                return cloud_rides.get_ride(user_id, payload["id"])
+            return cloud_rides.delete_ride(user_id, payload["id"])
+        except auth.InvalidToken:
+            raise ActionError("invalid_token", "Invalid identity token", 401) from None
+        except cloud_rides.InvalidCloudRide:
+            raise ActionError("invalid_input", "Invalid cloud ride request", 400) from None
+        except cloud_rides.CloudRideConflict:
+            raise ActionError("session_conflict", "Ride ID already contains different data", 409) from None
+        except cloud_rides.CloudRideNotFound:
+            raise ActionError("not_found", "Ride not found", 404) from None
+        except (auth.AuthStorageError, DatabaseError):
+            raise ActionError("storage_unavailable", "Cloud ride storage unavailable", 503) from None
 
     def _save_ride(self, payload):
         """Validate before I/O; atomic, idempotent writes with no ID overwrite."""
@@ -1262,6 +1431,12 @@ def create_server(port=None, app=None, *, host=None):
     """Create a validated server; explicit arguments override environment values."""
     host, port = _bind_config(host, port)
     credentials = _private_test_credentials(host)  # Fail before opening any socket.
+    if os.environ.get("DATABASE_URL", "").strip():
+        try:
+            cloud_db.init_db()
+        except DatabaseError:
+            cloud_db.close()
+            raise ValueError("Cloud database initialization failed; check DATABASE_URL and database driver") from None
     build = hashlib.sha256((ROOT / "static" / "mark.html").read_text(encoding="utf-8-sig").encode("utf-8")).hexdigest()[:16]
     app = app if app is not None else App()
     class Handler(BaseHTTPRequestHandler):
@@ -1331,6 +1506,8 @@ def main():
         pass
     finally:
         server.server_close()
+        profile_service.shutdown()
+        cloud_db.close()
 
 
 if __name__ == "__main__":

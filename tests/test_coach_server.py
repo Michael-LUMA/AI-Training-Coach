@@ -185,6 +185,232 @@ class CoachServerTests(unittest.TestCase):
         handler.handle_request()
         return handler
 
+    def test_auth_register_without_internal_coach_token(self):
+        identity = {'user_id': 'user-1', 'token': 'identity-token'}
+        with patch.object(server.auth, 'register_device', return_value=identity) as register:
+            h = self.handler('POST', server.AUTH_REGISTER, {}, {'X-Coach-Token': None})
+        self.assertEqual(h.reply.call_args.args, (200, identity))
+        register.assert_called_once_with(None)
+
+    def test_auth_register_stable_device_delegates_without_internal_token(self):
+        identity = {'user_id': 'user-1', 'token': 'identity-token'}
+        with patch.object(server.auth, 'register_device', return_value=identity) as register:
+            for _ in range(2):
+                h = self.handler('POST', server.AUTH_REGISTER, {'device_id': 'device-1'},
+                                 {'X-Coach-Token': None})
+                self.assertEqual(h.reply.call_args.args, (200, identity))
+        self.assertEqual(register.call_args_list, [unittest.mock.call('device-1')] * 2)
+
+    def test_auth_register_rejects_invalid_fields_without_storage(self):
+        with patch.object(server.auth.db, 'get_conn', side_effect=AssertionError('No storage')):
+            for payload in ({'extra': True}, {'device_id': 'a', 'token': 'b'},
+                            {'device_id': None}, {'device_id': 2}, {'device_id': True},
+                            {'device_id': ''}, {'device_id': '   '},
+                            {'device_id': 'a' * 201}, [], 'device', 1):
+                with self.subTest(payload=payload):
+                    h = self.handler('POST', server.AUTH_REGISTER, payload,
+                                     {'X-Coach-Token': None})
+                    status, result = h.reply.call_args.args
+                    self.assertEqual((status, result['error_code']), (400, 'invalid_input'))
+
+    def test_auth_whoami_without_internal_coach_token(self):
+        with patch.object(server.auth, 'whoami', return_value='user-1') as lookup:
+            h = self.handler('POST', server.AUTH_WHOAMI, {'token': 'identity-token'},
+                             {'X-Coach-Token': None})
+        self.assertEqual(h.reply.call_args.args, (200, {'user_id': 'user-1'}))
+        lookup.assert_called_once_with('identity-token')
+
+    def test_auth_whoami_rejects_missing_or_extra_fields(self):
+        with patch.object(server.auth, 'whoami') as lookup:
+            for payload in ({}, {'token': 'secret', 'user_id': 'forged'}, [], 'secret'):
+                with self.subTest(payload=payload):
+                    h = self.handler('POST', server.AUTH_WHOAMI, payload,
+                                     {'X-Coach-Token': None})
+                    self.assertEqual(h.reply.call_args.args[0], 400)
+        lookup.assert_not_called()
+
+    def test_auth_whoami_rejects_invalid_token_without_echo(self):
+        with patch.object(server.auth.db, 'get_conn', side_effect=AssertionError('No storage')):
+            for token in ('', ' ', None, 3, True, 'secret' * 100):
+                with self.subTest(token=token):
+                    h = self.handler('POST', server.AUTH_WHOAMI, {'token': token},
+                                     {'X-Coach-Token': None})
+                    status, result = h.reply.call_args.args
+                    self.assertEqual((status, result['error_code']), (401, 'invalid_token'))
+        with patch.object(server.auth, 'whoami', side_effect=server.auth.InvalidToken('secret-token')):
+            h = self.handler('POST', server.AUTH_WHOAMI, {'token': 'secret-token'},
+                             {'X-Coach-Token': None})
+        status, result = h.reply.call_args.args
+        self.assertEqual((status, result['error_code']), (401, 'invalid_token'))
+        self.assertNotIn('secret-token', json.dumps(result))
+
+    def test_auth_storage_failure_is_503_and_sanitized(self):
+        for path, name, payload in ((server.AUTH_REGISTER, 'register_device', {}),
+                                    (server.AUTH_WHOAMI, 'whoami', {'token': 'secret-token'})):
+            for error in (server.auth.AuthStorageError('driver secret-token'),
+                          server.DatabaseError('postgresql://user:password@host/db')):
+                with self.subTest(path=path, error=type(error).__name__):
+                    with patch.object(server.auth, name, side_effect=error):
+                        h = self.handler('POST', path, payload, {'X-Coach-Token': None})
+                    status, result = h.reply.call_args.args
+                    self.assertEqual((status, result['error_code']), (503, 'storage_unavailable'))
+                    for secret in ('driver', 'secret-token', 'postgresql', 'password'):
+                        self.assertNotIn(secret, json.dumps(result))
+
+    def test_auth_security_boundaries_still_deny_before_read(self):
+        cases = (({'Host': 'evil.test'}, 403, 'host_denied'),
+                 ({'Origin': 'https://evil.test'}, 403, 'origin_denied'),
+                 ({'Origin': None}, 403, 'origin_denied'),
+                 ({'Sec-Fetch-Site': 'cross-site'}, 403, 'origin_denied'),
+                 ({'Content-Type': 'text/plain'}, 415, 'invalid_body'),
+                 ({'Transfer-Encoding': 'chunked'}, 415, 'invalid_body'),
+                 ({'Content-Length': str(server.MAX_BODY_BYTES + 1)}, 413, 'body_too_large'))
+        with patch.object(server.auth, 'register_device') as register, \
+                patch.object(server.auth, 'whoami') as lookup:
+            for path, payload in ((server.AUTH_REGISTER, {}),
+                                  (server.AUTH_WHOAMI, {'token': 'secret-token'})):
+                for overrides, status, code in cases:
+                    with self.subTest(path=path, overrides=overrides):
+                        h = self.handler('POST', path, payload,
+                                         dict(overrides, **{'X-Coach-Token': None}))
+                        self.assertEqual((h.reply.call_args.args[0],
+                                          h.reply.call_args.args[1]['error_code']), (status, code))
+                        h.rfile.read.assert_not_called()
+            register.assert_not_called()
+            lookup.assert_not_called()
+
+    def test_auth_duplicate_headers_are_rejected(self):
+        from email.message import Message
+        body = b'{}'
+        for name, value in (('Host', '127.0.0.1:8794'),
+                            ('Origin', 'http://127.0.0.1:8794'),
+                            ('Content-Length', '2'), ('Content-Type', 'application/json')):
+            headers = Message()
+            for key, val in self.headers('POST', body).items():
+                if key != 'X-Coach-Token':
+                    headers[key] = val
+            headers[name] = value
+            with self.subTest(header=name):
+                error = self.error('invalid_input', lambda: self.app.dispatch(
+                    'POST', server.AUTH_REGISTER, headers, body))
+                self.assertEqual(error.status, 400)
+
+    def test_auth_rejects_duplicate_json_fields_and_truncated_body(self):
+        for path in (server.AUTH_REGISTER, server.AUTH_WHOAMI):
+            body = b'{"token":"one","token":"two"}'
+            self.error('invalid_json', lambda: self.app.dispatch(
+                'POST', path, self.headers('POST', body), body))
+            h = self.handler('POST', path, {}, {'Content-Length': '3', 'X-Coach-Token': None})
+            self.assertEqual(h.reply.call_args.args[0], 400)
+
+    def test_cloud_routes_dispatch_only_authenticated_identity(self):
+        cases = (('/api/rides/sync', {'rides': []}, 'sync', ('user-a', [])),
+                 ('/api/rides/create', {'ride': {}}, 'sync', ('user-a', [{}])),
+                 ('/api/rides/list', {}, 'list_rides', ('user-a', 20)),
+                 ('/api/rides/list', {'limit': 5}, 'list_rides', ('user-a', 5)),
+                 ('/api/rides/get', {'id': 'ride-1'}, 'get_ride', ('user-a', 'ride-1')),
+                 ('/api/rides/delete', {'id': 'ride-1'}, 'delete_ride', ('user-a', 'ride-1')))
+        for path, fields, operation, expected in cases:
+            with self.subTest(path=path), \
+                    patch.object(server.auth, 'whoami', return_value='user-a') as lookup, \
+                    patch.object(server.cloud_rides, operation, return_value={'status': 'test'}) as store:
+                h = self.handler('POST', path, dict(fields, token='identity-token'),
+                                 {'X-Coach-Token': None})
+                self.assertEqual(h.reply.call_args.args, (200, {'status': 'test'}))
+                lookup.assert_called_once_with('identity-token')
+                store.assert_called_once_with(*expected)
+
+    def test_cloud_routes_reject_forged_identity_and_unknown_fields_before_auth(self):
+        payloads = {'/api/rides/sync': {'token': 'secret', 'rides': []},
+                    '/api/rides/create': {'token': 'secret', 'ride': {}},
+                    '/api/rides/list': {'token': 'secret'},
+                    '/api/rides/get': {'token': 'secret', 'id': 'a'},
+                    '/api/rides/delete': {'token': 'secret', 'id': 'a'}}
+        with patch.object(server.auth, 'whoami') as lookup:
+            for path, payload in payloads.items():
+                for field in ('user_id', 'extra'):
+                    with self.subTest(path=path, field=field):
+                        h = self.handler('POST', path, dict(payload, **{field: 'forged'}))
+                        self.assertEqual(h.reply.call_args.args[0], 400)
+        lookup.assert_not_called()
+
+    def test_cloud_invalid_identity_does_not_touch_ride_storage(self):
+        with patch.object(server.auth, 'whoami', side_effect=server.auth.InvalidToken('secret-token')), \
+                patch.object(server.cloud_rides, 'sync') as sync:
+            h = self.handler('POST', '/api/rides/sync', {'token': 'secret-token', 'rides': []},
+                             {'X-Coach-Token': None})
+        status, result = h.reply.call_args.args
+        self.assertEqual((status, result['error_code']), (401, 'invalid_token'))
+        self.assertNotIn('secret-token', json.dumps(result))
+        sync.assert_not_called()
+
+    def test_cloud_errors_have_stable_sanitized_status(self):
+        cases = ((server.cloud_rides.InvalidCloudRide, 400, 'invalid_input'),
+                 (server.cloud_rides.CloudRideConflict, 409, 'session_conflict'),
+                 (server.cloud_rides.CloudRideNotFound, 404, 'not_found'),
+                 (server.DatabaseError, 503, 'storage_unavailable'))
+        for error, status, code in cases:
+            with self.subTest(error=error), \
+                    patch.object(server.auth, 'whoami', return_value='user-a'), \
+                    patch.object(server.cloud_rides, 'get_ride', side_effect=error('private-token password driver')):
+                h = self.handler('POST', '/api/rides/get', {'token': 'private-token', 'id': 'a'})
+                self.assertEqual((h.reply.call_args.args[0], h.reply.call_args.args[1]['error_code']),
+                                 (status, code))
+                for secret in ('private-token', 'password', 'driver'):
+                    self.assertNotIn(secret, json.dumps(h.reply.call_args.args[1]))
+
+    def test_cloud_sync_handler_to_storage_is_idempotent_and_user_scoped(self):
+        from tests import test_cloud_rides as fixtures
+        conn = fixtures.FakeConnection()
+        record = fixtures.summary()
+        with patch.object(server.auth, 'whoami', side_effect=lambda token: {'ta': 'user-a', 'tb': 'user-b'}[token]), \
+                patch.object(server.cloud_db, 'get_conn', return_value=conn), \
+                patch.object(server.cloud_db, 'release_conn'):
+            for expected in ('saved', 'duplicate'):
+                h = self.handler('POST', '/api/rides/sync', {'token': 'ta', 'rides': [record]},
+                                 {'X-Coach-Token': None})
+                status, result = h.reply.call_args.args
+                self.assertEqual(status, 200)
+                self.assertEqual(result['results'][0]['status'], expected)
+            h = self.handler('POST', '/api/rides/list', {'token': 'tb'}, {'X-Coach-Token': None})
+            self.assertEqual(h.reply.call_args.args[1]['rides'], [])
+            h = self.handler('POST', '/api/rides/get', {'token': 'tb', 'id': record['id']})
+            self.assertEqual(h.reply.call_args.args[0], 404)
+            h = self.handler('POST', '/api/rides/get', {'token': 'ta', 'id': record['id']})
+            self.assertEqual(h.reply.call_args.args[1]['ride'], record)
+        self.assertIsNone(self.app._ride_dir)
+
+    def test_cloud_sync_rejects_raw_session_and_failure_leaves_local_json_intact(self):
+        record = self.ride_payload()
+        self.request(server.RIDE_POST, record)
+        local_path = self.app.ride_dir / (record['id'] + '.json')
+        original = local_path.read_bytes()
+        with patch.object(server.auth, 'whoami', return_value='user-a'), \
+                patch.object(server.cloud_db, 'get_conn', side_effect=AssertionError('No DB for raw data')):
+            h = self.handler('POST', '/api/rides/sync', {'token': 'token', 'rides': [record]})
+        self.assertEqual(h.reply.call_args.args[0], 400)
+        from ride_memory import to_cloud_summary
+        with patch.object(server.auth, 'whoami', return_value='user-a'), \
+                patch.object(server.cloud_db, 'get_conn', side_effect=server.DatabaseError('offline')):
+            h = self.handler('POST', '/api/rides/sync',
+                             {'token': 'token', 'rides': [to_cloud_summary(record)]})
+        self.assertEqual(h.reply.call_args.args[0], 503)
+        self.assertEqual(local_path.read_bytes(), original)
+
+    def test_cloud_http_boundaries_still_deny_before_read(self):
+        cases = (({'Host': 'evil.test'}, 403), ({'Origin': 'https://evil.test'}, 403),
+                 ({'Sec-Fetch-Site': 'cross-site'}, 403), ({'Content-Type': 'text/plain'}, 415),
+                 ({'Transfer-Encoding': 'chunked'}, 415),
+                 ({'Content-Length': str(server.MAX_RIDE_BODY_BYTES + 1)}, 413))
+        with patch.object(server.auth, 'whoami') as lookup:
+            for path in server.CLOUD_RIDE_ROUTES:
+                for override, status in cases:
+                    with self.subTest(path=path, override=override):
+                        h = self.handler('POST', path, {'token': 'secret'}, override)
+                        self.assertEqual(h.reply.call_args.args[0], status)
+                        h.rfile.read.assert_not_called()
+        lookup.assert_not_called()
+
     def test_boundary_blocks_before_read(self):
         for override, code in (({'Host':'evil.test'},'host_denied'),({'Origin':'https://evil.test'},'origin_denied'),
                                ({'Origin':None},'origin_denied'),({'Sec-Fetch-Site':'cross-site'},'origin_denied'),

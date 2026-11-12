@@ -1,0 +1,111 @@
+{
+  "date": "2026-11-12",
+  "timezone": "Asia/Shanghai",
+  "scope": "M4 numeric profile service, source-transaction invalidation and background refresh",
+  "tests": {
+    "development": {
+      "run": 1644,
+      "passed": 1641,
+      "skipped": 3,
+      "failed": 0,
+      "seconds": 119.222,
+      "log": "E:\\luma测试\\.code\\ai_companion\\.runtime\\M4-regression-20261112-accepted.log",
+      "log_sha256": "57e63275c750f77207b628e39b1ade215ea5cac9f3411f41ae0bc7131e1227df",
+      "skipped_cases": [
+        "test_identity_isolation_replay_concurrency_and_reconnect (test_cloud_postgres.PostgreSQLAcceptanceTests.test_identity_isolation_replay_concurrency_and_reconnect) ... skipped 'Explicit disposable PostgreSQL test database is not configured'",
+        "test_profile_cache_isolation_invalidation_concurrency_and_reconnect (test_cloud_postgres.PostgreSQLAcceptanceTests.test_profile_cache_isolation_invalidation_concurrency_and_reconnect) ... skipped 'Explicit disposable PostgreSQL test database is not configured'",
+        "test_dpapi_real_local_roundtrip (test_coach_keystore.KeyStoreTests.test_dpapi_real_local_roundtrip) ... skipped 'Real DPAPI needs Windows user profile; opt in with LUMA_TEST_DPAPI=1'"
+      ]
+    },
+    "deployment": {
+      "run": 1619,
+      "passed": 1616,
+      "skipped": 3,
+      "failed": 0,
+      "seconds": 118.757,
+      "log": "E:\\luma测试\\.code\\coach-deploy\\.runtime\\M4-regression-20261112-accepted.log",
+      "log_sha256": "883025bfe8dd7a9dfaf3dbfb59b9709ba10cfc4a10ea8acc1d6720190b35a3f0",
+      "skipped_cases": [
+        "test_identity_isolation_replay_concurrency_and_reconnect (test_cloud_postgres.PostgreSQLAcceptanceTests.test_identity_isolation_replay_concurrency_and_reconnect) ... skipped 'Explicit disposable PostgreSQL test database is not configured'",
+        "test_profile_cache_isolation_invalidation_concurrency_and_reconnect (test_cloud_postgres.PostgreSQLAcceptanceTests.test_profile_cache_isolation_invalidation_concurrency_and_reconnect) ... skipped 'Explicit disposable PostgreSQL test database is not configured'",
+        "test_dpapi_real_local_roundtrip (test_coach_keystore.KeyStoreTests.test_dpapi_real_local_roundtrip) ... skipped 'Real DPAPI needs Windows user profile; opt in with LUMA_TEST_DPAPI=1'"
+      ]
+    },
+    "targeted": {
+      "run": 71,
+      "passed": 69,
+      "skipped": 2,
+      "failed": 0
+    }
+  },
+  "source_deployment_parity": {
+    "verified": true,
+    "files": {
+      "db.py": "377f8e906d78bd94088709a289c3f0010b5427da2d958574fec92a21e77ce9d8",
+      "cloud_rides.py": "34bb4857e9c05e992b574938df0241f5c3d99388bb7e8cf13ecdedacbb25213e",
+      "coach_server.py": "fbe5a814ccf80b7d39b5f49afe37fc672495ee153559dd74939baed87a1b2a03",
+      "profile_service.py": "4aa446694a2dd08d8d13eaf4fb540312dbd8a1c3b3a9310eace72fc7cbd928cf",
+      "tests/test_cloud_rides.py": "52653dc6b733baec956a4ee31b1a196ecc6ae068f8545c330fe753955f78ff1d",
+      "tests/test_cloud_http.py": "6b49a6adde824df698570c03218c8bb473ec8a1f8a416d2e870df4f45f418566",
+      "tests/test_cloud_postgres.py": "4a8a74dec65c99a50883bca068f42df31ed133b0eba38ab56f58b1ba1b5e134f",
+      "tests/test_profile_service.py": "470414bb733197bb6ff716186bbb28de6f2d03359210d844aadd56e30414e6b6",
+      "docs/profile-M4-20261112.md": "5baae7efdcd3d9bb58b72dd3b7d1e2fdaa0f00ccd3a778b0d425b74c49e47336"
+    },
+    "DEPLOY_md": "Updated M4 section separately; pre-existing differences preserved",
+    "preexisting_difference": "ride_live.py track archival extension exists only in development; untouched in M4"
+  },
+  "frozen": {
+    "ride_tts.py": {
+      "unchanged_in_both": true,
+      "sha256": "71410e9a3ada7cd5083462e7fb1c5f335730a8f43ecfbf1c3f725f232874a936"
+    },
+    "ride_nav.py": {
+      "unchanged_in_both": true,
+      "sha256": "443bd4b51155c0a273a03b151b462a31cf44161e8e167a8d246b88aedf302cd4"
+    },
+    "llm_review.py": {
+      "unchanged_in_both": true,
+      "sha256": "1307657dfa1f551afae023aa097ef8500d8cc1d99582b64f594bac0f8d056463"
+    },
+    "ride_memory.py": {
+      "unchanged_in_both": true,
+      "sha256": "505e644bfc21a63e92a5dd3e015b436e4a886b1bf624f849ee9bc4f13c0b8420"
+    },
+    "static\\mark.html": {
+      "unchanged_in_both": true,
+      "sha256": "32ae08dc52a7ce348b4bc86199cb20875fc59d863bf165c18b8f61a036f04c58"
+    }
+  },
+  "builders": {
+    "build_ride_chat": {
+      "arguments_ast": "arguments(posonlyargs=[], args=[arg(arg='question'), arg(arg='session', annotation=BinOp(left=Name(id='dict', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='recent_summaries', annotation=BinOp(left=Name(id='list', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='activity_ordinal', annotation=BinOp(left=Name(id='int', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='excluded_simulated', annotation=BinOp(left=Name(id='int', ctx=Load()), op=BitOr(), right=Constant(value=None)))], kwonlyargs=[arg(arg='totals', annotation=BinOp(left=Name(id='dict', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='history', annotation=BinOp(left=Name(id='list', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='profile', annotation=BinOp(left=Name(id='dict', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='week', annotation=BinOp(left=Name(id='dict', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='notes', annotation=BinOp(left=Name(id='list', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='weather', annotation=BinOp(left=Name(id='dict', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='nav', annotation=BinOp(left=Name(id='dict', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='matched_sessions', annotation=BinOp(left=Name(id='list', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='api_key', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='http_post'), arg(arg='endpoint', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='model', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None)))], kw_defaults=[Constant(value=None), Constant(value=None), Constant(value=None), Constant(value=None), Constant(value=None), Constant(value=None), Constant(value=None), Constant(value=None), Constant(value=None), Constant(value=None), Constant(value=None), Constant(value=None)], defaults=[Constant(value=None), Constant(value=None), Constant(value=None), Constant(value=None)])",
+      "function_ast_equal_in_both": true,
+      "development_file_sha256": "9f7f1a8b14b8b31819b8def1bc0778a7c8f2e8b5d53ae057b9ac8a6fa82de2fc",
+      "deployment_file_sha256": "9f7f1a8b14b8b31819b8def1bc0778a7c8f2e8b5d53ae057b9ac8a6fa82de2fc"
+    },
+    "build_ride_review": {
+      "arguments_ast": "arguments(posonlyargs=[], args=[arg(arg='session', annotation=Name(id='dict', ctx=Load())), arg(arg='previous_summary', annotation=BinOp(left=Name(id='dict', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='recent_summaries', annotation=BinOp(left=Name(id='list', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='activity_ordinal', annotation=BinOp(left=Name(id='int', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='excluded_simulated', annotation=BinOp(left=Name(id='int', ctx=Load()), op=BitOr(), right=Constant(value=None)))], kwonlyargs=[arg(arg='api_key', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='http_post'), arg(arg='endpoint', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='model', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None)))], kw_defaults=[Constant(value=None), Constant(value=None), Constant(value=None), Constant(value=None)], defaults=[Constant(value=None), Constant(value=None), Constant(value=None), Constant(value=None)])",
+      "function_ast_equal_in_both": true,
+      "development_file_sha256": "ccc117e473c19f5bbabb64aa0492fd2c43e7c0838ea530c66c88eaec128df161",
+      "deployment_file_sha256": "ccc117e473c19f5bbabb64aa0492fd2c43e7c0838ea530c66c88eaec128df161"
+    },
+    "build_live_speech": {
+      "arguments_ast": "arguments(posonlyargs=[], args=[arg(arg='events'), arg(arg='live_facts')], kwonlyargs=[arg(arg='api_key'), arg(arg='http_post'), arg(arg='endpoint'), arg(arg='model')], kw_defaults=[Constant(value=None), Constant(value=None), Constant(value=None), Constant(value=None)], defaults=[])",
+      "function_ast_equal_in_both": true,
+      "development_file_sha256": "40084a94091a643204aa00ce4597648490f52c9dfae96404872b6516f88da146",
+      "deployment_file_sha256": "f66ab6a2a798c36dde3437927d12c1a1dea38c0345d8ecf3f9eb94f42e1c75ed"
+    }
+  },
+  "real_postgresql_acceptance": "not run: explicit disposable MARK_TEST_DATABASE_URL not configured",
+  "production_deploy": "not performed",
+  "live_8794_restart": "not performed",
+  "paid_model_calls": "not performed",
+  "cloud_resources_created": false,
+  "M5": "not implemented; integration contract discrepancies recorded in profile-M4-20261112.md section 7",
+  "release_blockers": [
+    "Real PostgreSQL and restart persistence acceptance outstanding",
+    "M5 authenticated per-user memory integration outstanding",
+    "Anonymous device-id recovery requires proof-of-possession before public release; preserve private Basic gate"
+  ],
+  "existing_changes": "M2/M3 and earlier uncommitted changes preserved; no commit or push performed"
+}

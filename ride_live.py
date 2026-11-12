@@ -327,6 +327,12 @@ def _inputs(events, live_facts):
         raise ValueError('invalid live facts')
     facts['paused'] = live_facts['paused']
     facts['activity'] = _activity(live_facts.get('activity', 'ride'))
+    if live_facts.get('previous') is not None:
+        from ride_brain import _summary
+        facts['previous'], _ = _summary(live_facts['previous'])
+    if live_facts.get('profile') is not None:
+        from ride_chat import _profile_facts
+        facts['profile'], _ = _profile_facts(live_facts['profile'])
     clean = []
     for event in events:
         if type(event) is not dict or type(event.get('type')) is not str:
@@ -392,6 +398,32 @@ def _numbers(events, facts):
     return numbers
 
 
+def _memory_speech_verified(speech, events, facts):
+    """Historical numbers require an explicit historical clause, never current."""
+    if 'previous' not in facts and 'profile' not in facts:
+        return True  # Keep the anonymous verification behavior unchanged.
+    from ride_brain import _summary, _friendly_minutes
+    from ride_chat import _profile_facts
+    current = _numbers(events, facts)
+    previous = []
+    if 'previous' in facts:
+        _, previous = _summary(facts['previous'])
+        duration = facts['previous'].get('duration_s')
+        if duration is not None:
+            previous.append((Decimal(str(_friendly_minutes(duration))), 'min'))
+    profile = _profile_facts(facts['profile'])[1] if 'profile' in facts else []
+    for clause in re.split(r'[，,。！？；;]', speech):
+        historical = any(word in clause for word in ('上次', '此前', '历史'))
+        habitual = any(word in clause for word in ('通常', '平时', '习惯'))
+        present = any(word in clause for word in ('现在', '当前', '本次', '这次', '已经'))
+        if (historical or habitual) and present:
+            return False  # Ambiguous mixed-provenance clause: do not guess.
+        allowed = previous if historical else profile if habitual else current
+        if not _verified_text(_numeric_text(clause), allowed):
+            return False
+    return True
+
+
 def _numeric_text(speech):
     # Normalize compound speed units before the shared standalone-unit rewrite.
     for unit in ('\u5206\u949f\u6bcf\u516c\u91cc', '\u5206\u6bcf\u516c\u91cc', '\u5206\u949f/\u516c\u91cc', '\u5206/\u516c\u91cc'):
@@ -433,6 +465,15 @@ def build_live_speech(events, live_facts, *, api_key=None, http_post=None,
         with localcontext() as ctx:
             ctx.prec = 100
             numbers = _numbers(events, facts)
+            if 'previous' in facts:
+                from ride_brain import _summary, _friendly_minutes
+                _, extra = _summary(facts['previous'])
+                numbers.extend(extra)
+                if facts['previous'].get('duration_s') is not None:
+                    numbers.append((Decimal(str(_friendly_minutes(facts['previous']['duration_s']))), 'min'))
+            if 'profile' in facts:
+                from ride_chat import _profile_facts
+                numbers.extend(_profile_facts(facts['profile'])[1])
         payload = {'model': model or MODEL, 'max_tokens': MAX_TOKENS,
                    'response_format': {'type': 'json_object'},
                    'messages': [{'role': 'system', 'content': SYSTEM_PROMPT},
@@ -483,7 +524,8 @@ def build_live_speech(events, live_facts, *, api_key=None, http_post=None,
             return _response('rejected_bad_schema', template, usage, urgent=urgent)
         with localcontext() as ctx:
             ctx.prec = 100
-            if not _verified_text(_numeric_text(speech), numbers):
+            if (not _verified_text(_numeric_text(speech), numbers)
+                    or not _memory_speech_verified(speech, events, facts)):
                 return _response('rejected_unverifiable_number', template, usage, urgent=urgent)
         if _FORBIDDEN.search(speech):
             return _response('rejected_unsafe_speech', template, usage, urgent=urgent)

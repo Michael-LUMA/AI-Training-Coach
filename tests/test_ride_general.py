@@ -102,7 +102,7 @@ class GeneralAnswerTests(unittest.TestCase):
 
     def test_invalid_history_rejected_without_upstream(self):
         post = Mock(side_effect=AssertionError('no network'))
-        for history in ([{'q': '问', 'a': '答'}] * 4, [{'q': '问'}], '问', 42):
+        for history in ([{'q': '问', 'a': '答'}] * 6, [{'q': '问'}], '问', 42):
             with self.subTest(history=repr(history)[:40]):
                 result = gen.build_general_answer('聊聊古埃及金字塔', history=history,
                                                   api_key='synthetic-key', http_post=post)

@@ -150,12 +150,12 @@ def _check_question(question):
 
 
 def _check_history(history):
-    """Recent turns as bounded context data. At most 3, oldest first.
+    """Recent turns as bounded context data. At most 5, oldest first.
 
     History travels inside facts so it can clarify follow-ups; it never
     registers numbers — verification still binds speech to current facts.
     """
-    if type(history) is not list or len(history) > 3:
+    if type(history) is not list or len(history) > 5:
         raise ValueError('invalid history')
     turns = []
     for turn in history:
@@ -163,7 +163,7 @@ def _check_history(history):
             raise ValueError('invalid history turn')
         q, a = turn['q'], turn['a']
         if (type(q) is not str or not 1 <= len(q) <= 200
-                or type(a) is not str or not 1 <= len(a) <= 300
+                or type(a) is not str or not 1 <= len(a) <= 480
                 or any(ord(c) < 32 or ord(c) == 127 for c in q + a)):
             raise ValueError('invalid history turn')
         turns.append({'q': q, 'a': a})
@@ -367,7 +367,9 @@ def _matched_facts(matched):
     contract, not a courtesy. The date's month/day register as unitless numbers
     so 「11月1日那次」 passes the verification chain.
     """
-    if type(matched) is not list or len(matched) > 7:
+    from memory_service import MemoryMatches, LOCAL_TIMEZONE
+    cloud_calendar = type(matched) is MemoryMatches
+    if (type(matched) is not list and not cloud_calendar) or len(matched) > 7:
         raise ValueError('matched_sessions must be 0..7 items')
     facts, numbers = [], []
     # The retrieval count itself is a fact (「上周骑了 3 次」); it registers
@@ -380,7 +382,7 @@ def _matched_facts(matched):
         if type(item) is not dict or set(item) != {'started_at', 'summary'}:
             raise ValueError('invalid matched session')
         when = datetime.fromisoformat(str(item['started_at']).replace('Z', '+00:00'))
-        local = when.astimezone()
+        local = when.astimezone(LOCAL_TIMEZONE) if cloud_calendar else when.astimezone()
         projected, _ = _summary(item['summary'])
         entry = {'date': f'{local.month}月{local.day}日'}
         numbers.append((Decimal(local.month), None))
@@ -469,8 +471,8 @@ def build_ride_chat(question, session: dict | None = None,
     Returns:
         llm_status/draft/usage/fallback, same shape as build_ride_review.
         Every rejected draft is discarded entirely. Optional history carries at
-        most 3 recent turns as context data; it never registers numbers and is
-        never persisted — the server holds it in memory only, TTL-bounded.
+        most 5 recent turns as context data; it never registers numbers.
+        Identity, persistence and context budgets belong to the upstream server.
     Example:
         >>> build_ride_chat('这次心率多少？', api_key=None)['llm_status']
         'not_configured'
