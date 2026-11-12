@@ -55,6 +55,14 @@ CREATE TABLE IF NOT EXISTS dialog_turns (
 );
 CREATE INDEX IF NOT EXISTS idx_dialog_user ON dialog_turns(user_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS notes (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    text TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_notes_user ON notes(user_id, created_at);
+
 CREATE TABLE IF NOT EXISTS profiles (
     user_id TEXT PRIMARY KEY,
     profile JSONB NOT NULL,

@@ -31,6 +31,7 @@ import auth
 import cloud_rides
 import profile_service
 import memory_service
+import data_ownership
 import dialog_store
 import db as cloud_db
 from db import DatabaseError
@@ -88,6 +89,7 @@ RIDE_ASR_SEGMENT = "/api/coach/ride/asr/segment"
 RIDE_ASR_FINISH = "/api/coach/ride/asr/finish"
 AUTH_REGISTER = "/api/auth/register"
 AUTH_WHOAMI = "/api/auth/whoami"
+DATA_ROUTES = frozenset({"/api/data/export", "/api/data/delete", "/api/notes/list", "/api/notes/create", "/api/notes/delete"})
 DIALOG_ROUTES = frozenset({"/api/dialog/list", "/api/dialog/delete"})
 CLOUD_RIDE_ROUTES = frozenset({"/api/rides/sync", "/api/rides/create", "/api/rides/list",
                                "/api/rides/get", "/api/rides/delete"})
@@ -362,7 +364,7 @@ class App:
             token = headers.get("X-Coach-Token", "")
             require(type(token) is str and token.isascii() and secrets.compare_digest(token, self.token), "Session token required", "token_denied", 403)
         allowed = ((method == "GET" and (parsed.path in ("/", "/privacy", "/terms", "/api/coach/config", "/api/coach/activities", "/ride", "/mark", "/ride.webmanifest", "/icon.svg", RIDE_LIST, RIDE_NOTES) or font_path is not None)) or
-                   (method == "POST" and (path in CLOUD_RIDE_ROUTES or path in DIALOG_ROUTES or path in (AUTH_REGISTER, AUTH_WHOAMI, "/api/coach/connect", "/api/coach/review", "/api/coach/review-l2", "/api/coach/demo-review", "/api/coach/waitlist", "/api/coach/weekly", RIDE_POST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE, RIDE_CHAT, RIDE_LIVE, RIDE_IMPORT, RIDE_WEATHER, RIDE_NOTE, RIDE_NOTE_DELETE, RIDE_SPEAK, RIDE_ASR, RIDE_ASR_SEGMENT, RIDE_ASR_FINISH))))
+                   (method == "POST" and (path in CLOUD_RIDE_ROUTES or path in DIALOG_ROUTES or path in DATA_ROUTES or path in (AUTH_REGISTER, AUTH_WHOAMI, "/api/coach/connect", "/api/coach/review", "/api/coach/review-l2", "/api/coach/demo-review", "/api/coach/waitlist", "/api/coach/weekly", RIDE_POST, RIDE_REVIEW, RIDE_WEEKLY, RIDE_ROUTE, RIDE_CHAT, RIDE_LIVE, RIDE_IMPORT, RIDE_WEATHER, RIDE_NOTE, RIDE_NOTE_DELETE, RIDE_SPEAK, RIDE_ASR, RIDE_ASR_SEGMENT, RIDE_ASR_FINISH))))
         require(allowed, "Endpoint not found", "not_found", 404)
         if method == "POST":
             asr = path in (RIDE_ASR, RIDE_ASR_SEGMENT)
@@ -443,6 +445,9 @@ class App:
             payload = strict_json(body)
         except ActionError:
             raise ActionError("invalid_json", "Strict UTF-8 JSON required") from None
+        if path in DATA_ROUTES:
+            self._ride_rate_limit(method, path)
+            return self._cloud_data_request(path, payload)
         if path in DIALOG_ROUTES:
             self._ride_rate_limit(method, path)
             return self._cloud_dialog_request(path, payload)
@@ -929,6 +934,30 @@ class App:
                  "fallback": result["fallback"], "usage": result["usage"], "lane": lane}
         self._remember_chat(user_id, conv_id, question_for_record, final, prune_confirmed)
         return final
+
+    def _cloud_data_request(self, path, payload):
+        user_id, data = self._memory_identity(payload)
+        require(user_id is not None, "Cloud identity required", "invalid_token", 401)
+        if path == "/api/data/export":
+            require(not data, "Expected token only")
+            return self._cloud_memory(lambda: data_ownership.export_data(user_id))
+        if path == "/api/data/delete":
+            require(set(data) == {"confirm"} and data["confirm"] is True,
+                    "Explicit confirm=true required")
+            result = self._cloud_memory(lambda: data_ownership.delete_data(user_id, confirm=True))
+            with self._live_lock:
+                for key in list(self._live):
+                    if isinstance(key, tuple) and key[0] == user_id:
+                        del self._live[key]
+            return result
+        if path == "/api/notes/list":
+            require(not data, "Expected token only")
+            return self._cloud_memory(lambda: data_ownership.list_notes(user_id))
+        if path == "/api/notes/create":
+            require(set(data) == {"text"}, "Expected text only")
+            return self._cloud_memory(lambda: data_ownership.add_note(user_id, data["text"]))
+        require(set(data) == {"id"}, "Expected id only")
+        return self._cloud_memory(lambda: data_ownership.delete_note(user_id, data["id"]))
 
     def _cloud_dialog_request(self, path, payload):
         user_id, data = self._memory_identity(payload)
