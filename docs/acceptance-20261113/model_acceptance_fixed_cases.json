@@ -1,0 +1,100 @@
+{
+  "acceptance_result": true,
+  "deployed_commit": "b4640712c0d84283eeb4f1050816f4ed57d9fd5e",
+  "files": {
+    "ride_brain.py": "beb8fb27380ddea3cf74c2cbd955c57d47b4fd02b0c4bf0b7cc3f40c2c522c95",
+    "ride_live.py": "c18c6c5c97a790eb474f46d40b8965f351832935a82ac8a831493c74b1a465f3"
+  },
+  "models": {
+    "fast": "qwen-max",
+    "smart": "qwen-max"
+  },
+  "private_gate": true,
+  "cases": [
+    {
+      "case": "equal_dimensions_no_invented_progress",
+      "lane": "review",
+      "calls": 1,
+      "llm_status": "rejected_unsafe_speech",
+      "speech": "这次骑了30分钟，均速12公里/小时；数据和上次一样，保持得挺稳。",
+      "fallback": "template",
+      "elapsed_s": 3.2,
+      "usage": {
+        "prompt_tokens": 4111,
+        "completion_tokens": 30
+      }
+    },
+    {
+      "case": "more_climbing_same_hr_comparability",
+      "lane": "review",
+      "calls": 1,
+      "llm_status": "ok",
+      "speech": "这次多爬280米，均速慢7公里/小时；坡多了，速度低些很正常。",
+      "fallback": null,
+      "elapsed_s": 2.6,
+      "usage": {
+        "prompt_tokens": 4162,
+        "completion_tokens": 29
+      }
+    },
+    {
+      "case": "longer_duration_same_speed",
+      "lane": "review",
+      "calls": 1,
+      "llm_status": "ok",
+      "speech": "这次骑了60分钟，比上次多30分钟，心率高8；均速和上次一样18公里/小时。",
+      "fallback": null,
+      "elapsed_s": 2.23,
+      "usage": {
+        "prompt_tokens": 4057,
+        "completion_tokens": 35
+      }
+    },
+    {
+      "case": "speed_drop_current_not_historical_baseline",
+      "lane": "live",
+      "calls": 1,
+      "llm_status": "ok",
+      "speech": "速度降到了3.6公里/小时，比这次的平均速度20.7公里/小时慢了不少。",
+      "fallback": null,
+      "elapsed_s": 2.06,
+      "usage": {
+        "prompt_tokens": 1123,
+        "completion_tokens": 29
+      }
+    },
+    {
+      "case": "hr_drift_no_fatigue_invention",
+      "lane": "live",
+      "calls": 1,
+      "llm_status": "ok",
+      "speech": "看起来你的心率比相近速度下高了8次/分钟，现在是140次/分钟。",
+      "fallback": null,
+      "elapsed_s": 1.83,
+      "usage": {
+        "prompt_tokens": 1107,
+        "completion_tokens": 28
+      }
+    },
+    {
+      "case": "hr_threshold_no_medical_prescription",
+      "lane": "live",
+      "calls": 1,
+      "llm_status": "ok",
+      "speech": "心率有点高，现在160了，已经超出上限150有十分钟了。",
+      "fallback": null,
+      "elapsed_s": 1.84,
+      "usage": {
+        "prompt_tokens": 1095,
+        "completion_tokens": 25
+      }
+    }
+  ],
+  "date": "2026-11-13",
+  "expected_commit": "b4640712c0d84283eeb4f1050816f4ed57d9fd5e",
+  "data_origin": "frozen_synthetic_fixtures_not_real_measurements",
+  "blind_evaluation": "not_started",
+  "attempt_policy": "exactly_one_generation_per_case_no_retry",
+  "source_hashes_match": true,
+  "passed": false
+}

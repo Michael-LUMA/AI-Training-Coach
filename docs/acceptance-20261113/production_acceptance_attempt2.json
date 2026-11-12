@@ -1,0 +1,50 @@
+{
+  "date": "2026-11-13",
+  "expected_commit": "f790b7af8336566ca0817fb8981f0531d1e9a57e",
+  "data_origin": "isolated_synthetic_fixtures_not_real_measurements",
+  "checks": {
+    "expected_git_commit_deployed_from_confirmed_source": true,
+    "running_code_hashes_database_and_private_gate": true,
+    "private_origin_browser_identity_gates_and_no_device_recovery": true
+  },
+  "passed": false,
+  "cleanup": true,
+  "blind_evaluation": "not_started",
+  "physical_iphone_acceptance": "not_performed",
+  "prior_attempt": {
+    "evidence": "production_acceptance_attempt1.json",
+    "issue": "shared_POST_bucket_caused_sync_429",
+    "fix": "independent_conversation_and_write_budgets",
+    "fixture_cleanup": true
+  },
+  "origin": "https://ai-ride-coach-production-7887.up.railway.app",
+  "deployment_id": "753507fb-c7bb-4822-a48c-b905bcfa3d55",
+  "runtime_before_restart": {
+    "acceptance_result": true,
+    "postgres_connected": true,
+    "postgres_version": "180006",
+    "DATABASE_URL_present": true,
+    "private_gate": true,
+    "fast": "qwen-max",
+    "smart": "qwen-max",
+    "fingerprint": "032e3e8e23c663b6e41e",
+    "files": {
+      "coach_server.py": "fe79cc222ecdeac4b3b88473c25d65e4b94c3685e8e9ab3664776079f3c0ae07",
+      "ride_live.py": "df7c17988ee587370aeec4313d6076d3f0ebdbf200718e335f393911f347d880",
+      "static/mark.html": "d89e465694ab42ffcd2b6d0273f05312f64219d4d50ecf21f782fcce068ef91e",
+      "static/ride.html": "706db3821681bdda6be743927e2db33faafc0dfc4f4fad9b0281b241f1a603b9"
+    }
+  },
+  "failure": {
+    "type": "AssertionError",
+    "lines": [
+      214
+    ],
+    "assertion": ""
+  },
+  "cleanup_details": {
+    "acceptance_result": true,
+    "exact_fixture_devices_removed": true,
+    "remaining_identities_deleted": 2
+  }
+}

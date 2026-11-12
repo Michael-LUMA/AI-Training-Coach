@@ -1,0 +1,109 @@
+{
+  "acceptance_result": true,
+  "known_bad_hr_duration_replay": {
+    "status": "rejected_unsupported_inference",
+    "fallback": "template",
+    "urgent": true,
+    "speech": "心率160，超过你设的上限150了。"
+  },
+  "deployed_commit": "191b83d69e29f7d3c40cded4211bda4d5a7dccc6",
+  "files": {
+    "ride_brain.py": "f892f7cac820f5ed9f43a5f2e6223a478b02a879465f2e07ba5b663408f7299c",
+    "ride_live.py": "dc11707cff24dc3be1645f497f91211330444d00d5457ed471e77f07db101863"
+  },
+  "models": {
+    "fast": "qwen-max",
+    "smart": "qwen-max"
+  },
+  "private_gate": true,
+  "cases": [
+    {
+      "case": "equal_dimensions_no_invented_progress",
+      "lane": "review",
+      "calls": 1,
+      "llm_status": "rejected_unsafe_speech",
+      "speech": "这次还是30分钟，均速12公里/小时；数据和上次一样，看起来状态挺稳定的。",
+      "fallback": "template",
+      "elapsed_s": 3.09,
+      "usage": {
+        "prompt_tokens": 4139,
+        "completion_tokens": 29
+      }
+    },
+    {
+      "case": "more_climbing_same_hr_comparability",
+      "lane": "review",
+      "calls": 1,
+      "llm_status": "rejected_unsupported_inference",
+      "speech": "这次多爬280米，均速慢7公里/小时；同样心率下爬得更多，可能是这次更注重爬坡。",
+      "fallback": "template",
+      "elapsed_s": 3.38,
+      "usage": {
+        "prompt_tokens": 4190,
+        "completion_tokens": 36
+      }
+    },
+    {
+      "case": "longer_duration_same_speed",
+      "lane": "review",
+      "calls": 1,
+      "llm_status": "ok",
+      "speech": "这次骑了60分钟，心率高8；时长翻倍，速度没变。",
+      "fallback": null,
+      "elapsed_s": 3.09,
+      "usage": {
+        "prompt_tokens": 4085,
+        "completion_tokens": 26
+      }
+    },
+    {
+      "case": "speed_drop_current_not_historical_baseline",
+      "lane": "live",
+      "calls": 1,
+      "llm_status": "rejected_unverifiable_number",
+      "speech": "速度降到了3.6公里/小时，这次骑行的平均速度是21.0公里/小时。",
+      "fallback": "template",
+      "elapsed_s": 2.02,
+      "usage": {
+        "prompt_tokens": 1194,
+        "completion_tokens": 28
+      }
+    },
+    {
+      "case": "hr_drift_no_fatigue_invention",
+      "lane": "live",
+      "calls": 1,
+      "llm_status": "rejected_unsupported_inference",
+      "speech": "看起来你在相近速度下心率变高了，现在是140，比预期的132高出8。",
+      "fallback": "template",
+      "elapsed_s": 1.91,
+      "usage": {
+        "prompt_tokens": 1178,
+        "completion_tokens": 30
+      }
+    },
+    {
+      "case": "hr_threshold_no_medical_prescription",
+      "lane": "live",
+      "calls": 1,
+      "llm_status": "ok",
+      "speech": "心率现在是160，超过了你设的上限150。本次活动时长10分钟半了。",
+      "fallback": null,
+      "elapsed_s": 1.88,
+      "usage": {
+        "prompt_tokens": 1166,
+        "completion_tokens": 30
+      }
+    }
+  ],
+  "date": "2026-11-13",
+  "expected_commit": "191b83d69e29f7d3c40cded4211bda4d5a7dccc6",
+  "data_origin": "frozen_synthetic_fixtures_not_real_measurements",
+  "blind_evaluation": "not_started",
+  "attempt_policy": "exactly_one_generation_per_case_no_retry",
+  "source_hashes_match": true,
+  "automatic_checks_only": true,
+  "semantic_review": "pending_human_review_of_all_six_outputs",
+  "supersedes": "model_acceptance_fixed_cases.json; preserved, not overwritten",
+  "passed": false
+}

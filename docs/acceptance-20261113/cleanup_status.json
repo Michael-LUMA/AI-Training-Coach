@@ -1,0 +1,10 @@
+{
+  "date": "2026-11-13",
+  "acceptance_fixture_identities_cleaned": true,
+  "fixture_cleanup_evidence": "production_acceptance.json",
+  "temporary_credential_cleanup_complete": false,
+  "status": "blocked_by_tool_policy_before_execution",
+  "registration_name": "mark-acceptance-20261113",
+  "note": "Temporary access must be treated as active. No cleanup success is claimed. Requires owner follow-up.",
+  "secrets_included": false
+}

@@ -1,0 +1,44 @@
+{
+  "review": {
+    "result": "ok",
+    "speech": "这次和上次一样，30分钟、均速12公里/小时；心率也都是130。",
+    "hard_match": null,
+    "soft_basis": true,
+    "inference_basis": true,
+    "explanation_basis": true
+  },
+  "live": {
+    "result": "rejected_unverifiable_number",
+    "speech": "速度降到了1.0米/秒，看起来可能是路况或者疲劳导致的，之前平均速度有3.33米/秒。",
+    "events": [
+      {
+        "type": "speed_drop",
+        "current_speed_mps": 1.0,
+        "avg_speed_mps": 5.761904761904762,
+        "ratio": 0.17355371900826447
+      }
+    ],
+    "facts": {
+      "distance_m": 3630.0,
+      "duration_s": 630.0,
+      "avg_speed_kmh": 20.742857142857144,
+      "paused": false,
+      "activity": "ride",
+      "previous": {
+        "duration_s": 1800,
+        "avg_hr": 130,
+        "max_hr": 130,
+        "time_in_zone_s": null,
+        "zone_target": null,
+        "gaps": 1,
+        "alerts": 0,
+        "avg_cadence": null,
+        "avg_power": null,
+        "max_power": null,
+        "distance_m": 6000,
+        "avg_speed_mps": 3.3333333333333335,
+        "max_speed_mps": 3.3333333333333335
+      }
+    }
+  }
+}

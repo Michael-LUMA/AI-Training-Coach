@@ -1,25 +1,32 @@
 # DEPLOY — AI Ride Coach (working title)
 
-中文摘要：Render 免费档部署步骤、环境变量、健康检查与已知限制。本地优先设计；公网部署需显式允许远程绑定，现增加单测试者密码保护，不是公众多用户账号系统。
+中文摘要：当前为Railway＋PostgreSQL私测部署，保留身份与访问门禁；Render步骤和无依赖描述属于历史方案。工程检查与模型质量验收分开记录，未公开发布。
 
-## M7 current private deployment — 2026-11-12
+## Current private deployment — 2026-11-13
 
-This section supersedes historical milestone status below. Current private origin:
-`https://ai-ride-coach-production-7887.up.railway.app`; open `/mark` with the existing tester credentials.
-PostgreSQL cloud summaries, profiles, recent dialog and per-user notes are active;
-local legacy SQLite/files remain separate and ephemeral. `requirements-cloud.txt`
-is installed by Docker; the old “no dependencies” architecture describes legacy mode.
-Runtime DATABASE_URL connection and both qwen-max routes were checked in the real container.
-M7 export/hard-delete/double confirmation and frontend cloud identity are deployed.
-Repeated device IDs now return 409: they cannot recover or rotate an existing token.
-The actual container was restarted, then original tokens read back all four categories unchanged;
-hard delete was verified by five-table SQL zero counts, old-token 401 and user-B isolation.
-Private Basic + same-origin + browser token + cloud token gates are retained.
-Do not remove the private gate or interpret anonymous identity as public account readiness.
-No physical iPhone/browser UX acceptance is implied. L3 has not started.
-See `docs/data-ownership-M7-20261112.md` and `docs/verification-M7-20261112.json`.
-Deployed code: `096b810df62fecba86f2bcfa375fcb73476677d4`.
-Documentation-only follow-up commits are local and intentionally not pushed.
+This section supersedes milestone status below. Current private origin:
+`https://ai-ride-coach-production-7887.up.railway.app`; open `/mark` with existing tester credentials.
+Runtime code commit: `191b83d69e29f7d3c40cded4211bda4d5a7dccc6`.
+Documentation-only follow-up commits remain local and intentionally do not trigger deployment.
+
+M7 cloud summaries/profiles/dialog/notes, export, confirmed hard deletion and frontend identity are deployed.
+Actual PostgreSQL DATABASE_URL use and qwen-max on both model routes were checked in the container.
+A real container restart at `f790b7a` preserved readback using the original cloud tokens.
+Hard-delete five-table zero counts, revoked-token 401 and other-user isolation passed.
+The subsequent source diff leaves persistence/auth/export/delete/frontend unchanged; see continuity evidence.
+Repeated device IDs return 409, never recover a token. Basic/same-origin/browser/cloud gates remain enabled.
+Raw GPS is not uploaded. Browser-local legacy data is distinct from cloud ownership operations.
+
+L3 context/explanation guards and L4 speed-drop/HR-drift/arbitration are implemented for private testing;
+this is not release or rider acceptance. L4.3 climb_ahead is disabled without reliable forward terrain.
+The latest full Python run: 1834 tests, 1829 passed, 5 skipped, 0 failed.
+Six fixed real-model calls: only 2 accepted; 4 template fallbacks. Model quality gate remains FAILED.
+Blind evaluation is deferred by owner instruction; old rider materials remain inactive.
+No physical iPhone, Safari background, or rider acceptance is claimed.
+Temporary acceptance access cleanup remains unconfirmed after a policy-denied command;
+see the explicit incomplete-cleanup record in the acceptance evidence.
+See `docs/L4-acceptance-20261113.md` and `docs/acceptance-20261113/`.
+Historical M7 evidence remains in `docs/data-ownership-M7-20261112.md`.
 
 ## Architecture (legacy overview)
 
@@ -44,7 +51,7 @@ Documentation-only follow-up commits are local and intentionally not pushed.
 | `LLM_BACKUP_MODEL_FAST` | no | unset | Backup model name for fast lanes (live/review/weekly/small talk) |
 | `LLM_BACKUP_MODEL_SMART` | no | unset | Backup model name for smart lanes (personal/knowledge Q&A) |
 
-Model routing: every lane tries DashScope first (fast lanes `qwen-flash`, smart lanes `qwen-plus`; short small talk in the personal lane drops to flash). On `upstream_error`/`error_upstream` only, the call fails over once to the backup provider; verification rejections never fail over. Unset backup vars keep single-provider behavior exactly as before.
+Model routing defaults (both routes are overridden to qwen-max in the current private deployment): every lane tries DashScope first (fast lanes `qwen-flash`, smart lanes `qwen-plus`; short small talk in the personal lane drops to flash). On `upstream_error`/`error_upstream` only, the call fails over once to the backup provider; verification rejections never fail over. Unset backup vars keep single-provider behavior exactly as before.
 
 Without any encryption backend (non-Windows + no master key) the service **refuses to store keys** (fail closed).
 

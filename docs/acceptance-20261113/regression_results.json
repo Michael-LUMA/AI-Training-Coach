@@ -1,0 +1,104 @@
+{
+  "date": "2026-11-13",
+  "deployment_commit": "191b83d69e29f7d3c40cded4211bda4d5a7dccc6",
+  "development_commit": "30c85b25b37e745ceaa3cb5842152455d3817e34",
+  "deployment_python_full": {
+    "run": 1834,
+    "passed": 1829,
+    "skipped": 5,
+    "failed": 0,
+    "seconds": 114.946
+  },
+  "development_affected_regression": {
+    "run": 179,
+    "passed": 179,
+    "skipped": 0,
+    "failed": 0,
+    "seconds": 2.418
+  },
+  "development_L4_related_before_limiter_fix": {
+    "run": 201,
+    "passed": 201,
+    "failed": 0
+  },
+  "frontend_cloud_identity_node": {
+    "run": 10,
+    "passed": 10,
+    "failed": 0
+  },
+  "new_rate_bucket_tests": {
+    "run": 5,
+    "passed": 5,
+    "initial_red_failures": 4
+  },
+  "scope": "Offline synthetic regression; 5 skips remain; does not imply physical iPhone UX or rider blind acceptance.",
+  "full_regression_initial_failure": "one legacy test expected uploads to consume conversation budget; updated to independent 60-request contract",
+  "blind_evaluation": "not_started",
+  "history": [
+    {
+      "date": "2026-11-13",
+      "deployment_commit": "f790b7af8336566ca0817fb8981f0531d1e9a57e",
+      "development_commit": "707cffa4acf0a9d5b655813f5700a5add565d57c",
+      "deployment_python_full": {
+        "run": 1820,
+        "passed": 1815,
+        "skipped": 5,
+        "failed": 0,
+        "seconds": 135.287
+      },
+      "development_affected_regression": {
+        "run": 249,
+        "passed": 249,
+        "skipped": 0,
+        "failed": 0
+      },
+      "development_L4_related_before_limiter_fix": {
+        "run": 201,
+        "passed": 201,
+        "failed": 0
+      },
+      "frontend_cloud_identity_node": {
+        "run": 10,
+        "passed": 10,
+        "failed": 0
+      },
+      "new_rate_bucket_tests": {
+        "run": 5,
+        "passed": 5,
+        "initial_red_failures": 4
+      },
+      "scope": "offline synthetic regression; no phone/sensor UX acceptance implied",
+      "full_regression_initial_failure": "one legacy test expected uploads to consume conversation budget; updated to independent 60-request contract",
+      "blind_evaluation": "not_started"
+    },
+    {
+      "deployment_commit": "b4640712c0d84283eeb4f1050816f4ed57d9fd5e",
+      "development_commit": "daa637edbc7f81f6fd006a326ba5c4a9b6207ef6",
+      "deployment_python_full": {
+        "run": 1827,
+        "passed": 1822,
+        "skipped": 5,
+        "failed": 0,
+        "seconds": 135.563
+      },
+      "development_affected_regression": {
+        "run": 172,
+        "passed": 172,
+        "failed": 0
+      }
+    }
+  ],
+  "new_hr_duration_regression": {
+    "new_test_methods": 7,
+    "known_bad_production_output_reproduced_before_fix": true,
+    "accepted_before_fix": true,
+    "rejected_after_fix": true,
+    "guard_policy": "HR threshold elapsed time is unmeasured; session time cannot justify it; explicit activity-time clause remains allowed",
+    "medical_effect_and_subjective_guards_relaxed": false
+  },
+  "logs": {
+    "deployment_full": "%TEMP%/mark-hr-duration-full.log",
+    "development_affected": "%TEMP%/mark-hr-duration-development.log",
+    "initial_red": "%TEMP%/mark-hr-duration-red.log"
+  }
+}

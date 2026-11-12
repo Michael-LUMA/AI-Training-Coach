@@ -1,0 +1,60 @@
+{
+  "date": "2026-11-13",
+  "source": "model_acceptance_fixed_cases_v2.json",
+  "runtime_commit": "191b83d69e29f7d3c40cded4211bda4d5a7dccc6",
+  "reviewer": "coding_agent_offline_review_not_boss_or_rider_acceptance",
+  "new_model_calls": 0,
+  "automatic_accepted": 2,
+  "automatic_rejected_with_template_fallback": 4,
+  "sample_count": 6,
+  "sampling_note": "Small fixed synthetic diagnostic set; not a population success-rate estimate.",
+  "source_acceptance_result_meaning": "Harness captured evidence; not a quality pass. Source passed=false is authoritative.",
+  "cases": [
+    {
+      "case": "equal_dimensions_no_invented_progress",
+      "llm_status": "rejected_unsafe_speech",
+      "generated_speech": "这次还是30分钟，均速12公里/小时；数据和上次一样，看起来状态挺稳定的。",
+      "review_status": "fail",
+      "assessment": "相同摘要不能推出过程或状态稳定；拒绝无据评价正确。"
+    },
+    {
+      "case": "more_climbing_same_hr_comparability",
+      "llm_status": "rejected_unsupported_inference",
+      "generated_speech": "这次多爬280米，均速慢7公里/小时；同样心率下爬得更多，可能是这次更注重爬坡。",
+      "review_status": "fail",
+      "assessment": "多爬280米、均速慢7公里/小时有依据；更注重爬坡是在猜测用户意图。"
+    },
+    {
+      "case": "longer_duration_same_speed",
+      "llm_status": "ok",
+      "generated_speech": "这次骑了60分钟，心率高8；时长翻倍，速度没变。",
+      "review_status": "limited",
+      "assessment": "数值核验通过，但仍主要复述变化，不能据此认定解释型风格或落点句达标。"
+    },
+    {
+      "case": "speed_drop_current_not_historical_baseline",
+      "llm_status": "rejected_unverifiable_number",
+      "generated_speech": "速度降到了3.6公里/小时，这次骑行的平均速度是21.0公里/小时。",
+      "review_status": "fail",
+      "assessment": "事实均速20.742857，应按一位小数说20.7；21.0不满足现有数字核验，不放宽。"
+    },
+    {
+      "case": "hr_drift_no_fatigue_invention",
+      "llm_status": "rejected_unsupported_inference",
+      "generated_speech": "看起来你在相近速度下心率变高了，现在是140，比预期的132高出8。",
+      "review_status": "fail",
+      "assessment": "当前140、参考132和差8有数值依据，但推断没有在同一句附上数值，未通过现有同句核验；维持回退，不放宽规则。"
+    },
+    {
+      "case": "hr_threshold_no_medical_prescription",
+      "llm_status": "ok",
+      "generated_speech": "心率现在是160，超过了你设的上限150。本次活动时长10分钟半了。",
+      "review_status": "pass_for_narrow_claim",
+      "assessment": "当前心率、用户上限与整次活动时长分句表达，没有把活动时长说成超限持续时长。"
+    }
+  ],
+  "model_quality_gate_passed": false,
+  "rider_blind_evaluation_started": false,
+  "release_ready": false,
+  "next_step": "Scope separation of trusted factual speech from model explanation; do not relax guards or resample unchanged prompts."
+}

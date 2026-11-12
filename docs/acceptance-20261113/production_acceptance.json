@@ -1,0 +1,100 @@
+{
+  "date": "2026-11-13",
+  "expected_commit": "f790b7af8336566ca0817fb8981f0531d1e9a57e",
+  "data_origin": "isolated_synthetic_fixtures_not_real_measurements",
+  "checks": {
+    "expected_git_commit_deployed_from_confirmed_source": true,
+    "running_code_hashes_database_and_private_gate": true,
+    "private_origin_browser_identity_gates_and_no_device_recovery": true,
+    "three_identity_chains_and_live_L4_speed_drop_with_antispam": {
+      "chat": "ok",
+      "review": "rejected_unsafe_speech",
+      "live": "rejected_unsupported_inference",
+      "live_fallback": "template"
+    },
+    "raw_and_nested_location_rejected": true,
+    "four_category_export_no_bearer_and_literal_delete_confirmation": {
+      "users": 1,
+      "rides": 3,
+      "profiles": 1,
+      "dialog_turns": 2,
+      "notes": 1
+    },
+    "real_container_restart_original_cloud_tokens_four_category_readback": true,
+    "hard_delete_five_tables_zero_revoked_token_and_other_user_unchanged": {
+      "users": 0,
+      "rides": 0,
+      "profiles": 0,
+      "dialog_turns": 0,
+      "notes": 0
+    }
+  },
+  "passed": false,
+  "cleanup": true,
+  "blind_evaluation": "not_started",
+  "physical_iphone_acceptance": "not_performed",
+  "prior_attempt": {
+    "evidence": "production_acceptance_attempt1.json",
+    "issue": "shared_POST_bucket_caused_sync_429",
+    "fix": "independent_conversation_and_write_budgets",
+    "fixture_cleanup": true
+  },
+  "origin": "https://ai-ride-coach-production-7887.up.railway.app",
+  "deployment_id": "753507fb-c7bb-4822-a48c-b905bcfa3d55",
+  "runtime_before_restart": {
+    "acceptance_result": true,
+    "postgres_connected": true,
+    "postgres_version": "180006",
+    "DATABASE_URL_present": true,
+    "private_gate": true,
+    "fast": "qwen-max",
+    "smart": "qwen-max",
+    "fingerprint": "032e3e8e23c663b6e41e",
+    "files": {
+      "coach_server.py": "fe79cc222ecdeac4b3b88473c25d65e4b94c3685e8e9ab3664776079f3c0ae07",
+      "ride_live.py": "df7c17988ee587370aeec4313d6076d3f0ebdbf200718e335f393911f347d880",
+      "static/mark.html": "d89e465694ab42ffcd2b6d0273f05312f64219d4d50ecf21f782fcce068ef91e",
+      "static/ride.html": "706db3821681bdda6be743927e2db33faafc0dfc4f4fad9b0281b241f1a603b9"
+    }
+  },
+  "model_results": {
+    "chat": "ok",
+    "review": "rejected_unsafe_speech",
+    "live": "rejected_unsupported_inference",
+    "live_fallback": "template"
+  },
+  "model_fallbacks": {
+    "chat": null,
+    "review": "template"
+  },
+  "model_review_accepted": false,
+  "restart_requested": true,
+  "runtime_after_restart": {
+    "acceptance_result": true,
+    "postgres_connected": true,
+    "postgres_version": "180006",
+    "DATABASE_URL_present": true,
+    "private_gate": true,
+    "fast": "qwen-max",
+    "smart": "qwen-max",
+    "fingerprint": "2a0dac55a1e22a9493f8",
+    "files": {
+      "coach_server.py": "fe79cc222ecdeac4b3b88473c25d65e4b94c3685e8e9ab3664776079f3c0ae07",
+      "ride_live.py": "df7c17988ee587370aeec4313d6076d3f0ebdbf200718e335f393911f347d880",
+      "static/mark.html": "d89e465694ab42ffcd2b6d0273f05312f64219d4d50ecf21f782fcce068ef91e",
+      "static/ride.html": "706db3821681bdda6be743927e2db33faafc0dfc4f4fad9b0281b241f1a603b9"
+    }
+  },
+  "failure": {
+    "type": "AssertionError",
+    "lines": [
+      287
+    ],
+    "assertion": "review model: rejected_unsafe_speech"
+  },
+  "cleanup_details": {
+    "acceptance_result": true,
+    "exact_fixture_devices_removed": true,
+    "remaining_identities_deleted": 0
+  }
+}
