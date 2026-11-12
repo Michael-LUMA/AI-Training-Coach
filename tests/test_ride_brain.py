@@ -56,10 +56,10 @@ class RideBrainTests(unittest.TestCase):
         payload=json.loads(req.data);self.assertEqual(payload['model'],'qwen-flash')
         self.assertLessEqual(payload['max_tokens'],600)
         self.assertEqual(req.get_header('Authorization'),'Bearer synthetic-key')
-        facts=json.loads(payload['messages'][1]['content'])
+        facts=json.loads(payload['messages'][-1]['content'])
         self.assertEqual(facts['sample_count'],2)
         for forbidden in ('private note','series','started_at','persona_version','current'):
-            self.assertNotIn(forbidden,payload['messages'][1]['content'])
+            self.assertNotIn(forbidden,payload['messages'][-1]['content'])
 
     def test_arabic_invented_number_rejects_entire_draft(self):
         result=self.review('我记到心率999。')
@@ -86,7 +86,7 @@ class RideBrainTests(unittest.TestCase):
         post=transport('我看到平均心率比上次低4 bpm，时长比上次少1分钟。')
         result=brain.build_ride_review(memory(),previous,api_key='synthetic-key',http_post=post)
         self.assertEqual(result['llm_status'],'ok')
-        facts=json.loads(json.loads(post.call_args.args[0].data)['messages'][1]['content'])
+        facts=json.loads(json.loads(post.call_args.args[0].data)['messages'][-1]['content'])
         self.assertEqual(facts['differences'],{'avg_hr':-4.0,'duration_s':-60.0})
         self.assertEqual(previous['avg_hr'],124)
 
@@ -111,7 +111,7 @@ class RideBrainTests(unittest.TestCase):
         post=transport('走了四十秒，累计爬升50米，平均心率122。')
         result=brain.build_ride_review(hike_memory(),api_key='synthetic-key',http_post=post)
         self.assertEqual(result['llm_status'],'ok')
-        facts=json.loads(json.loads(post.call_args.args[0].data)['messages'][1]['content'])
+        facts=json.loads(json.loads(post.call_args.args[0].data)['messages'][-1]['content'])
         self.assertEqual(facts['activity'],'hike')
         self.assertEqual(facts['display']['ascent_m'],50)
         rejected=brain.build_ride_review(hike_memory(),api_key='synthetic-key',
@@ -167,7 +167,7 @@ class RideBrainTests(unittest.TestCase):
         result=brain.build_ride_review(self.v2memory(),api_key='synthetic-key',http_post=post)
         self.assertEqual(result['llm_status'],'ok')
         payload=json.loads(post.call_args.args[0].data)
-        facts=json.loads(payload['messages'][1]['content'])
+        facts=json.loads(payload['messages'][-1]['content'])
         self.assertEqual(facts['summary']['avg_power'],215)
         self.assertEqual(facts['summary']['max_power'],240)
         self.assertEqual(facts['summary']['avg_cadence'],88)
@@ -230,7 +230,7 @@ class RideBrainEndpointTests(unittest.TestCase):
         with patch.dict(os.environ,{'DASHSCOPE_API_KEY':'synthetic-key'}):
             result=self.request('/api/coach/ride/review',{'session_id':'current'})
         self.assertEqual(result['speech_status'],'ok');self.assertEqual(current_path.read_bytes(),before)
-        facts=json.loads(json.loads(self.post.call_args.args[0].data)['messages'][1]['content'])
+        facts=json.loads(json.loads(self.post.call_args.args[0].data)['messages'][-1]['content'])
         self.assertEqual(facts['previous_summary'],previous['summary'])
         self.assertEqual(facts['comparison_count'],2)
 
@@ -257,7 +257,7 @@ class RideBrainEndpointTests(unittest.TestCase):
         with patch.dict(os.environ,{'DASHSCOPE_API_KEY':'synthetic-key'}):
             result=self.request('/api/coach/ride/review',{'session_id':'current'})
         self.assertEqual(result['speech_status'],'ok')
-        facts=json.loads(json.loads(self.post.call_args.args[0].data)['messages'][1]['content'])
+        facts=json.loads(json.loads(self.post.call_args.args[0].data)['messages'][-1]['content'])
         self.assertEqual(facts['recent_trend']['count'],2)
         self.assertEqual(facts['recent_trend']['avg_hr_list'],[138,135])
         self.assertEqual(facts['session_ordinal'],3)
@@ -268,7 +268,7 @@ class RideBrainEndpointTests(unittest.TestCase):
         with patch.dict(os.environ,{'DASHSCOPE_API_KEY':'synthetic-key'}):
             result=self.request('/api/coach/ride/review',{'session_id':'current'})
         self.assertEqual(result['speech_status'],'ok')
-        facts=json.loads(json.loads(self.post.call_args.args[0].data)['messages'][1]['content'])
+        facts=json.loads(json.loads(self.post.call_args.args[0].data)['messages'][-1]['content'])
         self.assertEqual(facts['session_ordinal'],1)
         self.assertNotIn('recent_trend',facts)
         self.assertNotIn('excluded_simulated',facts)

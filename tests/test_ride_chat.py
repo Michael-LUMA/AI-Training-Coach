@@ -34,7 +34,7 @@ def transport(speech='这次平均心率120 bpm，记录了1分钟。', *, statu
 
 
 def facts_of(post):
-    return json.loads(json.loads(post.call_args.args[0].data)['messages'][1]['content'])
+    return json.loads(json.loads(post.call_args.args[0].data)['messages'][-1]['content'])
 
 
 class ChatQuestionValidationTests(unittest.TestCase):
@@ -264,7 +264,7 @@ class ChatEndpointTests(unittest.TestCase):
         with patch.dict(os.environ,{'DASHSCOPE_API_KEY':'synthetic-key'}):
             result=self.request('/api/coach/ride/chat',{'question':'聊聊古埃及金字塔','tz_offset_min':480})
         self.assertEqual((result['speech_status'],result['lane']),('ok','general'))
-        facts=json.loads(json.loads(self.post.call_args.args[0].data)['messages'][1]['content'])
+        facts=json.loads(json.loads(self.post.call_args.args[0].data)['messages'][-1]['content'])
         self.assertRegex(facts['now']['local_time'],r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$')
         self.assertIn(facts['now']['weekday'],[f'星期{d}' for d in '一二三四五六日'])
         from datetime import datetime as dt, timedelta as td, timezone as tz
@@ -308,7 +308,7 @@ class ChatEndpointTests(unittest.TestCase):
             result=self.request('/api/coach/ride/chat',{'question':'这次心率多少？','session_id':'current'})
         self.assertEqual(result['speech_status'],'ok')
         self.assertEqual(result['speech'],'这次平均心率120 bpm，记录了1分钟。')
-        facts=json.loads(json.loads(self.post.call_args.args[0].data)['messages'][1]['content'])
+        facts=json.loads(json.loads(self.post.call_args.args[0].data)['messages'][-1]['content'])
         self.assertEqual(facts['question'],'这次心率多少？')
         self.assertEqual(facts['summary']['avg_hr'],120)
         self.assertEqual(facts['recent_trend']['avg_hr_list'],[138])
@@ -322,7 +322,7 @@ class ChatEndpointTests(unittest.TestCase):
         with patch.dict(os.environ,{'DASHSCOPE_API_KEY':'synthetic-key'}):
             result=self.request('/api/coach/ride/chat',{'question':'我最近几次心率多少？'})
         self.assertEqual(result['speech_status'],'ok')
-        facts=json.loads(json.loads(self.post.call_args.args[0].data)['messages'][1]['content'])
+        facts=json.loads(json.loads(self.post.call_args.args[0].data)['messages'][-1]['content'])
         self.assertNotIn('summary',facts)
         self.assertEqual(facts['recent_trend']['avg_hr_list'],[138,135])
         self.assertEqual(facts['session_ordinal'],2)
@@ -353,7 +353,7 @@ class ChatEndpointTests(unittest.TestCase):
         with patch.dict(os.environ,{'DASHSCOPE_API_KEY':'synthetic-key'}):
             result=self.request('/api/coach/ride/chat',{'question':'我累计骑了多少？'})
         self.assertEqual(result['speech_status'],'ok')
-        facts=json.loads(json.loads(self.post.call_args.args[0].data)['messages'][1]['content'])
+        facts=json.loads(json.loads(self.post.call_args.args[0].data)['messages'][-1]['content'])
         self.assertEqual(facts['totals'],{'sessions_count':2,'duration_min':2,'distance_km':2.4,
                                           'month':{'sessions':2,'duration_min':2,'distance_km':2.4}})
 
@@ -366,7 +366,7 @@ class ChatEndpointTests(unittest.TestCase):
         with patch.dict(os.environ,{'DASHSCOPE_API_KEY':'synthetic-key'}):
             result=self.request('/api/coach/ride/chat',{'question':'我累计骑了多少？'})
         self.assertEqual(result['speech_status'],'ok')
-        facts=json.loads(json.loads(self.post.call_args.args[0].data)['messages'][1]['content'])
+        facts=json.loads(json.loads(self.post.call_args.args[0].data)['messages'][-1]['content'])
         self.assertIsNone(facts['totals']['distance_km'])
         self.assertIsNone(facts['totals']['month']['distance_km'])
 
@@ -662,7 +662,7 @@ class ChatConversationTests(unittest.TestCase):
                                 {'question': question, 'session_id': 'current', 'conv_id': conv_id})
 
     def last_facts(self):
-        return json.loads(json.loads(self.post.call_args.args[0].data)['messages'][1]['content'])
+        return json.loads(json.loads(self.post.call_args.args[0].data)['messages'][-1]['content'])
 
     def test_bad_conv_id_rejected_before_any_work(self):
         for bad in ('conv id', '中文', '-x', 'x' * 65, '', 123, ['conv-1'], None):
@@ -816,7 +816,7 @@ class ChatProfileServerTests(unittest.TestCase):
             return self.request('/api/coach/ride/chat', {'question': question})
 
     def last_facts(self):
-        return json.loads(json.loads(self.post.call_args.args[0].data)['messages'][1]['content'])
+        return json.loads(json.loads(self.post.call_args.args[0].data)['messages'][-1]['content'])
 
     def test_profile_from_three_stored_sessions(self):
         self.save('a', '2026-11-05T08:00:00Z')

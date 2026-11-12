@@ -108,9 +108,10 @@ def _aggregates(records, now):
 
 
 def _recent_summary(record):
-    # Existing trend facts consume ONLY duration and average HR. Keep all three
-    # records rather than spending the budget on fields that get discarded.
-    return {key: record["summary"][key] for key in ("duration_s", "avg_hr")}
+    # Keep measured comparison dimensions; the existing budget may drop whole
+    # older records, never truncate fields or invent missing measurements.
+    keys = ("duration_s", "avg_hr", "avg_speed_mps", "ascent_m")
+    return {key: record["summary"][key] for key in keys if key in record["summary"]}
 
 
 def _match_summary(record):

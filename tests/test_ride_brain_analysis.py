@@ -188,7 +188,7 @@ class RideBrainAnalysisTests(unittest.TestCase):
         result=brain.build_ride_review(session,api_key='synthetic-key',http_post=post)
         self.assertEqual(result['llm_status'],'ok')
         payload=json.loads(post.call_args.args[0].data)
-        self.assertNotIn('pw_hr_decoupling_pct',payload['messages'][1]['content'])
+        self.assertNotIn('pw_hr_decoupling_pct',payload['messages'][-1]['content'])
 
     def test_aerobic_evaluation_rejected_as_unsafe(self):
         result=self.review(memory(paired()),'有氧基础好。')
@@ -231,7 +231,9 @@ class RideBrainHistoryFactsTests(unittest.TestCase):
         facts,numbers=brain._facts(memory(),None,recent_summaries=recents)
         trend=facts['recent_trend']
         self.assertEqual(trend,{'count':3,'avg_hr_list':[138,135,132],
-                                'duration_min_list':[45,45,45]})
+                                'duration_min_list':[45,45,45],
+                                'avg_speed_kmh_list':[None,None,None],
+                                'ascent_m_list':[None,None,None]})
         for value in ('138','135','132'):
             self.assertIn((Decimal(value),'bpm'),numbers)
         self.assertIn((Decimal(3),None),numbers)
@@ -291,7 +293,7 @@ class RideBrainHistoryFactsTests(unittest.TestCase):
 
     def test_prompt_declares_trend_ordinal_exclusion_rules(self):
         self.assertIn('recent_trend 是最近几次同场景活动的逐次数值',brain.SYSTEM_PROMPT)
-        self.assertIn('禁止推断趋势原因',brain.SYSTEM_PROMPT)
+        self.assertIn('禁止无据推断原因',brain.SYSTEM_PROMPT)
         self.assertIn('禁止拔高成里程碑评价',brain.SYSTEM_PROMPT)
         self.assertIn('excluded_simulated 是被剔除的合成演示次数',brain.SYSTEM_PROMPT)
 

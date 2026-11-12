@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from datetime import datetime
-from decimal import Decimal, InvalidOperation, localcontext
+from decimal import Decimal, ROUND_HALF_UP, InvalidOperation, localcontext
 from urllib.error import HTTPError, URLError
 from urllib.request import Request
 
@@ -23,8 +23,8 @@ from llm_review import (ENDPOINT, MAX_RESPONSE_BYTES, TIMEOUT_S,
 # phrasing quality at tolerable latency; the live lane keeps qwen-flash.
 MODEL = "qwen-plus"
 from ride_brain import (MAX_TOKENS, _FORBIDDEN_HARD, _soft_has_basis,
-                        _inference_has_basis, L3_INFERENCE_RULE, _count_checked, _facts,
-                        _friendly_km, _friendly_minutes, _normalized_numbers,
+                        _inference_has_basis, _explanation_has_basis, L3_INFERENCE_RULE, _count_checked, _facts,
+                        _friendly_km, _friendly_kmh, _friendly_minutes, _normalized_numbers,
                         _result, _summary)
 from ride_memory import RideMemoryError
 
@@ -39,7 +39,7 @@ SYSTEM_PROMPT = """你是 Mark，像同行的朋友，用第一人称“我”�
 用 display 里的公里与公里/小时；功率说"瓦"，踏频说"转"。为 null 或字段
 缺失就完全不提。facts 里的 activity 是场景标签（ride=骑行，hike=徒步），
 措辞必须与场景一致。facts 可能含 recent_trend（最近几次逐次数值，可逐次陈述，
-允许有据趋势判断，仍禁止推断趋势原因）、session_ordinal（陪同完成的次数，禁止拔高成里程碑评价）、
+允许有据趋势判断，禁止无据推断原因，允许用已知时长、均速、爬升解释变化的可能因素）、session_ordinal（陪同完成的次数，禁止拔高成里程碑评价）、
 excluded_simulated（被剔除的合成演示次数，不得把模拟当成真实活动）。
 source=simulated 是合成演示，绝不能当成真实骑行；有模拟来源须明确说模拟。
 facts 可能含 totals：sessions_count 是累计记录次数、duration_min 是累计分钟、
@@ -180,6 +180,8 @@ def _history_facts(recent_summaries, activity_ordinal, excluded_simulated):
     if recent_summaries:
         hr_list = []
         min_list = []
+        speed_list = []
+        ascent_list = []
         for entry in recent_summaries[-3:]:
             projected, _ = _summary(entry)  # Shape-checked; only listed values registered.
             avg_hr = projected.get('avg_hr')
@@ -193,9 +195,20 @@ def _history_facts(recent_summaries, activity_ordinal, excluded_simulated):
                 minutes = _friendly_minutes(duration_s)
                 min_list.append(minutes)
                 numbers.append((Decimal(str(minutes)), 'min'))
+            speed = projected.get('avg_speed_mps')
+            speed_kmh = None if speed is None else _friendly_kmh(speed)
+            speed_list.append(speed_kmh)
+            if speed_kmh is not None:
+                numbers.append((Decimal(str(speed_kmh)), 'km/h'))
+            ascent = projected.get('ascent_m')
+            ascent_value = None if ascent is None else int(Decimal(str(ascent)).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+            ascent_list.append(ascent_value)
+            if ascent_value is not None:
+                numbers.append((Decimal(ascent_value), 'm'))
         count = len(hr_list)
         facts['recent_trend'] = {'count': count, 'avg_hr_list': hr_list,
-                                 'duration_min_list': min_list}
+                                 'duration_min_list': min_list,
+                                 'avg_speed_kmh_list': speed_list, 'ascent_m_list': ascent_list}
         numbers.append((Decimal(count), None))
     if activity_ordinal is not None:
         ordinal = _count_checked(activity_ordinal)
@@ -578,7 +591,7 @@ def build_ride_chat(question, session: dict | None = None,
                 return _result('rejected_unverifiable_number', usage)
         if _FORBIDDEN_HARD.search(speech) or not _soft_has_basis(speech, numbers):
             return _result('rejected_unsafe_speech', usage)
-        if not _inference_has_basis(speech, numbers):
+        if not _inference_has_basis(speech, numbers) or not _explanation_has_basis(speech, facts):
             return _result('rejected_unsupported_inference', usage)
         if facts.get('source') == 'simulated' and '模拟' not in speech and '合成' not in speech:
             return _result('rejected_unsafe_speech', usage)

@@ -71,7 +71,7 @@ class PlanSearchesTests(unittest.TestCase):
         body = plan_body(post)
         self.assertEqual(body['model'], 'qwen-flash')
         self.assertNotIn(b'synthetic-key', post.call_args.args[0].data)
-        user = json.loads(body['messages'][1]['content'])
+        user = json.loads(body['messages'][-1]['content'])
         self.assertEqual(user, {'task': 'plan', 'question': '我11月1日那次骑了多久？',
                                 'today': '2026-11-09',
                                 'known_dates': ['2026-11-05', '2026-11-01']})
@@ -90,7 +90,7 @@ class PlanSearchesTests(unittest.TestCase):
                            last_week_end='2026-11-08')
         self.assertEqual(result['llm_status'], 'ok')
         self.assertEqual(result['tools'], plan['tools'])
-        user = json.loads(plan_body(post)['messages'][1]['content'])
+        user = json.loads(plan_body(post)['messages'][-1]['content'])
         self.assertEqual(user['last_week_start'], '2026-11-02')
         self.assertEqual(user['last_week_end'], '2026-11-08')
         self.assertEqual(user['week_start'], '2026-11-09')
@@ -99,7 +99,7 @@ class PlanSearchesTests(unittest.TestCase):
         post = plan_transport({'tools': []})
         result = self.call(http_post=post, week_start='11月9日')
         self.assertEqual(result['llm_status'], 'ok')
-        user = json.loads(plan_body(post)['messages'][1]['content'])
+        user = json.loads(plan_body(post)['messages'][-1]['content'])
         self.assertNotIn('week_start', user)
 
     def test_malformed_plans_rejected(self):
@@ -222,7 +222,7 @@ class MatchedFactsTests(unittest.TestCase):
                                          matched_sessions=matched, **kwargs)
 
     def facts_of(self, post):
-        return json.loads(json.loads(post.call_args.args[0].data)['messages'][1]['content'])
+        return json.loads(json.loads(post.call_args.args[0].data)['messages'][-1]['content'])
 
     def test_projection_and_verified_speech(self):
         post = speech_transport('11月1日那次骑了60分钟，平均心率130 bpm，25.2公里。')
@@ -338,7 +338,7 @@ class PlannerWiringTests(unittest.TestCase):
         self.assertEqual((result['lane'], result['speech_status']), ('personal', 'ok'))
         self.assertEqual(result['speech'], '11月1日那次骑了60分钟，平均心率130 bpm。')
         self.assertEqual(len(calls), 2)  # one plan call + one answer call
-        answer_facts = json.loads(json.loads(calls[1])['messages'][1]['content'])
+        answer_facts = json.loads(json.loads(calls[1])['messages'][-1]['content'])
         self.assertEqual(answer_facts['matched_sessions'],
                          [{'date': '11月1日', 'duration_min': 60, 'avg_hr': 130,
                            'distance_km': 25.2}])
@@ -351,7 +351,7 @@ class PlannerWiringTests(unittest.TestCase):
         self.app.llm_post = self.two_call_transport('not json', '这个我没记到。', calls)
         result = self.app._chat_ride({'question': '我11月1日那次骑了多久？'})
         self.assertEqual(result['speech_status'], 'ok')
-        answer_facts = json.loads(json.loads(calls[-1])['messages'][1]['content'])
+        answer_facts = json.loads(json.loads(calls[-1])['messages'][-1]['content'])
         self.assertNotIn('matched_sessions', answer_facts)
 
     def test_planner_disabled_by_env(self):

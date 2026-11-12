@@ -11,7 +11,7 @@ from tools import generate_l3_blind_samples as samples
 
 def post(request, *, timeout):
     payload = json.loads(request.data)
-    facts = json.loads(payload['messages'][1]['content'])
+    facts = json.loads(payload['messages'][-1]['content'])
     duration = facts['display']['duration_min']
     speech = f'模拟记录：这次记录了{duration}分钟。'
     if '你可以基于数据做有据推断' in payload['messages'][0]['content']:
@@ -89,7 +89,7 @@ class BlindSampleTests(unittest.TestCase):
     def test_numeric_comparison_without_interpretation_is_not_l3_style(self):
         def numeric_only(request, *, timeout):
             payload = json.loads(request.data)
-            duration = json.loads(payload['messages'][1]['content'])['display']['duration_min']
+            duration = json.loads(payload['messages'][-1]['content'])['display']['duration_min']
             raw = {'choices': [{'message': {'content': json.dumps({'speech': f'模拟记录：记录了{duration}分钟，比上次有变化。'})}}]}
             return 200, {}, json.dumps(raw).encode()
         report = samples.generate(samples.load_cases(), api_key='synthetic-key',

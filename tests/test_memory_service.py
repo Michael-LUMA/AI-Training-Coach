@@ -48,7 +48,7 @@ class MemoryTests(unittest.TestCase):
     def test_three_recent_records_are_preserved_in_small_projection(self):
         value = self.context([record(i) for i in range(1, 6)])
         self.assertEqual(len(value["recent_summaries"]), 3)
-        self.assertEqual(set(value["recent_summaries"][0]), {"duration_s", "avg_hr"})
+        self.assertEqual(set(value["recent_summaries"][0]), {"duration_s", "avg_hr", "avg_speed_mps"})
 
     def test_missing_distance_not_fabricated_as_zero_or_partial_total(self):
         value = self.context([record(1), record(2, distance=None)])
