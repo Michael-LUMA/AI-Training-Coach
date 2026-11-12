@@ -243,3 +243,24 @@ class LexicalShiRegressionTests(unittest.TestCase):
         self.assertTrue(brain._verified_text(brain._normalized_numbers('心率120，没什么变化。'), [(Decimal(120), 'bpm')]))
         self.assertFalse(brain._verified_text(brain._normalized_numbers('骑了什公里'), [(Decimal(120), 'bpm')]))
         self.assertFalse(brain._inference_has_basis('看起来没什么变化', [(Decimal(10), None)]))
+
+
+class CompoundSpeedUnitRegressionTests(unittest.TestCase):
+    def test_compound_speed_units_preserve_dimension(self):
+        numbers = [(Decimal(6000), 'm'), (Decimal(1800), 's'), (Decimal(12), 'km/h')]
+        for text in ('骑了6公里，平均速度12公里/小时。', '平均速度12千米/小时。', '速度3.33米/秒。'):
+            self.assertTrue(brain._verified_text(brain._normalized_numbers(text), numbers), text)
+        for text in ('速度6公里/小时。', '速度12米/秒。', '骑了12公里。'):
+            self.assertFalse(brain._verified_text(brain._normalized_numbers(text), numbers), text)
+
+    def test_full_review_accepts_recorded_speed(self):
+        from tests.test_profile_service import record
+        from memory_service import SummarySession
+        session = SummarySession(record(1, source='simulated'))
+        result = brain.build_ride_review(session, None, recent_summaries=[],
+                 api_key='synthetic-key', http_post=transport('模拟记录：时长30分钟，骑了6公里，平均速度12公里/小时。'))
+        self.assertEqual(result['llm_status'], 'ok')
+
+    def test_nearby_speed_basis_uses_complete_compound_unit(self):
+        self.assertTrue(brain._inference_has_basis('速度12公里/小时，看起来速度相近。', [(Decimal(12), 'km/h')]))
+        self.assertFalse(brain._inference_has_basis('速度12公里/小时，看起来速度相近。', [(Decimal(12000), 'm')]))

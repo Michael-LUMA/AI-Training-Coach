@@ -86,8 +86,8 @@ _IDIOM_ONE = (('什么','何种'),('一样','相同'),('一些','些许'),('一�
               ('一定','必定'),('一般','通常'),('一律','一概'),('一切','全部'),
               ('的一次','的那次'),('这一次','这回'),('那一次','那回'))
 _NUM = r'[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?'
-_UNIT_RE = re.compile(r'\s*(bpm|公里|千米|分钟|小时|秒钟|秒|%|次|个|条|点|瓦|转|米|[A-Za-z]+(?:/[A-Za-z]+)?)', re.I)
-_UNITS = {'分钟':'min','小时':'h','秒钟':'s','秒':'s','次':'','个':'','条':'','点':'','瓦':'w','转':'rpm','公里':'km','千米':'km','米':'m'}
+_UNIT_RE = re.compile(r'\s*(bpm|公里/小时|千米/小时|米/秒|公里|千米|分钟|小时|秒钟|秒|%|次|个|条|点|瓦|转|米|[A-Za-z]+(?:/[A-Za-z]+)?)', re.I)
+_UNITS = {'公里/小时':'km/h','千米/小时':'km/h','米/秒':'m/s','分钟':'min','小时':'h','秒钟':'s','秒':'s','次':'','个':'','条':'','点':'','瓦':'w','转':'rpm','公里':'km','千米':'km','米':'m'}
 # Keep the original strict gate for non-L3 general/knowledge/weekly lanes.
 _FORBIDDEN = re.compile(r'变强|状态提升|能力提升|训练效果|更健康|心肺功能.{0,4}(提高|改善)|'
                         r'(建议|应该|务必|请).{0,12}(减速|加速|降低心率|加大强度|服药|吃药)|'
@@ -193,6 +193,8 @@ def _normalized_numbers(text):
     text=text.replace('负','-').replace('−','-')
     for idiom,plain in _IDIOM_ONE:
         text=text.replace(idiom,plain)
+    # Resolve the speed-unit alias before 千 can be parsed as a numeral.
+    text=text.replace('千米/小时','公里/小时')
     text=re.sub(r'百分之(['+_HAN+r'点0-9.]+)',r'\1%',text)
     text=_HAN_RE.sub(_han_number,text)
     text=re.sub(r'半(?=小时|分钟|秒)', '0.5', text)
@@ -206,7 +208,7 @@ def _normalized_numbers(text):
     def units(match):
         number,suffix=match.group(1),match.group(2)
         return number+' '+_UNITS.get(suffix,suffix)
-    return re.sub('('+_NUM+r')\s*(bpm|公里|千米|分钟|小时|秒钟|秒|%|次|个|条|点|瓦|转|米)',units,text,flags=re.I)
+    return re.sub('('+_NUM+r')\s*(bpm|公里/小时|千米/小时|米/秒|公里|千米|分钟|小时|秒钟|秒|%|次|个|条|点|瓦|转|米)',units,text,flags=re.I)
 
 
 def _summary(value):
