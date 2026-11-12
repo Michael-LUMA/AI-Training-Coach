@@ -58,3 +58,61 @@ class ForbiddenTierTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class InferenceBasisTests(unittest.TestCase):
+    numbers = [(Decimal(4), 'bpm'), (Decimal('1.2'), 'km/h'),
+               (Decimal(138), 'bpm'), (Decimal(135), 'bpm'), (Decimal(132), 'bpm')]
+
+    def test_grounded_examples(self):
+        for text in ('看起来强度在降，心率低了4、速度慢了1.2',
+                     '近三次平均心率138、135、132，看起来在往下走',
+                     '心率四，看起来很轻松', '比上次轻松点，心率低了4',
+                     '相比上次，心率低了4', '似乎强度低，心率132',
+                     '像是强度低，心率132', '可能是强度低，心率132'):
+            with self.subTest(text=text):
+                self.assertTrue(brain._inference_has_basis(text, self.numbers))
+
+    def test_unsupported_examples(self):
+        for text in ('看起来你状态不错', '似乎状态不错', '可能是状态不错',
+                     '像是状态不错', '平均心率132。看起来不错',
+                     '平均心率132；看起来不错', '心率132!看起来不错',
+                     '心率132?看起来不错', '看起来不错，999',
+                     '看起来不错，140', '看起来'+'啊'*16+'132',
+                     '强度在降，心率132', '很轻松，心率132',
+                     '平均心率132。似乎不错，平均心率999',
+                     '心率132，看起来不错。似乎也不错'):
+            with self.subTest(text=text):
+                self.assertFalse(brain._inference_has_basis(text, self.numbers))
+
+    def test_decimal_does_not_end_sentence(self):
+        self.assertTrue(brain._inference_has_basis('速度慢1.2，看起来在下降', self.numbers))
+
+    def test_plain_facts_unchanged(self):
+        self.assertTrue(brain._inference_has_basis('心率132，心率135。', self.numbers))
+
+    def test_review_enforces_inference_and_keeps_numeric_precedence(self):
+        for text, expected in [('心率120，看起来在往下走', 'ok'),
+                               ('看起来你状态不错', 'rejected_unsupported_inference'),
+                               ('看起来心率999', 'rejected_unverifiable_number'),
+                               ('心率120，看起来你变强了', 'rejected_unsafe_speech')]:
+            with self.subTest(text=text):
+                result = brain.build_ride_review(memory(), api_key='synthetic-key',
+                                                 http_post=transport(text))
+                self.assertEqual(result['llm_status'], expected)
+                if expected != 'ok':
+                    self.assertIsNone(result['draft'])
+
+    def test_live_uses_same_gate_and_deterministic_fallback(self):
+        import ride_live
+        from tests.test_ride_live import milestone_event, live_facts, transport as live_post
+        for text, expected in [('看起来不错，已经骑了5公里。', 'ok'),
+                               ('看起来状态不错。', 'rejected_unsupported_inference'),
+                               ('看起来骑了999公里。', 'rejected_unverifiable_number'),
+                               ('骑了5公里，看起来变强了。', 'rejected_unsafe_speech')]:
+            with self.subTest(text=text):
+                result = ride_live.build_live_speech(milestone_event(), live_facts(),
+                         api_key='synthetic-key', http_post=live_post(text))
+                self.assertEqual(result['llm_status'], expected)
+                if expected != 'ok':
+                    self.assertNotEqual(result['speech'], text)

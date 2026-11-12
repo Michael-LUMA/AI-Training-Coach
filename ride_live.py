@@ -19,7 +19,8 @@ from urllib.request import Request
 from llm_review import (ENDPOINT, MODEL, MAX_RESPONSE_BYTES, TIMEOUT_S,
                         _http_post, _json, _usage, _verified_text)
 from ride_chat import _check_history
-from ride_brain import (MAX_TOKENS, _FORBIDDEN, _count_checked,
+from ride_brain import (MAX_TOKENS, _FORBIDDEN, _FORBIDDEN_HARD, _soft_has_basis,
+                        _inference_has_basis, _count_checked,
                         _friendly_minutes, _normalized_numbers)
 from ride_chat import _check_question
 
@@ -527,8 +528,10 @@ def build_live_speech(events, live_facts, *, api_key=None, http_post=None,
             if (not _verified_text(_numeric_text(speech), numbers)
                     or not _memory_speech_verified(speech, events, facts)):
                 return _response('rejected_unverifiable_number', template, usage, urgent=urgent)
-        if _FORBIDDEN.search(speech):
+        if _FORBIDDEN_HARD.search(speech) or not _soft_has_basis(speech, numbers):
             return _response('rejected_unsafe_speech', template, usage, urgent=urgent)
+        if not _inference_has_basis(speech, numbers):
+            return _response('rejected_unsupported_inference', template, usage, urgent=urgent)
         return _response('ok', speech, usage, urgent=urgent)
     except (ValueError, UnicodeError, RecursionError, OverflowError, InvalidOperation):
         return _response('rejected_bad_schema', template, usage, urgent=urgent)

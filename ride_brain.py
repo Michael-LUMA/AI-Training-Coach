@@ -115,6 +115,25 @@ def _soft_has_basis(speech, numbers):
     return True
 
 
+INFERENCE_CUES = ('看起来', '可能是', '像是', '似乎', '比上次', '相比上次')
+_INFERENCE = re.compile('|'.join(map(re.escape, INFERENCE_CUES)))
+_TREND_JUDGMENT = re.compile(r'强度在[降升]|往[上下]走|(?:正在|在)(?:下降|上升)')
+
+
+def _inference_has_basis(speech, numbers):
+    """Bounded syntactic gate, not a proof of causality or subjective feeling."""
+    for sentence in _SENTENCE_END.split(speech):
+        cues = list(_INFERENCE.finditer(sentence))
+        judgments = [*_FORBIDDEN_SOFT.finditer(sentence),
+                     *_TREND_JUDGMENT.finditer(sentence)]
+        if judgments and not cues:
+            return False
+        for cue in [*cues, *judgments]:
+            if not _nearby_basis(sentence, cue, numbers):
+                return False
+    return True
+
+
 def _result(status, usage=None, speech=None):
     return {'llm_status':status, 'draft':{'speech':speech} if status=='ok' else None,
             'usage':usage, 'fallback':None if status=='ok' else 'template'}
@@ -422,6 +441,8 @@ def build_ride_review(session: dict, previous_summary: dict | None = None,
                 return _result('rejected_unverifiable_number',usage)
         if _FORBIDDEN_HARD.search(speech) or not _soft_has_basis(speech, numbers):
             return _result('rejected_unsafe_speech',usage)
+        if not _inference_has_basis(speech, numbers):
+            return _result('rejected_unsupported_inference', usage)
         if facts['source']=='simulated' and '模拟' not in speech and '合成' not in speech:
             return _result('rejected_unsafe_speech',usage)
         return _result('ok',usage,speech)
