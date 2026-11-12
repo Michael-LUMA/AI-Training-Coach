@@ -27,10 +27,16 @@ class PostgreSQLAcceptanceTests(unittest.TestCase):
         try:
             db.init_db(dsn)
             device = "mark-acceptance-" + uuid.uuid4().hex
+            def register_once(_):
+                try:
+                    return auth.register_device(device, dsn)
+                except auth.DeviceAlreadyRegistered:
+                    return None
             with ThreadPoolExecutor(max_workers=4) as executor:
-                registered = list(executor.map(lambda _: auth.register_device(device, dsn), range(4)))
+                results = list(executor.map(register_once, range(4)))
+            registered = [identity for identity in results if identity is not None]
+            self.assertEqual(len(registered), 1)
             identities.append(registered[0])
-            self.assertTrue(all(identity == registered[0] for identity in registered))
             other = auth.register_device("mark-acceptance-" + uuid.uuid4().hex, dsn)
             identities.append(other)
             user = registered[0]["user_id"]

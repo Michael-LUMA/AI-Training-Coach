@@ -77,7 +77,7 @@ class AuthTests(unittest.TestCase):
         self.get_conn_patch.stop()
 
     def test_cursor_close_failure_still_returns_connection_without_driver_details(self):
-        self.conn.existing_row = ("user-1", "token-1")
+        self.conn.inserted_row = ("user-1", "token-1")
         with patch.object(FakeCursor, "close", side_effect=RuntimeError("secret driver detail")):
             with self.assertRaises(auth.AuthStorageError) as caught:
                 auth.register_device("device-a")
@@ -102,9 +102,9 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(0, self.conn.rollbacks)
         self.assertEqual([self.conn], self.released)
         self.assertEqual(["postgresql://db/mark"], self.get_conn_calls)
-        insert_sql, insert_params = self.conn.executed[1]
+        insert_sql, insert_params = self.conn.executed[0]
         self.assertIn("INSERT INTO users", insert_sql)
-        self.assertIn("ON CONFLICT (device_id) DO UPDATE SET device_id = EXCLUDED.device_id", insert_sql)
+        self.assertIn("ON CONFLICT (device_id) DO NOTHING", insert_sql)
         self.assertIn("%s", insert_sql)
         self.assertEqual("device-a", insert_params[1])
         self.assertEqual(token, insert_params[2])
@@ -115,8 +115,8 @@ class AuthTests(unittest.TestCase):
         with patch.object(auth.secrets, "token_urlsafe", return_value="secure-token"):
             auth.register_device("device-a")
 
-        generated_user_id = self.conn.executed[1][1][0]
-        generated_token = self.conn.executed[1][1][2]
+        generated_user_id = self.conn.executed[0][1][0]
+        generated_token = self.conn.executed[0][1][2]
         parsed = auth.uuid.UUID(generated_user_id)
         self.assertEqual(4, parsed.version)
         self.assertEqual("secure-token", generated_token)
@@ -127,18 +127,19 @@ class AuthTests(unittest.TestCase):
             result = auth.register_device()
 
         self.assertEqual("user-1", result["user_id"])
-        self.assertEqual("device-generated", self.conn.executed[0][1][0])
+        self.assertEqual("device-generated", self.conn.executed[0][1][1])
 
-    def test_same_device_returns_existing_identity_without_insert(self):
+    def test_known_device_never_recovers_or_rotates_existing_token(self):
         self.conn.existing_row = ("user-existing", "token-existing")
-        result = auth.register_device("device-a")
-
-        self.assertEqual(
-            {"user_id": "user-existing", "token": "token-existing"},
-            result,
-        )
+        self.conn.inserted_row = None  # INSERT ... DO NOTHING RETURNING
+        with self.assertRaises(auth.DeviceAlreadyRegistered) as caught:
+            auth.register_device("device-a")
+        self.assertNotIn("token-existing", str(caught.exception))
         self.assertEqual(0, self.conn.commits)
+        self.assertEqual(1, self.conn.rollbacks)
         self.assertEqual(1, len(self.conn.executed))
+        self.assertNotIn("SELECT", self.conn.executed[0][0])
+        self.assertIn("DO NOTHING", self.conn.executed[0][0])
         self.assertEqual([self.conn], self.released)
 
     def test_empty_device_id_is_rejected_before_database_access(self):
@@ -186,7 +187,7 @@ class AuthTests(unittest.TestCase):
         self.assertNotEqual(0, len(self.conn.executed))
 
     def test_unexpected_storage_error_rolls_back_and_hides_details(self):
-        self.conn.inserted_row = None
+        self.conn.raise_on_execute = RuntimeError("private driver detail")
         with self.assertRaises(auth.AuthStorageError) as context:
             auth.register_device("device-a")
         self.assertEqual(1, self.conn.rollbacks)

@@ -2,7 +2,8 @@
 
 This module intentionally does not implement passwords, OAuth, phone login, or
 API-key storage.  A caller supplies a stable device_id (normally persisted by
-the client); the service returns the same user identity for that device.
+the client); the service issues a credential only for a newly registered device.
+Device identifiers cannot recover an existing bearer credential.
 """
 from __future__ import annotations
 
@@ -20,6 +21,10 @@ class AuthError(RuntimeError):
 
 class InvalidDeviceId(AuthError, ValueError):
     """Raised when a caller supplies an unusable device identifier."""
+
+
+class DeviceAlreadyRegistered(AuthError):
+    """A non-secret device identifier cannot recover an existing credential."""
 
 
 class InvalidToken(AuthError, ValueError):
@@ -70,28 +75,12 @@ def _close_cursor(cursor: Any) -> None:
 
 
 def register_device(device_id: str | None = None, database_url: str | None = None) -> dict[str, str]:
-    """Create or recover an anonymous user for a stable device id.
-
-    The device id is not a secret.  The returned token is the bearer credential
-    used by later requests and is generated only when the device is first seen.
-    """
+    """Create a NEW anonymous identity; conflict never returns the old token."""
     stable_device_id = _validate_device_id(device_id)
     conn = db.get_conn(database_url)
     cursor = None
     try:
         cursor = conn.cursor()
-        cursor.execute(
-            "SELECT id, token FROM users WHERE device_id = %s",
-            (stable_device_id,),
-        )
-        row = cursor.fetchone()
-        if row is not None:
-            result = {
-                "user_id": str(_row_value(row, 0, "id")),
-                "token": str(_row_value(row, 1, "token")),
-            }
-            return result
-
         user_id = str(uuid.uuid4())
         token = secrets.token_urlsafe(32)
         created_at = datetime.now(timezone.utc).isoformat()
@@ -99,14 +88,14 @@ def register_device(device_id: str | None = None, database_url: str | None = Non
             """
             INSERT INTO users (id, device_id, token, created_at)
             VALUES (%s, %s, %s, %s)
-            ON CONFLICT (device_id) DO UPDATE SET device_id = EXCLUDED.device_id
+            ON CONFLICT (device_id) DO NOTHING
             RETURNING id, token
             """.strip(),
             (user_id, stable_device_id, token, created_at),
         )
         row = cursor.fetchone()
         if row is None:
-            raise AuthStorageError("identity insert returned no user")
+            raise DeviceAlreadyRegistered("Device already registered; existing credential required")
         conn.commit()
         return {
             "user_id": str(_row_value(row, 0, "id")),

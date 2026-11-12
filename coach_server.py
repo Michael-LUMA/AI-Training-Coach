@@ -455,12 +455,15 @@ class App:
             self._ride_rate_limit(method, RIDE_POST if path in ("/api/rides/sync", "/api/rides/create") else path)
             return self._cloud_ride_request(path, payload)
         if path == AUTH_REGISTER:
+            self._ride_rate_limit(method, path)
             require(type(payload) is dict and set(payload) in (set(), {"device_id"}),
                     "Request fields do not match")
             require("device_id" not in payload or type(payload["device_id"]) is str,
                     "Invalid device_id")
             try:
                 return auth.register_device(payload.get("device_id"))
+            except auth.DeviceAlreadyRegistered:
+                raise ActionError("device_already_registered", "Existing credential required; device_id cannot recover identity", 409) from None
             except auth.InvalidDeviceId:
                 raise ActionError("invalid_input", "Invalid device_id", 400) from None
             except (auth.AuthStorageError, DatabaseError):
