@@ -98,6 +98,16 @@ _FACT_FIELDS = ('distance_m', 'duration_s', 'avg_speed_kmh')
 
 SYSTEM_PROMPT += '\nclimb_ahead 仅是根据已经走过的海拔趋势外推，不知道前方地形；必须表明不确定，不能说前面一定有坡。禁止推测身体感受。\n'
 SYSTEM_PROMPT += L3_INFERENCE_RULE
+SYSTEM_PROMPT += """
+实时播报先说事件本身，不强行为事件编原因；原因没记录就明确说不清楚。
+speed_drop 的 current_speed_mps 是当前速度，events.avg_speed_mps 是本次全程均速；
+两者按乘3.6换成公里/小时，可保留一位小数。不要念 ratio 或米/秒。
+hr_drift 的 current_hr、expected_hr 是本次相近速度的心率，drift_bpm 是差值；
+只确认相近速度下心率变高，不断言疲劳、脱水、身体状态或训练效果。
+previous 只代表上次，profile 只代表平时，不能用它们替换本次事件的均速或心率基线。
+当前事件已足够说明情况就不引用历史；路况、风、疲劳等未记录的原因不能猜，
+也不能用“可能”包装无依据的原因。实时单点不是骑后跨次趋势。
+"""
 LIVE_SYSTEM_PROMPT += L3_INFERENCE_RULE
 
 def _finite(value):
