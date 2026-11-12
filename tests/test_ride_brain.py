@@ -306,6 +306,13 @@ class RideBrainUITests(unittest.TestCase):
         self.assertEqual(json.loads(request['body']),{'session_id':'current'})
         self.assertIn('X-Coach-Token',request['headers'])
 
+    def test_privacy_delete_waits_for_review_and_counter_releases_on_failure(self):
+        pending=self.run_js("lastSession={id:'current'};void requestRideSpeech(lastSession);return cloudOperations;",brainPending=True)
+        self.assertEqual(pending,1)
+        for options in ({},{'brainFail':True}):
+            result=self.run_js("lastSession={id:'current'};await requestRideSpeech(lastSession);return cloudOperations;",**options)
+            self.assertEqual(result,0)
+
     def test_fallback_and_network_failure_leave_template_unchanged(self):
         for options in ({},{'brainFail':True},{'brain':{'speech_status':'rejected_unverifiable_number','speech':None,'fallback':'template'}}):
             result=self.run_js("""

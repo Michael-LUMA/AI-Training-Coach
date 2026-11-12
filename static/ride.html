@@ -384,6 +384,7 @@ let goal = null, goalState = null;
 let totals = {below:0, within:0, above:0};
 let recallText = '', recallSpoken = false, comparisonRequest = 0, lastMemories = [];
 let brainSpeech = '', brainRequest = 0, chatRequest = 0;
+let cloudOperations = 0;
 let weeklyFacts = null, weeklyWeekStart = '', weeklyRequest = 0;
 let demoPlaying = false, demoElapsed = 0, demoStep = 0, demoProfile = [];
 let screenLock = null, wakePending = false, wakeEpoch = 0, wakeWarningShown = false;
@@ -1196,6 +1197,7 @@ async function requestRideSpeech(memory){
   const target=()=>selectedHistory||lastSession;
   if(active || !target() || target().id!==memory.id)return;
   const request=++brainRequest;
+  cloudOperations++;
   try {
     const response=await fetch('/api/coach/ride/review',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify(await MarkCloud.withIdentity({session_id:memory.id}))});
     if(!response.ok)return;
@@ -1205,12 +1207,14 @@ async function requestRideSpeech(memory){
     brainSpeech=(memory.source==='simulated' ? activePersona.simulated+'。' : '')+result.speech;
     $('brain-heading').textContent=activePersona.thinking;$('brain-speech').textContent=brainSpeech;$('brain-card').hidden=false;
   }catch(_){ /* Quiet, honest fallback: existing template is never removed. */ }
+  finally{cloudOperations--;}
 }
 // Q&A never speaks: the answer is text only, fallback is the honest local line.
 async function askMark(options){
   const question=($('chat-input').value||'').trim();
   if(!question)return;
   const request=++chatRequest;
+  cloudOperations++;
   $('chat-card').hidden=false;
   try {
     if(!lastWeather && WEATHER_INTENT_RE.test(question))await ensureWeatherForAsk();
@@ -1237,7 +1241,7 @@ async function askMark(options){
     $('chat-answer').textContent=activePersona.chat_fallback;
     $('chat-listen').hidden=false;
     if(options&&options.speak)speak($('chat-answer').textContent);
-  }
+  }finally{cloudOperations--;}
 }
 // One voice entry: Mark routes the sentence himself. Conservative by design —
 // anything that is not an explicit navigation command stays a data question.
@@ -1976,7 +1980,7 @@ function buildTrackGpx(memory,escapeXml,iso){
 async function getToken(){
   const response=await fetch('/api/coach/config',{cache:'no-store'}); if(!response.ok) throw new Error('无法获取会话令牌');
   const config=await response.json(); if(typeof config.token !== 'string' || !config.token) throw new Error('会话令牌缺失'); token=config.token;
-  void MarkCloud.configure({enabled:config.cloud_memory_enabled,browserToken:token,canDelete:()=>!active&&!connecting});
+  void MarkCloud.configure({enabled:config.cloud_memory_enabled,browserToken:token,canDelete:()=>!active&&!connecting&&cloudOperations===0});
   asrAvailable=config.asr_available===true;
   return token;
 }
@@ -1995,6 +1999,7 @@ function stripForUpload(memory){
   return copy;
 }
 async function upload(memory, retained){
+  cloudOperations++;
   try {
     if(!token) await getToken();
     const response=await fetch('/api/coach/ride/session',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify(stripForUpload(memory))});
@@ -2005,7 +2010,7 @@ async function upload(memory, retained){
     $('save-status').textContent=MarkCloud.enabled?'云摘要已确认保存；完整轨迹仍只在本地，请下载备份。':'已上传到临时存储，请下载备份；部署或重启可能丢失服务端数据。';
     void requestRideSpeech(memory);
     await refreshComparison(memory); return true;
-  } catch(error) {$('save-status').textContent='上报失败（'+error.message+'）。'+(retained ? '已在当前浏览器本地保留，稍后点击重试；请勿清理站点数据。' : '本地存储也不可用；记录仅在本页内存，请立即下载备份。'); return false;}
+  } catch(error) {$('save-status').textContent='上报失败（'+error.message+'）。'+(retained ? '已在当前浏览器本地保留，稍后点击重试；请勿清理站点数据。' : '本地存储也不可用；记录仅在本页内存，请立即下载备份。'); return false;}finally{cloudOperations--;}
 }
 function finishRide(reason=''){
   if(!active)return;
