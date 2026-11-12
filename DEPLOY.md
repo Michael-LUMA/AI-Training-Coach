@@ -2,7 +2,26 @@
 
 中文摘要：Render 免费档部署步骤、环境变量、健康检查与已知限制。本地优先设计；公网部署需显式允许远程绑定，现增加单测试者密码保护，不是公众多用户账号系统。
 
-## Architecture
+## M7 current private deployment — 2026-11-12
+
+This section supersedes historical milestone status below. Current private origin:
+`https://ai-ride-coach-production-7887.up.railway.app`; open `/mark` with the existing tester credentials.
+PostgreSQL cloud summaries, profiles, recent dialog and per-user notes are active;
+local legacy SQLite/files remain separate and ephemeral. `requirements-cloud.txt`
+is installed by Docker; the old “no dependencies” architecture describes legacy mode.
+Runtime DATABASE_URL connection and both qwen-max routes were checked in the real container.
+M7 export/hard-delete/double confirmation and frontend cloud identity are deployed.
+Repeated device IDs now return 409: they cannot recover or rotate an existing token.
+The actual container was restarted, then original tokens read back all four categories unchanged;
+hard delete was verified by five-table SQL zero counts, old-token 401 and user-B isolation.
+Private Basic + same-origin + browser token + cloud token gates are retained.
+Do not remove the private gate or interpret anonymous identity as public account readiness.
+No physical iPhone/browser UX acceptance is implied. L3 has not started.
+See `docs/data-ownership-M7-20261112.md` and `docs/verification-M7-20261112.json`.
+Deployed code: `096b810df62fecba86f2bcfa375fcb73476677d4`.
+Documentation-only follow-up commits are local and intentionally not pushed.
+
+## Architecture (legacy overview)
 
 - Single stdlib Python process (`coach_server.py`). No build step, no dependencies.
 - Static pages (`static/coach.html`, `privacy.html`, `terms.html`) served by the same process.
@@ -97,11 +116,11 @@ Configured database initialization must succeed before the service binds; withou
 DATABASE_URL existing local features stay available, while cloud endpoints return 503.
 New `/api/auth/*` and `/api/rides/*` routes remain behind the private tester login
 and same-origin boundary. They do not make Mark a public multi-user product.
-Known device IDs currently recover existing tokens: public release requires proof
-of token possession / authorized device pairing first. Do not remove the private gate.
+Historical M2/M3 issue (fixed in M7): device IDs previously recovered existing tokens.
+M7 refuses duplicate registrations with 409; do not remove the private gate.
 Only allowlisted summaries are persisted; complete sessions and raw telemetry are
 rejected by the cloud routes. UI integration, production database acceptance and
-container-restart persistence verification are still outstanding.
+container-restart persistence were outstanding at M2/M3; see current M7 acceptance above.
 See `docs/cloud-memory-M2-M3-20261111.md` for contracts, limits and release blockers.
 
 

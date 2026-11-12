@@ -1,0 +1,199 @@
+{
+  "date": "2026-11-12",
+  "timezone": "Asia/Shanghai",
+  "scope": "M7 ownership, frontend cloud identity, private deployment and actual container restart",
+  "tests": {
+    "development": {
+      "run": 1735,
+      "passed": 1730,
+      "skipped": 5,
+      "failed": 0
+    },
+    "deployment": {
+      "run": 1710,
+      "passed": 1705,
+      "skipped": 5,
+      "failed": 0
+    },
+    "node_cloud_identity": {
+      "run": 10,
+      "passed": 10
+    },
+    "real_postgresql_isolated_schema": {
+      "run": 4,
+      "passed": 4,
+      "temporary_schemas_removed": true
+    },
+    "M7_HTTP": {
+      "run": 11,
+      "passed": 11
+    }
+  },
+  "production": {
+    "date": "2026-11-12",
+    "checks": {
+      "private_gate_cloud_config_build_and_no_device_recovery": true,
+      "all_five_new_routes_enforce_private_origin_browser_and_cloud_gates": true,
+      "owned_summary_note_writes_and_cross_identity_review_denied": true,
+      "three_cloud_identity_paths": {
+        "chat": "ok",
+        "review": "ok",
+        "live_http": 200
+      },
+      "complete_four_category_export_and_literal_confirmation": {
+        "counts": {
+          "users": 1,
+          "rides": 3,
+          "profiles": 1,
+          "dialog_turns": 2,
+          "notes": 1
+        },
+        "no_bearer_exported": true
+      },
+      "DATABASE_URL_and_qwen_max_verified_inside_running_container": true,
+      "actual_container_restart_then_same_token_four_category_readback": {
+        "new_container_instance": true,
+        "same_tokens": true,
+        "identical_categories": [
+          "rides",
+          "profile",
+          "dialog",
+          "notes"
+        ]
+      },
+      "hard_delete_SQL_zero_old_token_401_and_B_unchanged": {
+        "deleted": {
+          "rides": 3,
+          "profiles": 1,
+          "dialog_turns": 2,
+          "notes": 1,
+          "users": 1
+        },
+        "SQL_remaining": {
+          "users": 0,
+          "rides": 0,
+          "profiles": 0,
+          "dialog_turns": 0,
+          "notes": 0
+        },
+        "targeted_rerun": true
+      }
+    },
+    "restart": {
+      "before": {
+        "database_url_in_runtime": true,
+        "postgres_connected": true,
+        "postgres_version_num": "180006",
+        "private_gate_in_runtime": true,
+        "fast_model": "qwen-max",
+        "smart_model": "qwen-max",
+        "container_fingerprint": "1080ab27a319af9ddbe9"
+      },
+      "requested": true,
+      "after": {
+        "database_url_in_runtime": true,
+        "postgres_connected": true,
+        "postgres_version_num": "180006",
+        "private_gate_in_runtime": true,
+        "fast_model": "qwen-max",
+        "smart_model": "qwen-max",
+        "container_fingerprint": "14453416630bd3fcb96b"
+      }
+    },
+    "test_identity_cleanup": true,
+    "L3_started": false,
+    "origin": "https://ai-ride-coach-production-7887.up.railway.app",
+    "passed": true,
+    "prior_attempt": {
+      "failure": "Operation failed; sensitive diagnostics withheld",
+      "failure_type": "TimeoutError",
+      "failure_lines": [
+        176,
+        40
+      ]
+    }
+  },
+  "cleanup": {
+    "temporary_key_revoked": true,
+    "temporary_key_files_removed": true,
+    "tunnel_closed": true
+  },
+  "commits": {
+    "development": [
+      {
+        "commit": "ef8b9ab05729660bb38c5eca19290b102a52d7ad",
+        "task": "chore(memory): checkpoint validated M2-M6 cloud memory prerequisites"
+      },
+      {
+        "commit": "021ffbc689a419c4d2eae486660e42fb359c1fe7",
+        "task": "feat(privacy): export all owned data and atomically hard-delete cloud identity"
+      },
+      {
+        "commit": "77a9025e2c8a8ca24abfdd4cb0330bf9b7b1d05f",
+        "task": "fix(auth): reject device-id credential recovery and rate-limit registration"
+      },
+      {
+        "commit": "5f5452cdf6c08ad3d12b7f0544416cdf84745145",
+        "task": "feat(web): persist cloud identity and wire chat review live plus privacy controls"
+      },
+      {
+        "commit": "b41c661963c2a5b1a603afcccc2f14cbf22caf9e",
+        "task": "fix(privacy): disclose cloud retention and block deletion during pending work"
+      },
+      {
+        "commit": "f12890c63d3048fdc5c317031b4d355d599fe248",
+        "task": "test(web): verify identity resolution before live freshness recheck"
+      }
+    ],
+    "deployment": [
+      {
+        "commit": "a6c848bc829b67fa9e883ae003694b0efd492e1e",
+        "task": "chore(memory): checkpoint validated M2-M6 cloud memory prerequisites"
+      },
+      {
+        "commit": "bef880a7cc666a60029303ee990116b325883f87",
+        "task": "feat(privacy): export all owned data and atomically hard-delete cloud identity"
+      },
+      {
+        "commit": "89be3cfe8e5b477101823d47f39925f4c3a5e0ad",
+        "task": "fix(auth): reject device-id credential recovery and rate-limit registration"
+      },
+      {
+        "commit": "766e33a8021538b2d6a3fdbde6bc13e5841e93f5",
+        "task": "feat(web): persist cloud identity and wire chat review live plus privacy controls"
+      },
+      {
+        "commit": "e427e67acc323e345a8943515ac6a995d6c4a12c",
+        "task": "fix(privacy): disclose cloud retention and block deletion during pending work"
+      },
+      {
+        "commit": "096b810df62fecba86f2bcfa375fcb73476677d4",
+        "task": "test(web): verify identity resolution before live freshness recheck"
+      }
+    ]
+  },
+  "deployed_code_commit": "096b810df62fecba86f2bcfa375fcb73476677d4",
+  "deployed_build_id": "7ebd215e-08aa-4319-a31d-fca20c62d9d8",
+  "log_sha256": {
+    "M7-regression-dev-final.log": "43fbe5bcb8a518caad33b4b0851861c4bfd83b1395f20f0a40039008c139897a",
+    "M7-regression-deploy-final.log": "e9c4cc45e2265c0c995ecd7ea0d1150d822455776a7ff4ebc5cc00865a088d68",
+    "M7-node-final2.log": "b530acf780c784fcd89ac7c824a9a41867911fda7fd9cb5a3431b86f460e5983",
+    "M7-real-pg.log": "7050dfe21855e3f99dc499bbd640f79e28c9f6addc42894dcb8175d9c481e316",
+    "M7-real-pg-ownership.log": "6b53fef9bac22d6e893fd2a1feceebbc4a90c052ac97545384045d2aa8f2e8e3",
+    "M7-http.log": "b75b371059f22a6b8e32145a788c183fb6d2c7c4ea9114e102aac6374226ecf1",
+    "M7-production-acceptance.log": "be85cdaa63c297edeca9b76cbbd4c71900d0c381688c2a9cca3d75116a7ffb8d",
+    "M7-production-followup.log": "393c5085a8ad5152fd3fc45cf191f2172f3737f9be201cd540ae4bae309db463",
+    "M7-edge-http-evidence.json": "f5c7df23f4623cfc5671ae787b7349d8cfafa7aa89cb1c55db14772b134673ae"
+  },
+  "browser_acceptance": {
+    "node_harness": true,
+    "real_desktop_browser": false,
+    "physical_iPhone": false
+  },
+  "L3_started": false,
+  "publication": {
+    "code_pushed": true,
+    "documentation_commit_local_only": true,
+    "reason": "Do not trigger an unverified redeploy for documentation-only changes"
+  }
+}
