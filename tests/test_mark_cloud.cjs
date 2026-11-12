@@ -35,7 +35,14 @@ test('all three chains include identity but keep the browser gate separate',asyn
  }
  for(const [name,paths] of [['mark',['chat','live']],['ride',['chat','review','live']]]){
   const html=fs.readFileSync('static/'+name+'.html','utf8');
-  for(const path of paths){const line=html.split('\n').find(l=>l.includes("fetch" )&&l.includes('/api/coach/ride/'+path+"'"));assert.ok(line&&line.includes('MarkCloud.withIdentity'),name+':'+path);}
+  for(const path of paths){
+   const lines=html.split('\n'),index=lines.findIndex(l=>l.includes('fetch')&&l.includes('/api/coach/ride/'+path+"'"));
+   assert.ok(index>=0,name+':'+path);
+   if(path==='live'){
+    assert.ok(lines[index].includes('JSON.stringify(payload)'),name+':live sends authenticated payload');
+    assert.ok(lines.slice(index-2,index).some(l=>l.includes('const payload=await MarkCloud.withIdentity(')),name+':live identity resolved before freshness guard');
+   }else assert.ok(lines[index].includes('MarkCloud.withIdentity'),name+':'+path);
+  }
  }
 });
 test('concurrent requests share one registration',async()=>{
