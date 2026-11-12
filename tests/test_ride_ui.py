@@ -21,6 +21,7 @@ NODE = shutil.which('node.exe') or (str(cached) if cached.is_file() else shutil.
 HARNESS = r"""
 const fs=require('node:fs'), vm=require('node:vm');
 const input=JSON.parse(fs.readFileSync(0,'utf8'));
+const html=input.html.replace('<!--MARK_CLOUD_CLIENT-->','<script>'+__MARK_CLOUD_SOURCE__+'</script>');
 const elements={}, calls=[], spoken=[], debug=[], storage=new Map(), clock={now:0}, intervals=new Map(), _sr=[], audioPlayed=[];
 let nextTimer=0, bleCalls=0;
 class MockSR{
@@ -29,7 +30,7 @@ class MockSR{
   stop(){this.started=false;if(this.onend)this.onend();}
   abort(){this.started=false;}
 }
-for(const match of input.html.matchAll(/<[^>]*\bid="([^"]+)"[^>]*>/g)){
+for(const match of html.matchAll(/<[^>]*\bid="([^"]+)"[^>]*>/g)){
   const tag=match[0];
   elements[match[1]]={textContent:'',value:'',hidden:/\shidden(?:\s|>)/.test(tag),disabled:/\sdisabled(?:\s|>)/.test(tag),
     classList:{add(){},remove(){}},listeners:{},
@@ -132,14 +133,14 @@ sandbox.fetch=async(url,init={})=>{
   throw new Error('Unexpected request: '+url);
 };
 const context=vm.createContext(sandbox);
-const script=input.html.match(/<script>([\s\S]*?)<\/script>/)[1];
+const scripts=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m=>m[1]);
 (async()=>{
-  vm.runInContext(script,context,{timeout:3000});
+  for(const script of scripts){vm.runInContext(script,context,{timeout:3000});context.MarkCloud=context.window.MarkCloud;}
   await new Promise(resolve=>setImmediate(resolve));
   const value=await vm.runInContext('(async()=>{'+input.scenario+'})()',context,{timeout:3000});
   process.stdout.write(JSON.stringify(value));
 })().catch(error=>{console.error(error);process.exitCode=1;});
-"""
+""".replace("__MARK_CLOUD_SOURCE__", json.dumps((ROOT / "static/mark-cloud.js").read_text(encoding="utf-8")))
 
 
 def metadata(identifier='previous', date='2026-11-06T08:00:00Z', avg=130, duration=3600, source='ble_gatt_0x180d'):
@@ -149,7 +150,7 @@ def metadata(identifier='previous', date='2026-11-06T08:00:00Z', avg=130, durati
 class RideMemoryUI(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.html = (ROOT / 'static/ride.html').read_text(encoding='utf-8')
+        cls.html = coach_server._page('ride.html')[0].decode('utf-8')
 
     def run_js(self, scenario, **options):
         if not NODE:

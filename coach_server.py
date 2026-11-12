@@ -181,6 +181,9 @@ def _masked(key):
 
 def _page(filename="coach.html"):
     text = (ROOT / "static" / filename).read_text(encoding="utf-8-sig")
+    if "<!--MARK_CLOUD_CLIENT-->" in text:
+        client = (ROOT / "static" / "mark-cloud.js").read_text(encoding="utf-8-sig")
+        text = text.replace("<!--MARK_CLOUD_CLIENT-->", "<script>" + client + "</script>")
     def hashes(tag):
         return " ".join("'sha256-" + base64.b64encode(hashlib.sha256(part.encode()).digest()).decode() + "'"
                         for part in re.findall(r"<" + tag + r">(.*?)</" + tag + r">", text, re.S))
@@ -416,6 +419,7 @@ class App:
                         "masked_key": _masked(key), "verified": False, **self.store.encryption_status,
                         "asr_available": bool(os.environ.get("DASHSCOPE_API_KEY", "").strip()),
                         "tts_available": bool(os.environ.get("DASHSCOPE_API_KEY", "").strip()),
+                        "cloud_memory_enabled": bool(os.environ.get("DATABASE_URL", "").strip()),
                         "mode": "local_only", "external_requests": "Only after explicit list/review actions"}
             parsed = urlsplit(path)
             if parsed.path == RIDE_LIST:
@@ -1469,7 +1473,7 @@ def create_server(port=None, app=None, *, host=None):
         except DatabaseError:
             cloud_db.close()
             raise ValueError("Cloud database initialization failed; check DATABASE_URL and database driver") from None
-    build = hashlib.sha256((ROOT / "static" / "mark.html").read_text(encoding="utf-8-sig").encode("utf-8")).hexdigest()[:16]
+    build = hashlib.sha256(_page("mark.html")[0]).hexdigest()[:16]
     app = app if app is not None else App()
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.0"

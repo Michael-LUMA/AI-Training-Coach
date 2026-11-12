@@ -29,7 +29,7 @@ function boot(){
  class ClockDate extends Date{constructor(...a){super(...(a.length?a:[clock.now]));}static now(){return clock.now;}}
  const s={Date:ClockDate,JSON,Math,Number,Array,String,Error,Promise,AbortController,
  crypto:require('node:crypto').webcrypto,window:{addEventListener:(k,f)=>listeners[k]=f,confirm:()=>true},
- document:{hidden:false,addEventListener:(k,f)=>listeners[k]=f},
+ document:{getElementById:elem,hidden:false,addEventListener:(k,f)=>listeners[k]=f},
  navigator:{geolocation:{watchPosition:(ok,error)=>{watches.set(watches.size,{ok,error});return watches.size-1;},clearWatch:id=>watches.delete(id)}},
  localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
  setInterval:f=>{intervals.push(f);return intervals.length;},clearInterval(){},setTimeout:(fn,ms)=>{timeouts.set(++timerId,{fn,ms});return timerId;},clearTimeout:id=>timeouts.delete(id),
@@ -38,18 +38,19 @@ function boot(){
  fetchWithTimeout:async(url,opts)=>{calls.push({url,body:JSON.parse(opts.body)});throw new Error('offline');},
  _storage:storage,_clock:clock,_elements:elements,_listeners:listeners,_watches:watches,_messages:messages,_calls:calls,_intervals:intervals,_timeouts:timeouts};
  vm.createContext(s);
+ vm.runInContext(__MARK_CLOUD_SOURCE__,s);s.MarkCloud=s.window.MarkCloud;
  vm.runInContext(`function preferenceRead(k,f){try{return localStorage.getItem(k)||f;}catch(_){return f;}}
  function preferenceWrite(k,v){try{localStorage.setItem(k,v);return true;}catch(_){return false;}}`+input.ride+input.init,s);
  s.run=code=>vm.runInContext('(async()=>{'+code+'})()',s);
  return s;
 }
 (async()=>{const ctx=boot();const result=await new Function('boot','ctx','clock','storage','return (async()=>{'+input.scenario+'})()')(boot,ctx,clock,storage);console.log(JSON.stringify(result));})().catch(e=>{console.error(e);process.exit(1);});
-"""
+""".replace("__MARK_CLOUD_SOURCE__", json.dumps((ROOT / "static/mark-cloud.js").read_text(encoding="utf-8")))
 
 
 class MarkRecoveryTests(unittest.TestCase):
     def run_js(self, scenario):
-        result = subprocess.run([NODE, '-e', HARNESS], input=json.dumps({'ride': RIDE, 'init': INIT, 'scenario': scenario}), capture_output=True, text=True, encoding='utf-8', timeout=15)
+        result = subprocess.run([NODE, '-e', HARNESS], input=json.dumps({'ride': RIDE, 'init': INIT, 'cloud': (ROOT / 'static/mark-cloud.js').read_text(encoding='utf-8'), 'scenario': scenario}), capture_output=True, text=True, encoding='utf-8', timeout=15)
         self.assertEqual(result.returncode, 0, result.stderr)
         return json.loads(result.stdout)
 

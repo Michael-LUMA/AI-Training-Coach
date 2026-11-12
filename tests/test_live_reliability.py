@@ -154,12 +154,23 @@ class LiveReliabilityUI(unittest.TestCase):
           active=true;liveOn=true;liveId='old';_clock.now=100;
           lastFix={mono:100,lat:31,lng:121,spd:5};let resolve;
           fetch=()=>new Promise(r=>{resolve=r;});
-          const beat=liveBeat();liveResetSession();liveId='new';
+          const beat=liveBeat();await _flush();liveResetSession();liveId='new';
           resolve({ok:true,json:async()=>({calls:[{speech:'旧运动播报',urgent:true}]})});
           await beat;return {healthy:Number.isFinite(liveOkAt),spoken:_spoken};
         """)
         self.assertFalse(result["healthy"])
         self.assertEqual(result["spoken"], [])
+
+    def test_identity_wait_cannot_upload_after_session_reset(self):
+        result = self.run_js("""
+          active=true;liveOn=true;liveId='old';_clock.now=100;
+          lastFix={mono:100,lat:31,lng:121,spd:5};let release;
+          MarkCloud.withIdentity=body=>new Promise(r=>{release=()=>r(body);});
+          const before=_calls.length;const beat=liveBeat();
+          liveResetSession();liveId='new';release();await beat;
+          return _calls.length-before;
+        """)
+        self.assertEqual(result, 0)
 
     def test_reset_session_clears_old_health(self):
         result = self.run_js("liveOkAt=0;liveResetSession();return {healthy:Number.isFinite(liveOkAt)};")

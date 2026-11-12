@@ -272,6 +272,8 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px/1.75 var(--mono);max
 </main>
 <button id="voice-command" type="button" data-i18n="voice-cmd">对 Mark 说话</button>
 <button id="live-toggle" type="button" data-i18n="live_toggle">陪伴播报</button>
+<section class="panel" id="cloud-controls" aria-label="云数据所有权" style="margin:16px;padding:20px"><h3>我的云数据</h3><p id="cloud-status" role="status" aria-live="polite">正在检查云身份…</p><p>导出含运动摘要、画像、对话、云笔记。硬删除仅影响当前云身份，不会清除浏览器本地轨迹、草稿或旧版共享文件。删除前请先下载需要的本地备份。</p><button type="button" id="cloud-export" disabled>导出全部云数据</button> <button type="button" id="cloud-delete" class="danger" disabled>永久删除云数据</button> <button type="button" id="cloud-new" hidden>创建全新云身份</button></section>
+<!--MARK_CLOUD_CLIENT-->
 <script>
 'use strict';
 // Device adapter only: ride_memory.py owns the reusable versioned memory contract.
@@ -952,6 +954,7 @@ function memoryTime(memory){return typeof memory.started_at === 'string' ? Date.
 function historyByTime(memories){return memories.filter(m=>m && typeof m.id==='string' && Number.isFinite(memoryTime(m))).slice().sort((a,b)=>memoryTime(b)-memoryTime(a));}
 function sourceNotice(memories){return memories.some(m=>m.source==='simulated') ? activePersona.simulated : '';}
 async function fetchMemories(){
+  if(MarkCloud.enabled){const data=await MarkCloud.post('/api/rides/list',{limit:20});return historyByTime(data.rides);}
   const response=await fetch('/api/coach/ride/sessions',{cache:'no-store',headers:{'X-Coach-Token':token}});
   if(!response.ok)throw new Error('memory_unavailable');
   const data=await response.json();
@@ -1003,6 +1006,7 @@ async function listenWeekly(){
   $('ride-weekly-speech').textContent=activePersona.weekly_loading;
   let text=weeklyTemplate(snapshot.week,snapshot.previous_week,snapshot.source);
   try{
+    if(MarkCloud.enabled)throw new Error('Use user-scoped cloud summary template');
     const response=await fetch('/api/coach/ride/weekly',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify({week_start:start})});
     if(!response.ok)throw new Error('weekly_unavailable');
     const result=await response.json();
@@ -1109,10 +1113,11 @@ function renderNotes(notes){
     row.appendChild(text);row.appendChild(del);list.appendChild(row);
   });
 }
+async function cloudResponse(path,payload){const data=await MarkCloud.post(path,payload);return {ok:true,json:async()=>data};}
 async function loadNotes(){
   try{
     const token=await getToken();
-    const response=await fetch('/api/coach/ride/notes',{cache:'no-store',headers:{'X-Coach-Token':token}});
+    const response=(MarkCloud.enabled?await cloudResponse('/api/notes/list',{}):await fetch('/api/coach/ride/notes',{cache:'no-store',headers:{'X-Coach-Token':token}}));
     if(!response.ok)return;
     const result=await response.json().catch(()=>null);
     if(result && Array.isArray(result.notes))renderNotes(result.notes);
@@ -1128,7 +1133,7 @@ async function addNote(voiceText){
   status.textContent='';
   try{
     const token=await getToken();
-    const response=await fetch('/api/coach/ride/note',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify({text:text})});
+    const response=(MarkCloud.enabled?await cloudResponse('/api/notes/create',{text}):await fetch('/api/coach/ride/note',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify({text:text})}));
     const result=await response.json().catch(()=>null);
     if(!response.ok){status.textContent=result && result.error_code==='note_limit' ? '备忘录已满（50 条），请先删除一条。' : '没记住（'+(result && result.error_code || ('HTTP '+response.status))+'）。';return false;}
     if(typeof voiceText!=='string')input.value='';
@@ -1139,7 +1144,7 @@ async function addNote(voiceText){
 async function deleteNote(id){
   try{
     const token=await getToken();
-    await fetch('/api/coach/ride/note/delete',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify({id:id})});
+    (MarkCloud.enabled?await cloudResponse('/api/notes/delete',{id}):await fetch('/api/coach/ride/note/delete',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify({id:id})}));
     loadNotes();
   }catch(_){/* deletion failure leaves the note visible, honestly */}
 }
@@ -1192,7 +1197,7 @@ async function requestRideSpeech(memory){
   if(active || !target() || target().id!==memory.id)return;
   const request=++brainRequest;
   try {
-    const response=await fetch('/api/coach/ride/review',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify({session_id:memory.id})});
+    const response=await fetch('/api/coach/ride/review',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify(await MarkCloud.withIdentity({session_id:memory.id}))});
     if(!response.ok)return;
     const result=await response.json();
     if(request!==brainRequest || active || !target() || target().id!==memory.id)return;
@@ -1216,7 +1221,7 @@ async function askMark(options){
     if(lastWeather)body.weather=lastWeather;
     const navFacts=navFactsForAsk();
     if(navFacts)body.nav=navFacts;
-    const response=await fetch('/api/coach/ride/chat',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify(body)});
+    const response=await fetch('/api/coach/ride/chat',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify(await MarkCloud.withIdentity(body))});
     if(!response.ok)throw new Error('chat unavailable');
     const result=await response.json();
     if(request!==chatRequest)return;
@@ -1308,13 +1313,13 @@ async function voiceForget(text){
   let msg;
   try{
     const token=await getToken();
-    const response=await fetch('/api/coach/ride/notes',{cache:'no-store',headers:{'X-Coach-Token':token}});
+    const response=(MarkCloud.enabled?await cloudResponse('/api/notes/list',{}):await fetch('/api/coach/ride/notes',{cache:'no-store',headers:{'X-Coach-Token':token}}));
     const result=response.ok?await response.json().catch(()=>null):null;
     const matches=(result&&Array.isArray(result.notes)?result.notes:[]).filter(note=>typeof note.text==='string'&&note.text.includes(text));
     if(matches.length===0){msg='没找到相关的备忘录，什么都没删。';}
     else if(matches.length>1){msg='有 '+matches.length+' 条都沾边，没说准哪条，一条都没删。';}
     else{
-      const del=await fetch('/api/coach/ride/note/delete',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify({id:matches[0].id})});
+      const del=(MarkCloud.enabled?await cloudResponse('/api/notes/delete',{id:matches[0].id}):await fetch('/api/coach/ride/note/delete',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify({id:matches[0].id})}));
       msg=del.ok?'已忘掉：'+matches[0].text:'没删掉，请稍后再试。';
       if(del.ok)loadNotes();
     }
@@ -1347,7 +1352,9 @@ async function liveBeat(){
     if(typeof navOffRoute!=='undefined'&&navRoute)point.off_route=navOffRoute===true;
     if(previous&&!gapOpen&&performance.now()-previous.mono<=STALE_MS&&typeof previous.hr==='number'&&Number.isInteger(previous.hr)&&previous.hr>=20&&previous.hr<=240)point.hr=previous.hr;
     if(target&&Number.isFinite(target.lower)&&Number.isFinite(target.upper)){point.hr_lower=target.lower;point.hr_upper=target.upper;}
-    const response=await fetch('/api/coach/ride/live',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify({live_id:liveId,activity:currentActivity(),point})});
+    const payload=await MarkCloud.withIdentity({live_id:requestLiveId,activity:currentActivity(),point});
+    if(!liveOn||!active||liveId!==requestLiveId||performance.now()-lastFix.mono>TRACK_STALE_MS)return;
+    const response=await fetch('/api/coach/ride/live',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify(payload)});
     if(!liveOn||!active||liveId!==requestLiveId)return;
     const data=await response.json().catch(()=>null);
     if(!liveOn||!active||liveId!==requestLiveId)return;
@@ -1969,6 +1976,7 @@ function buildTrackGpx(memory,escapeXml,iso){
 async function getToken(){
   const response=await fetch('/api/coach/config',{cache:'no-store'}); if(!response.ok) throw new Error('无法获取会话令牌');
   const config=await response.json(); if(typeof config.token !== 'string' || !config.token) throw new Error('会话令牌缺失'); token=config.token;
+  void MarkCloud.configure({enabled:config.cloud_memory_enabled,browserToken:token,canDelete:()=>!active&&!connecting});
   asrAvailable=config.asr_available===true;
   return token;
 }
@@ -1992,8 +2000,9 @@ async function upload(memory, retained){
     const response=await fetch('/api/coach/ride/session',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify(stripForUpload(memory))});
     const result=await response.json();
     if(!response.ok || result.status!=='saved' || result.id!==memory.id) {if(response.status===403)token=''; throw new Error(result.error_code || 'upload_failed');}
+    if(MarkCloud.enabled)await MarkCloud.post('/api/rides/sync',{rides:[MarkCloud.summary(stripForUpload(memory))]});
     try {localStorage.removeItem(PENDING_PREFIX+memory.id);} catch (_) { /* A saved duplicate can be retried idempotently. */ }
-    $('save-status').textContent='已上传到临时存储（ephemeral），请下载备份；部署或重启可能丢失服务端数据。';
+    $('save-status').textContent=MarkCloud.enabled?'云摘要已确认保存；完整轨迹仍只在本地，请下载备份。':'已上传到临时存储，请下载备份；部署或重启可能丢失服务端数据。';
     void requestRideSpeech(memory);
     await refreshComparison(memory); return true;
   } catch(error) {$('save-status').textContent='上报失败（'+error.message+'）。'+(retained ? '已在当前浏览器本地保留，稍后点击重试；请勿清理站点数据。' : '本地存储也不可用；记录仅在本页内存，请立即下载备份。'); return false;}
