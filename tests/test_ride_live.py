@@ -159,8 +159,7 @@ class LiveEndpointTests(unittest.TestCase):
         return self.app.dispatch('POST', path, default, body)
 
     def point(self, t, km_east=0.0, speed=10.0):
-        return {'t': t, 'lat': LAT,
-                'lng': LNG + km_east * 1000.0 / M_PER_DEG_LNG, 'speed_mps': speed}
+        return {'t': t, 'distance_m': km_east * 1000.0, 'speed_mps': speed}
 
     def test_whitelist_and_field_validation(self):
         with self.assertRaises(ActionError) as error:
@@ -566,6 +565,35 @@ class LiveHeartRateTests(unittest.TestCase):
                     self.assertEqual(session.ingest(self.point(170, hr=120)), [])
                     self.assertEqual(session.ingest(self.point(180, hr=outside)), [])
                     self.assertEqual(session.ingest(self.point(190, hr=outside))[0]['type'], kind)
+
+    def test_removed_threshold_rearms_without_false_recovery(self):
+        for kind, outside, limit in (('hr_high', 170, 'hr_upper'),
+                                     ('hr_low', 90, 'hr_lower')):
+            for missing_hr in (False, True):
+                with self.subTest(kind=kind, missing_hr=missing_hr):
+                    session = ride_live.LiveSession()
+                    session.ingest(self.point(0, hr=outside))
+                    self.assertEqual(session.ingest(self.point(10, hr=outside))[0]['type'], kind)
+                    point = self.point(11, **({} if missing_hr else {'hr': 120}))
+                    del point[limit]
+                    self.assertEqual(session.ingest(point), [])
+                    self.assertEqual(session.ingest(self.point(12, hr=120)), [])
+                    self.assertEqual(session.ingest(self.point(23, hr=120)), [])
+                    self.assertEqual(session.ingest(self.point(24, hr=outside)), [])
+                    self.assertEqual(session.ingest(self.point(34, hr=outside))[0]['type'], kind)
+
+    def test_removing_one_limit_preserves_other_episode(self):
+        session = ride_live.LiveSession()
+        session.ingest(self.point(0, hr=170))
+        self.assertEqual(session.ingest(self.point(10, hr=170))[0]['type'], 'hr_high')
+        session.ingest(self.point(11, hr=90))
+        self.assertEqual(session.ingest(self.point(21, hr=90))[0]['type'], 'hr_low')
+        point = self.point(22, hr=120)
+        del point['hr_upper']
+        self.assertEqual(session.ingest(point), [])
+        point = self.point(32, hr=120)
+        del point['hr_upper']
+        self.assertEqual(session.ingest(point), [{'type': 'hr_back', 'hr': 120.0}])
 
     def test_no_thresholds_never_emit_heart_events(self):
         session = ride_live.LiveSession()

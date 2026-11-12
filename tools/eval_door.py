@@ -34,12 +34,12 @@ SESSIONS = (
 )
 LIVE_SESSIONS = {
     "eval-ride": ("ride", [
-        {"t": 0.0, "lat": 39.9000, "lng": 116.4000, "speed_mps": 7.0, "alt": 50.0, "hr": 130},
-        {"t": 600.0, "lat": 39.9050, "lng": 116.4050, "speed_mps": 6.944, "alt": 80.0, "hr": 142},
+        {"t": 0.0, "distance_m": 0.0, "speed_mps": 7.0, "hr": 130},
+        {"t": 600.0, "distance_m": 700.0, "speed_mps": 6.944, "hr": 142},
     ]),
     "eval-run": ("run", [
-        {"t": 0.0, "lat": 39.9100, "lng": 116.4100, "speed_mps": 3.0, "hr": 150},
-        {"t": 600.0, "lat": 39.9130, "lng": 116.4130, "speed_mps": 3.0, "hr": 148},
+        {"t": 0.0, "distance_m": 0.0, "speed_mps": 3.0, "hr": 150},
+        {"t": 600.0, "distance_m": 420.0, "speed_mps": 3.0, "hr": 148},
     ]),
 }
 

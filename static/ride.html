@@ -691,6 +691,8 @@ function distToPathM(lng,lat,path){
 // aggregates. Fixes worse than 30 m accuracy are dropped, never guessed.
 const TRACK_STALE_MS=10000, TRACK_MAX_ACCURACY_M=30, TRACK_CLIP_M=500;
 let trackWatch=null, lastFix=null;
+// Independent of heart-rate sampling; only aggregates leave the device for live coaching.
+let liveTrackDistance=0, liveTrackFix=null;
 // Stop-care state: movement timestamps drive one gentle notice per stop episode.
 let prevTrackFix=null, lastMoveAt=null, stopNotifiedAt=null;
 function trackPrefsSave(){try{localStorage.setItem('luma.track',JSON.stringify({enabled:$('track-enabled').checked!==false,uploadNone:$('track-upload-none').checked===true,clip:$('track-clip').checked!==false}));}catch(_){/* tracking never blocks a ride */}}
@@ -710,10 +712,11 @@ function onTrackFix(position){
   if(!Number.isFinite(coords.latitude) || !Number.isFinite(coords.longitude))return;
   const acc=typeof coords.accuracy==='number' && Number.isFinite(coords.accuracy) ? coords.accuracy : Infinity;
   const alt=typeof coords.altitude==='number' && Number.isFinite(coords.altitude) ? coords.altitude : null;
-  const spd=typeof coords.speed==='number' && Number.isFinite(coords.speed) && coords.speed>=0 && coords.speed<=30 ? coords.speed : 0;
+  const spd=typeof coords.speed==='number' && Number.isFinite(coords.speed) && coords.speed>=0 && coords.speed<=30 ? coords.speed : null;
   lastFix={lat:coords.latitude,lng:coords.longitude,alt,acc,spd,mono:performance.now()};
   void fetchWeatherBrief(lastFix);
   trackMovement(lastFix);
+  accumulateLiveDistance(lastFix);
   drawTrackLive();
 }
 // Weather brief: once per page, on the first real fix, Mark speaks today's
@@ -768,6 +771,18 @@ function trackMovement(fix){
     if(moved>=jitter)lastMoveAt=fix.mono;
   }
   prevTrackFix=fix;
+}
+// Ignore inaccurate fixes and reconnect gaps; do not bridge them with a straight line.
+function accumulateLiveDistance(fix){
+  if(!active || !fix || !Number.isFinite(fix.acc) || fix.acc<0 || fix.acc>TRACK_MAX_ACCURACY_M){liveTrackFix=null;return;}
+  if(liveTrackFix){
+    const dt=(fix.mono-liveTrackFix.mono)/1000;
+    const d=haversineM(liveTrackFix.lng,liveTrackFix.lat,fix.lng,fix.lat);
+    if(dt>0 && dt<=30 && d<=30*dt && d>=Math.max(3,fix.acc,liveTrackFix.acc))liveTrackDistance+=d;
+    // Keep the anchor for small movements so slow travel can accumulate past GPS noise.
+    if(dt>0 && dt<=30 && d<Math.max(3,fix.acc,liveTrackFix.acc))return;
+  }
+  liveTrackFix=fix;
 }
 function trackAttach(point){
   if($('track-enabled').checked===false || !lastFix)return;
@@ -1345,19 +1360,23 @@ function liveStop(){if(liveTimer!==null){clearInterval(liveTimer);liveTimer=null
 function liveResetSession(){liveId=null;liveOkAt=-Infinity;}
 async function liveBeat(){
   if(!liveOn||!active||liveBusy)return;
-  if(!lastFix||performance.now()-lastFix.mono>TRACK_STALE_MS)return;
+  const fix=lastFix;
+  if($('track-enabled').checked===false||!fix||!Number.isFinite(fix.mono)||performance.now()-fix.mono>TRACK_STALE_MS)return;
+  if(!Number.isFinite(fix.acc)||fix.acc<0||fix.acc>TRACK_MAX_ACCURACY_M)return;
+  if(typeof fix.spd!=='number'||!Number.isFinite(fix.spd)||fix.spd<0||fix.spd>30)return;
   liveBusy=true;
   let requestLiveId=null;
   try{
     if(!liveId)liveId='live-'+Math.random().toString(36).slice(2,10)+Date.now().toString(36);
     requestLiveId=liveId;
-    const point={t:Date.now()/1000,lat:lastFix.lat,lng:lastFix.lng,speed_mps:typeof lastFix.spd==='number'?lastFix.spd:0};
-    if(typeof lastFix.alt==='number'&&Number.isFinite(lastFix.alt))point.alt=lastFix.alt;
+    const point={t:Date.now()/1000,distance_m:liveTrackDistance,speed_mps:fix.spd};
     if(typeof navOffRoute!=='undefined'&&navRoute)point.off_route=navOffRoute===true;
-    if(previous&&!gapOpen&&performance.now()-previous.mono<=STALE_MS&&typeof previous.hr==='number'&&Number.isInteger(previous.hr)&&previous.hr>=20&&previous.hr<=240)point.hr=previous.hr;
+    const hrSample=previous;
+    if(hrSample&&!gapOpen&&performance.now()-hrSample.mono<=STALE_MS&&typeof hrSample.hr==='number'&&Number.isInteger(hrSample.hr)&&hrSample.hr>=20&&hrSample.hr<=240)point.hr=hrSample.hr;
     if(target&&Number.isFinite(target.lower)&&Number.isFinite(target.upper)){point.hr_lower=target.lower;point.hr_upper=target.upper;}
     const payload=await MarkCloud.withIdentity({live_id:requestLiveId,activity:currentActivity(),point});
-    if(!liveOn||!active||liveId!==requestLiveId||performance.now()-lastFix.mono>TRACK_STALE_MS)return;
+    if(!liveOn||!active||liveId!==requestLiveId||$('track-enabled').checked===false||!lastFix||performance.now()-fix.mono>TRACK_STALE_MS)return;
+    if(hrSample&&(gapOpen||performance.now()-hrSample.mono>STALE_MS))delete payload.point.hr;
     const response=await fetch('/api/coach/ride/live',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':token},body:JSON.stringify(payload)});
     if(!liveOn||!active||liveId!==requestLiveId)return;
     const data=await response.json().catch(()=>null);
@@ -1754,7 +1773,7 @@ function begin(options={}){
   const random = new Uint32Array(4); crypto.getRandomValues(random);
   session = {schema_version:'luma-ride-memory/3', id:'ride-' + [...random].map(n=>n.toString(16).padStart(8,'0')).join(''), started_at:new Date(startedMs).toISOString(), ended_at:null, samples_hz:1, series:[], summary:null, coach_notes:[], persona_version:activePersona.version, source:SIMULATED ? 'simulated' : 'ble_gatt_0x180d', activity:currentActivity()};
   latestCad = null; latestPwr = null; crankPrev = null; drawAuxLive();
-  lastFix=null; prevTrackFix=null; lastMoveAt=null; stopNotifiedAt=null;
+  lastFix=null; prevTrackFix=null; lastMoveAt=null; stopNotifiedAt=null; liveTrackDistance=0; liveTrackFix=null;
   startTrackWatch(); drawTrackLive(); drawTrackMap(null);
   const viewLive=$('view-live');if(viewLive)viewLive.checked=true;
   if(options.source)session.source=options.source;
@@ -2036,7 +2055,7 @@ $('nav-plan').addEventListener('click',planNav);
 $('nav-mic').addEventListener('click',toggleNavMic);
 $('nav-clear').addEventListener('click',clearNav);
 $('nav-voice').addEventListener('click',()=>{navVoice=$('nav-voice').checked!==false;});
-$('track-enabled').addEventListener('change',()=>{trackPrefsSave();if(active){if($('track-enabled').checked===false){stopTrackWatch();lastFix=null;}else startTrackWatch();}drawTrackLive();});
+$('track-enabled').addEventListener('change',()=>{trackPrefsSave();if(active){if($('track-enabled').checked===false){stopTrackWatch();lastFix=null;liveTrackFix=null;}else startTrackWatch();}drawTrackLive();});
 $('track-upload-none').addEventListener('change',trackPrefsSave);
 $('track-clip').addEventListener('change',trackPrefsSave);
 $('activity-select').addEventListener('change',()=>{applyActivity();try{localStorage.setItem('luma.activity',currentActivity());}catch(_){}});

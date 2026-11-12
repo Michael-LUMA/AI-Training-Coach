@@ -40,7 +40,10 @@ test('all three chains include identity but keep the browser gate separate',asyn
    assert.ok(index>=0,name+':'+path);
    if(path==='live'){
     assert.ok(lines[index].includes('JSON.stringify(payload)'),name+':live sends authenticated payload');
-    assert.ok(lines.slice(index-2,index).some(l=>l.includes('const payload=await MarkCloud.withIdentity(')),name+':live identity resolved before freshness guard');
+    const identity=lines.findIndex(l=>l.includes('const payload=await MarkCloud.withIdentity('));
+    assert.ok(identity>=0&&identity<index,name+':live identity resolved before send');
+    const guard=lines.slice(identity+1,index).join('\n');
+    assert.ok(name==='mark'?guard.includes('!riding')&&guard.includes('!liveFixReady(fix)'):guard.includes('!active')&&guard.includes('performance.now()-fix.mono>TRACK_STALE_MS'),name+':live checks state and location after identity resolves');
    }else assert.ok(lines[index].includes('MarkCloud.withIdentity'),name+':'+path);
   }
  }

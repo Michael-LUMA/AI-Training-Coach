@@ -20,7 +20,7 @@ from llm_review import (ENDPOINT, MODEL, MAX_RESPONSE_BYTES, TIMEOUT_S,
                         _http_post, _json, _usage, _verified_text)
 from ride_chat import _check_history
 from ride_brain import (MAX_TOKENS, L3_INFERENCE_RULE, _FORBIDDEN_HARD, _soft_has_basis,
-                        _inference_has_basis, _count_checked,
+                        _inference_has_basis, _explanation_has_basis, _count_checked,
                         _friendly_minutes, _normalized_numbers)
 from ride_chat import _check_question
 
@@ -44,7 +44,7 @@ live_facts \u542b activity\uff08ride=\u9a91\u884c\uff0chike=\u5f92\u6b65\uff0cru
 """
 SYSTEM_PROMPT += """允许基于已提供的实时数值与历史数值做有据趋势判断，必须带“看起来”
 “可能是”等不确定性标记，并在同句前后15字内关联具体数值。没有历史就不比较；
-不编造 recent_trend，不把通常值当本次数据，禁止无数据的趋势断言与趋势原因猜测。
+不编造 recent_trend，不把通常值当本次数据，禁止无数据的趋势断言和无据推断原因。
 """
 LIVE_TEMPLATE = '\u8fd9\u4e2a\u6211\u73b0\u5728\u770b\u4e0d\u5230\u3002'
 LIVE_SYSTEM_PROMPT = """\u4f60\u662f Mark\uff0c\u9a91\u884c\u9014\u4e2d\u7528\u6237\u8033\u8fb9\u7684\u670b\u53cb\u3002
@@ -73,6 +73,9 @@ TEMPLATE_CALLS = {
     'hr_low': lambda event, verb='\u9a91': (
         f"\u5fc3\u7387{int(event['hr'])}\uff0c\u4f4e\u4e8e\u4f60\u8bbe\u7684\u4e0b\u9650{int(event['hr_lower'])}\u4e86\u3002"),
     'hr_back': lambda event, verb='\u9a91': '\u5fc3\u7387\u56de\u5230\u533a\u95f4\u91cc\u4e86\u3002',
+    'speed_drop': lambda event, verb='骑': '这段速度比全程均速慢了不少。',
+    'hr_drift': lambda event, verb='骑': f"相近速度下，心率比之前高了{int(event['drift_bpm'])}跳。",
+    'climb_ahead': lambda event, verb='骑': '最近这段在上升，如果坡度延续，前面可能还会上升。',
     'resume': lambda event, verb='\u9a91': '\u7ee7\u7eed\u51fa\u53d1\u3002',
 }
 _EVENT_FIELDS = {
@@ -86,10 +89,14 @@ _EVENT_FIELDS = {
     'hr_high': ('hr', 'hr_upper', 'duration_s'),
     'hr_low': ('hr', 'hr_lower', 'duration_s'),
     'hr_back': ('hr',),
+    'speed_drop': ('current_speed_mps', 'avg_speed_mps', 'ratio'),
+    'hr_drift': ('current_hr', 'expected_hr', 'drift_bpm', 'speed_mps'),
+    'climb_ahead': ('predicted_ascent_m', 'distance_ahead_m'),
 }
 _FACT_FIELDS = ('distance_m', 'duration_s', 'avg_speed_kmh')
 
 
+SYSTEM_PROMPT += '\nclimb_ahead 仅是根据已经走过的海拔趋势外推，不知道前方地形；必须表明不确定，不能说前面一定有坡。禁止推测身体感受。\n'
 SYSTEM_PROMPT += L3_INFERENCE_RULE
 LIVE_SYSTEM_PROMPT += L3_INFERENCE_RULE
 
@@ -134,17 +141,35 @@ class LiveSession:
         self._hr_missing_since = None
         self._hr_back_since = None
         self._hr_back_pending = False
+        self._hr_back_kinds = set()
+        self._drop_since = None
+        self._drop_last_t = None
+        self._l4_counts = {'speed_drop': 0, 'hr_drift': 0, 'climb_ahead': 0}
+        self._hr_pairs = deque(maxlen=2048)
+        self._distance_alt = deque(maxlen=2048)
+        self._last_prediction_distance = None
+        self._pending_event = None
+        self._spoken_at = {}
+        self._reservations = {}
+        self._reservation_pending = {}
+        self._failed_safety = set()
+        self._safety_epoch = {'hr_high': 0, 'hr_low': 0}
+        self._reservation_safety_epoch = {}
 
     def ingest(self, point: dict) -> list[dict]:
         """\u6444\u5165\u4e00\u4e2a\u9065\u6d4b\u70b9\uff0c\u8fd4\u56de\u672c\u6b21\u65b0\u89e6\u53d1\u7684\u4e8b\u4ef6\u5217\u8868\u3002"""
         if type(point) is not dict:
             raise ValueError('point must be a dict')
+        aggregate = 'distance_m' in point
+        if aggregate and any(name in point for name in ('lat', 'lng', 'alt')):
+            raise ValueError('aggregate telemetry cannot contain raw location')
         try:
-            t, lat, lng, speed = (_finite(point[name])
-                                  for name in ('t', 'lat', 'lng', 'speed_mps'))
+            t, speed = (_finite(point[name]) for name in ('t', 'speed_mps'))
+            lat, lng = ((None, None) if aggregate else
+                        (_finite(point['lat']), _finite(point['lng'])))
         except KeyError as error:
             raise ValueError('missing point field') from error
-        if not -90 <= lat <= 90 or not -180 <= lng <= 180 or not 0 <= speed <= 30:
+        if not 0 <= speed <= 30 or (not aggregate and (not -90 <= lat <= 90 or not -180 <= lng <= 180)):
             raise ValueError('point outside coordinate or speed bounds')
         alt = _finite(point['alt']) if 'alt' in point else None
         if alt is not None and not -500 <= alt <= 9000:
@@ -166,8 +191,14 @@ class LiveSession:
         duration = 0.0 if self._start_t is None else t - self._start_t
         if not math.isfinite(duration):
             raise ValueError('duration must be finite')
+        if self._last is not None and (self._last[1] is None) != aggregate:
+            raise ValueError('cannot switch telemetry mode within a session')
         distance = self._distance_m
-        if self._last is not None:
+        if aggregate:
+            distance = _finite(point['distance_m'])
+            if distance < self._distance_m or distance < 0 or distance > 10000000:
+                raise ValueError('invalid cumulative distance')
+        elif self._last is not None:
             _, previous_lat, previous_lng = self._last
             lat1, lat2 = math.radians(previous_lat), math.radians(lat)
             dlat = lat2 - lat1
@@ -203,6 +234,7 @@ class LiveSession:
         if alt is not None:
             events.extend(self._climb_events(t, alt, duration, distance))
         events.extend(self._hr_events(t, duration, **heart))
+        events.extend(self._prediction_events(t, speed, heart['hr'], alt, distance, duration, heart['hr_upper'], heart['hr_lower']))
         if self._paused:
             if speed >= 1.0:
                 events.append({'type': 'resume', 'pause_s': t - self._slow_since,
@@ -221,13 +253,29 @@ class LiveSession:
         return events
 
     def _hr_events(self, t, duration, hr, hr_upper, hr_lower):
+        # A removed threshold cancels its episode even if this sample has no HR.
+        for kind, limit in (('hr_high', hr_upper), ('hr_low', hr_lower)):
+            if limit is None:
+                state = self._hr_states[kind]
+                self._safety_epoch[kind] += 1
+                self._failed_safety.discard(kind)
+                state['active'] = False
+                state['since'] = state['recovery_since'] = None
+                self._hr_back_kinds.discard(kind)
+        self._hr_back_pending = bool(self._hr_back_kinds)
+        if not self._hr_back_pending:
+            self._hr_back_since = None
         if hr is None and self._hr_missing_since is None:
             self._hr_missing_since = t
         if (self._hr_missing_since is not None
                 and t - self._hr_missing_since >= 60):
-            for state in self._hr_states.values():
+            for kind, state in self._hr_states.items():
+                if state['active']:
+                    self._safety_epoch[kind] += 1
                 state['active'] = False
+                self._failed_safety.discard(kind)
             self._hr_back_pending = False
+            self._hr_back_kinds.clear()
         if hr is None:
             # Missing samples break continuous timers, not confirmed episodes.
             for state in self._hr_states.values():
@@ -240,25 +288,31 @@ class LiveSession:
                                    ('hr_low', 'hr_lower', hr_lower)):
             state = self._hr_states[kind]
             if limit is None:
-                state['since'] = state['recovery_since'] = None
                 continue
             outside = hr > limit if kind == 'hr_high' else hr < limit
             if outside:
                 state['recovery_since'] = None
+                if state['active'] and kind in self._failed_safety:
+                    self._failed_safety.discard(kind)
+                    events.append({'type': kind, 'hr': hr, name: limit,
+                                   'duration_s': duration})
                 if state['since'] is None:
                     state['since'] = t
                 if not state['active'] and t - state['since'] >= 10:
                     state['active'] = True
                     self._hr_back_pending = True
+                    self._hr_back_kinds.add(kind)
                     events.append({'type': kind, 'hr': hr, name: limit,
                                    'duration_s': duration})
             else:
+                self._failed_safety.discard(kind)
                 state['since'] = None
                 if state['active']:
                     if state['recovery_since'] is None:
                         state['recovery_since'] = t
                     if t - state['recovery_since'] >= 15:
                         state['active'] = False
+                        self._safety_epoch[kind] += 1
                         state['recovery_since'] = None
         # A single configured limit defines a one-sided range; absent limits
         # are not persisted from earlier points and never generate events.
@@ -271,6 +325,7 @@ class LiveSession:
             if t - self._hr_back_since >= 10:
                 events.append({'type': 'hr_back', 'hr': hr})
                 self._hr_back_pending = False
+                self._hr_back_kinds.clear()
                 self._hr_back_since = None
         else:
             self._hr_back_since = None
@@ -317,6 +372,112 @@ class LiveSession:
             return [{'type': 'climb_start', 'ascent_m': float(ascent),
                      'duration_s': duration, 'distance_m': distance}]
         return []
+
+    def _prediction_events(self, t, speed, hr, alt, distance, duration, hr_upper=None, hr_lower=None):
+        events = []
+        avg = distance / duration if duration > 0 else 0
+        if avg > 0 and speed < avg * .7:
+            if self._drop_since is None or (self._drop_last_t is not None and t - self._drop_last_t > 15):
+                self._drop_since = t
+            if t - self._drop_since >= 30 and self._reserved_count('speed_drop') < 2:
+                events.append({'type': 'speed_drop', 'current_speed_mps': speed,
+                               'avg_speed_mps': avg, 'ratio': speed / avg})
+        else:
+            self._drop_since = None
+        self._drop_last_t = t
+        while self._hr_pairs and t - self._hr_pairs[0][0] > 600:
+            self._hr_pairs.popleft()
+        # A limit violation or its recovery is not a reliable drift baseline.
+        in_range = (hr is not None and (hr_upper is None or hr <= hr_upper)
+                    and (hr_lower is None or hr >= hr_lower))
+        if not in_range or self._hr_back_pending or any(state['active'] for state in self._hr_states.values()):
+            self._hr_pairs.clear()
+        else:
+            matches = [(sample_t, h) for sample_t, v, h in self._hr_pairs
+                       if sample_t < t and abs(v - speed) <= 1 / 3.6]
+            if (len(matches) >= 3 and t - matches[0][0] >= 60
+                    and self._reserved_count('hr_drift') < 2):
+                values = sorted(h for _, h in matches)
+                n = len(values)
+                baseline = (values[(n - 1) // 2] + values[n // 2]) / 2
+                if hr - baseline >= 5:
+                    events.append({'type': 'hr_drift', 'current_hr': hr, 'expected_hr': baseline,
+                                   'drift_bpm': hr - baseline, 'speed_mps': speed})
+            self._hr_pairs.append((t, speed, hr))
+        # Historical altitude cannot establish the terrain ahead. Do not emit
+        # climb_ahead until a reliable forward route/elevation source exists.
+        return events
+
+    def _reserved_count(self, kind):
+        return self._l4_counts[kind] + sum(1 for event, _ in self._reservations.values() if event['type'] == kind)
+
+    def _last_spoken(self, kind):
+        return max([self._spoken_at.get(kind, float('-inf'))] +
+                   [stamp for event, stamp in self._reservations.values() if event['type'] == kind])
+
+    def finish_reservation(self, token, success):
+        event, now = self._reservations.pop(token)
+        pending = self._reservation_pending.pop(token, None)
+        kind = event['type']
+        epoch = self._reservation_safety_epoch.pop(token, None)
+        if kind in self._safety_epoch and epoch == self._safety_epoch[kind]:
+            if success:
+                self._failed_safety.discard(kind)
+                self._safety_epoch[kind] += 1
+            else:
+                self._failed_safety.add(kind)
+        if not success and self._pending_event is None:
+            # One-shot events cannot be regenerated. Keep their original expiry;
+            # state-dependent signals instead require a fresh sample.
+            if event['type'] in ('distance_milestone', 'duration_milestone', 'fuel'):
+                self._pending_event = pending if pending is not None else (event, now)
+        if success:
+            kind = event['type']
+            self._spoken_at[kind] = max(now, self._spoken_at.get(kind, float('-inf')))
+            if kind in self._l4_counts:
+                self._l4_counts[kind] += 1
+
+    def arbitrate(self, events, now, silence, reservation=None):
+        """Called under the session lock; at most one event is reserved per call."""
+        priority = {'hr_high': 0, 'hr_low': 0, 'off_route': 0,
+                    'speed_drop': 1, 'hr_drift': 1, 'climb_ahead': 1,
+                    'climb_start': 1, 'hr_back': 1, 'pause': 1, 'resume': 1,
+                    'distance_milestone': 2, 'duration_milestone': 2, 'fuel': 3}
+        candidates = [event for event in events
+                      if now - self._last_spoken(event['type']) >= 60]
+        if self._pending_event is not None:
+            pending, queued_at = self._pending_event
+            # State-dependent predictions must not survive recovery during silence.
+            still_valid = (pending['type'] not in ('speed_drop', 'hr_drift')
+                           or any(item['type'] == pending['type'] for item in events))
+            if (still_valid and now - queued_at <= 30
+                    and now - self._last_spoken(pending['type']) >= 60):
+                candidates.append(pending)
+            else:
+                self._pending_event = None
+        if not candidates:
+            return []
+        event = min(candidates, key=lambda item: priority.get(item['type'], 2))
+        urgent = event['type'] in ('hr_high', 'hr_low')
+        if silence and not urgent:
+            if self._pending_event is None or event is not self._pending_event[0]:
+                self._pending_event = (event, now)
+            return []
+        selected_pending = (self._pending_event if self._pending_event is not None
+                            and event is self._pending_event[0] else None)
+        if not urgent or selected_pending is not None:
+            self._pending_event = None
+        if reservation is not None:
+            self._reservations[reservation] = (event, now)
+            if event['type'] in self._safety_epoch:
+                self._reservation_safety_epoch[reservation] = self._safety_epoch[event['type']]
+            if selected_pending is not None:
+                self._reservation_pending[reservation] = selected_pending
+        else:
+            self._spoken_at[event['type']] = now
+            if event['type'] in self._l4_counts:
+                self._l4_counts[event['type']] += 1
+        return [event]
 
     def facts(self) -> dict:
         """\u5f53\u524d\u5feb\u7167\uff1a\u8ddd\u79bb/\u65f6\u957f/\u5747\u901f/\u505c\u987f\u72b6\u6001\uff0c\u4f9b\u6838\u9a8c\u6ce8\u518c\u3002"""
@@ -378,7 +539,9 @@ def _numbers(events, facts):
     units = {'distance_m': 'm', 'duration_s': 's', 'pause_s': 's',
              'avg_speed_kmh': 'km/h', 'km': 'km', 'minutes': 'min', 'ascent_m': 'm',
              'hr': 'bpm', 'hr_upper': 'bpm', 'hr_lower': 'bpm',
-             'speed_mps': 'm/s'}
+             'speed_mps': 'm/s', 'current_speed_mps': 'm/s', 'avg_speed_mps': 'm/s',
+             'current_hr': 'bpm', 'expected_hr': 'bpm', 'drift_bpm': 'bpm',
+             'predicted_ascent_m': 'm', 'distance_ahead_m': 'm'}
     for record in [*events, facts]:
         for name, unit in units.items():
             if name not in record:
@@ -391,13 +554,13 @@ def _numbers(events, facts):
             elif name in ('duration_s', 'pause_s'):
                 numbers.extend(((value / 60, 'min'),
                                 (Decimal(str(_friendly_minutes(record[name]))), 'min')))
-            elif name in ('hr', 'hr_upper', 'hr_lower'):
+            elif name in ('hr', 'hr_upper', 'hr_lower', 'current_hr', 'expected_hr', 'drift_bpm'):
                 numbers.append((Decimal(int(record[name])), 'bpm'))
             elif name == 'ascent_m':
                 numbers.append((Decimal(int(round(record[name]))), 'm'))
             elif name == 'avg_speed_kmh':
                 numbers.append((value.quantize(Decimal('0.1')), 'km/h'))
-            elif name == 'speed_mps':
+            elif name in ('speed_mps', 'current_speed_mps', 'avg_speed_mps'):
                 kmh = value * Decimal('3.6')
                 numbers.extend(((kmh, 'km/h'), (kmh.quantize(Decimal('0.1')), 'km/h')))
                 if value > 0:
@@ -537,7 +700,7 @@ def build_live_speech(events, live_facts, *, api_key=None, http_post=None,
                 return _response('rejected_unverifiable_number', template, usage, urgent=urgent)
         if _FORBIDDEN_HARD.search(speech) or not _soft_has_basis(speech, numbers):
             return _response('rejected_unsafe_speech', template, usage, urgent=urgent)
-        if not _inference_has_basis(speech, numbers):
+        if not _inference_has_basis(speech, numbers) or not _explanation_has_basis(speech, facts):
             return _response('rejected_unsupported_inference', template, usage, urgent=urgent)
         return _response('ok', speech, usage, urgent=urgent)
     except (ValueError, UnicodeError, RecursionError, OverflowError, InvalidOperation):
@@ -684,8 +847,11 @@ def build_live_answer(question, live_facts, *, history=None, api_key=None, http_
                 return _live_answer_response('rejected_unverifiable_number', usage=usage)
         if _FORBIDDEN_HARD.search(speech) or not _soft_has_basis(speech, numbers):
             return _live_answer_response('rejected_unsafe_speech', usage=usage)
-        if not _inference_has_basis(speech, numbers):
+        if not _inference_has_basis(speech, numbers) or not _explanation_has_basis(speech, facts):
             return _live_answer_response('rejected_unsupported_inference', usage=usage)
         return _live_answer_response('ok', speech, usage)
     except (ValueError, UnicodeError, RecursionError, OverflowError, InvalidOperation):
         return _live_answer_response('rejected_bad_schema', usage=usage)
+
+
+# --- 轨迹存档：实时会话结束后落成一条 v3 骑行记录 -------------------------------

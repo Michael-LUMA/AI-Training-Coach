@@ -678,6 +678,7 @@ let checkpointAt=0,recoveryProblem=false;
 const PENDING_RIDE_KEY="mark.pendingRide",ACTIVE_RIDE_KEY="mark.activeRide";
 const GPS_FRESH_MS=15000;
 let riding=false,liveId=null,liveTimer=null,watchId=null,lastFix=null,lastFixAt=0,rideStart=0,rideDist=0,prevFix=null;
+let liveDistance=0,livePrevious=null;
 let rideSeq=0,liveBusy=false,liveAbort=null,lastLiveSpeech='',lastLiveSpeechAt=0,geoNotice='';
 function announceGeo(text){
   if(geoNotice===text)return;
@@ -727,7 +728,7 @@ function restoreInterruptedRide(){
   }
 }
 function gpsIsFresh(fix=lastFix){return !!fix&&Number.isFinite(fix.timestamp)&&Date.now()-fix.timestamp>=-1000&&Date.now()-fix.timestamp<=GPS_FRESH_MS;}
-function liveFixReady(fix=lastFix){return gpsIsFresh(fix)&&Number.isFinite(fix.coords.speed)&&fix.coords.speed>=0&&fix.coords.speed<=30;}
+function liveFixReady(fix=lastFix){return gpsIsFresh(fix)&&Number.isFinite(fix.coords.accuracy)&&fix.coords.accuracy>=0&&fix.coords.accuracy<=30&&Number.isFinite(fix.coords.speed)&&fix.coords.speed>=0&&fix.coords.speed<=30;}
 function startRide(){
   if(riding)return;
   if(recoveryProblem){setView('ride');return;}
@@ -736,7 +737,7 @@ function startRide(){
   ridePoints=[];rideRecordId='mark-'+crypto.randomUUID();
   $('ride-save-status').textContent='运动进行中；结束后保存至本机。没有心率设备时不生成心率。';
   setView('ride');
-  riding=true;rideSeq++;rideStart=Date.now();checkpointAt=0;rideDist=0;prevFix=null;lastFix=null;lastFixAt=0;liveId=null;geoNotice='';
+  riding=true;rideSeq++;rideStart=Date.now();checkpointAt=0;rideDist=0;prevFix=null;liveDistance=0;livePrevious=null;lastFix=null;lastFixAt=0;liveId=null;geoNotice='';
   for(const id of ['ls-speed','ls-hr','ride-speed','ride-hr'])$(id).textContent='--';
   for(const id of ['ls-dist','ride-dist'])$(id).textContent='--';
   for(const id of ['ls-time','ride-time'])$(id).textContent='0';
@@ -768,13 +769,13 @@ function beginRideLocation(){
   if(!riding)return;
   const gpsSeq=rideSeq,watchSeq=++locationWatchSeq;
   if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null;}
-  clearTimeout(locationWatchTimer);lastFix=null;lastFixAt=0;prevFix=null;
+  clearTimeout(locationWatchTimer);lastFix=null;lastFixAt=0;prevFix=null;livePrevious=null;
   for(const id of ['ls-speed','ride-speed'])$(id).textContent='--';
   announceGeo('正在等待定位；请允许网站位置权限，并保持网页在前台。');
   const active=()=>riding&&gpsSeq===rideSeq&&watchSeq===locationWatchSeq;
   const unavailable=e=>{
     if(!active())return;
-    clearTimeout(locationWatchTimer);lastFix=null;lastFixAt=0;prevFix=null;
+    clearTimeout(locationWatchTimer);lastFix=null;lastFixAt=0;prevFix=null;livePrevious=null;
     for(const id of ['ls-speed','ride-speed'])$(id).textContent='--';
     announceGeo(locationErrorText(e)+' 当前速度未知，暂停实时播报；运动计时继续。');
   };
@@ -785,16 +786,24 @@ function beginRideLocation(){
     clearTimeout(locationWatchTimer);
     const c=p.coords;
     if(c.accuracy>80){
-      lastFix=null;lastFixAt=0;prevFix=null;
+      lastFix=null;lastFixAt=0;prevFix=null;livePrevious=null;
       for(const id of ['ls-speed','ride-speed'])$(id).textContent='--';
       announceGeo('已收到粗定位，但误差超过 80 米；不计入轨迹或速度。请开启精确位置并到开阔处重试，电脑粗定位不适合运动记录。');return;
     }
     const elapsed=(p.timestamp-rideStart)/1000,previous=ridePoints[ridePoints.length-1];
     if(!Number.isFinite(elapsed)||elapsed<0||elapsed>(Date.now()-rideStart)/1000+1)return;
-    if(previous&&(elapsed-previous.t<1||hav(previous.lat,previous.lng,c.latitude,c.longitude)/(elapsed-previous.t)>70))return;
+    if(previous&&(elapsed-previous.t<1||hav(previous.lat,previous.lng,c.latitude,c.longitude)/(elapsed-previous.t)>70)){livePrevious=null;lastFix=null;return;}
     if(ridePoints.length>=20000){endRide();return;}
     const point={t:elapsed,lat:c.latitude,lng:c.longitude};ridePoints.push(point);
     lastFix=p;lastFixAt=Date.now();
+    if(liveFixReady(p)){
+      if(livePrevious){
+        const dt=(p.timestamp-livePrevious.timestamp)/1000;
+        const meters=hav(livePrevious.coords.latitude,livePrevious.coords.longitude,c.latitude,c.longitude);
+        if(dt>0&&dt<=15&&meters/dt<=30)liveDistance+=meters;
+      }
+      livePrevious=p;
+    }else livePrevious=null;
     announceGeo('定位已连接，开始记录路线。');
     if(prevFix){rideDist+=hav(prevFix.coords.latitude,prevFix.coords.longitude,p.coords.latitude,p.coords.longitude);}
     prevFix=p;renderStrip();checkpointRide();
@@ -869,15 +878,14 @@ async function liveBeat(){
   const controller=new AbortController();liveAbort=controller;
   try{
     const c=fix.coords;
-    const point={t:fix.timestamp/1000,lat:c.latitude,lng:c.longitude,speed_mps:c.speed};
-    if(typeof c.altitude==='number'&&Number.isFinite(c.altitude))point.alt=c.altitude;
+    const point={t:fix.timestamp/1000,distance_m:liveDistance,speed_mps:c.speed};
     const t=await getToken();
-    if(!riding||requestSeq!==rideSeq||requestLocationSeq!==locationWatchSeq||!liveFixReady()||!gpsIsFresh(fix))return;
+    if(!riding||requestSeq!==rideSeq||requestLocationSeq!==locationWatchSeq||lastFix!==fix||!liveFixReady(fix))return;
     const payload=await MarkCloud.withIdentity({live_id:requestLiveId,activity:'ride',point});
-    if(!riding||requestSeq!==rideSeq||requestLocationSeq!==locationWatchSeq||!liveFixReady()||!gpsIsFresh(fix))return;
+    if(!riding||requestSeq!==rideSeq||requestLocationSeq!==locationWatchSeq||lastFix!==fix||!liveFixReady(fix))return;
     const r=await fetchWithTimeout('/api/coach/ride/live',{method:'POST',headers:{'Content-Type':'application/json','X-Coach-Token':t},body:JSON.stringify(payload),signal:controller.signal},12000);
     const d=await r.json().catch(()=>null);
-    if(!r.ok||!d||!Array.isArray(d.calls)||!riding||requestSeq!==rideSeq||requestLiveId!==liveId||requestLocationSeq!==locationWatchSeq||!liveFixReady()||!gpsIsFresh(fix))return;
+    if(!r.ok||!d||!Array.isArray(d.calls)||!riding||requestSeq!==rideSeq||requestLiveId!==liveId||requestLocationSeq!==locationWatchSeq||!liveFixReady()||!liveFixReady(fix))return;
     for(const call of d.calls){
       const text=call&&typeof call.speech==='string'?call.speech.trim():'';
       if(!text)continue;

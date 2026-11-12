@@ -138,6 +138,28 @@ class MarkRecoveryTests(unittest.TestCase):
         result = self.run_js("return await ctx.run(\"startRide();_clock.now+=1000;const observed=Date.now();_watches.get(watchId).ok({timestamp:observed,coords:{latitude:31,longitude:121,accuracy:10,speed:5}});_clock.now+=5000;await liveBeat();return {observed,point:_calls[0].body.point};\");")
         self.assertEqual(result['point']['t'], result['observed'] / 1000)
 
+    def test_live_point_is_aggregate_only_and_accepts_zero_speed(self):
+        result = self.run_js("return await ctx.run(\"startRide();_clock.now+=1000;_watches.get(watchId).ok({timestamp:Date.now(),coords:{latitude:31,longitude:121,altitude:400,accuracy:10,speed:0}});await liveBeat();return _calls[0].body.point;\");")
+        self.assertEqual(set(result), {'t', 'distance_m', 'speed_mps'})
+        self.assertEqual(result['distance_m'], 0)
+        self.assertEqual(result['speed_mps'], 0)
+
+    def test_live_distance_excludes_bad_fixes_and_gaps(self):
+        result = self.run_js("return await ctx.run(\"startRide();function point(lon,accuracy){_clock.now+=5000;_watches.get(watchId).ok({timestamp:Date.now(),coords:{latitude:31,longitude:lon,accuracy,speed:2}});}point(121,10);point(121.0001,10);const first=liveDistance;point(121.0002,50);await liveBeat();const calls=_calls.length;point(121.0003,10);const afterBad=liveDistance;_clock.now+=20000;point(121.0004,10);const afterGap=liveDistance;point(121.0005,10);return {first,calls,afterBad,afterGap,final:liveDistance};\");")
+        self.assertGreater(result['first'], 0)
+        self.assertEqual(result['calls'], 0)
+        self.assertEqual(result['afterBad'], result['first'])
+        self.assertEqual(result['afterGap'], result['first'])
+        self.assertGreater(result['final'], result['first'])
+
+    def test_bad_accuracy_and_interrupted_identity_do_not_upload(self):
+        result = self.run_js("return await ctx.run(\"startRide();_clock.now+=1000;_watches.get(watchId).ok({timestamp:Date.now(),coords:{latitude:31,longitude:121,accuracy:31,speed:2}});await liveBeat();_clock.now+=1000;_watches.get(watchId).ok({timestamp:Date.now(),coords:{latitude:31,longitude:121,accuracy:10,speed:2}});getToken=async()=>{_watches.get(watchId).error({code:2});return 'token';};await liveBeat();return _calls.length;\");")
+        self.assertEqual(result, 0)
+
+    def test_location_error_breaks_distance_segment(self):
+        result = self.run_js("return await ctx.run(\"startRide();function point(lon){_clock.now+=5000;_watches.get(watchId).ok({timestamp:Date.now(),coords:{latitude:31,longitude:lon,accuracy:10,speed:2}});}point(121);point(121.0001);const before=liveDistance;_watches.get(watchId).error({code:2});point(121.0003);return {before,after:liveDistance};\");")
+        self.assertEqual(result['before'], result['after'])
+
     def test_old_cached_gps_callback_is_rejected(self):
         result = self.run_js("return await ctx.run(\"startRide();_watches.get(watchId).ok({timestamp:Date.now()-20000,coords:{latitude:31,longitude:121,accuracy:10,speed:5}});return ridePoints.length;\");")
         self.assertEqual(result, 0)

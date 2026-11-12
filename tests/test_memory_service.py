@@ -361,7 +361,7 @@ class RouteMemoryTests(unittest.TestCase):
         self.assertEqual(build.call_args.args[1], record(2)["summary"])
 
     def test_cloud_live_ids_are_namespaced_not_shared_with_anonymous(self):
-        point = {"t":1700000000.0, "lat":31, "lng":121, "speed_mps":1}
+        point = {"t":1700000000.0, "distance_m":0, "speed_mps":1}
         for token in ("token-a", "token-b", None):
             payload = {"live_id":"same", "point":point}
             if token is not None:
@@ -370,19 +370,19 @@ class RouteMemoryTests(unittest.TestCase):
         self.assertEqual(set(self.app._live), {("a","same"), ("b","same"), "same"})
 
     def test_live_memory_loaded_only_when_event_survives_silence_gate(self):
-        point = {"t":1700000000.0, "lat":31, "lng":121, "speed_mps":1}
+        point = {"t":1700000000.0, "distance_m":0, "speed_mps":1}
         with patch.object(memory, "get_context_for_live") as read:
             self.app._live_ride({"token":"token-a", "live_id":"test", "point":point})
         read.assert_not_called()
 
     def test_cloud_live_event_injects_memory_for_same_user(self):
-        session = Mock(); session.activity = "ride"; session._start_t = 1700000000.0
+        session = Mock(); session.activity = "ride"; session._start_t = 1700000000.0; session._reservations = {}
         session.ingest.return_value = milestone_event(); session.facts.return_value = live_facts()
         ctx = {"previous_summary": record(1)["summary"], "profile_brief":None}
         with patch.object(server, "LiveSession", return_value=session), \
              patch.object(memory, "get_context_for_live", return_value=ctx) as read, \
              patch.object(server, "build_live_speech", wraps=server.build_live_speech) as build:
-            self.app._live_ride({"token":"token-a", "live_id":"test", "point":{"t":1700000000.0}})
+            self.app._live_ride({"token":"token-a", "live_id":"test", "point":{"t":1700000000.0, "distance_m":0}})
         self.assertEqual(read.call_args.args[0], "a")
         self.assertEqual(build.call_args.args[1]["previous"], ctx["previous_summary"])
 

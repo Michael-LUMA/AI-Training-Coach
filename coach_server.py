@@ -1079,6 +1079,9 @@ class App:
         if user_id is not None:
             live_id = (user_id, live_id)
         require(type(payload["point"]) is dict, "Invalid telemetry point")
+        require("distance_m" in payload["point"] and set(payload["point"]) <= {
+                    "t", "distance_m", "speed_mps", "hr", "hr_lower", "hr_upper", "off_route"},
+                "Live telemetry must contain only permitted aggregate fields")
         now = time.monotonic()
         entry_point = dict(payload["point"])
         with self._live_lock:
@@ -1104,33 +1107,52 @@ class App:
             else:
                 entry[2] = now
                 entry[3] = entry_point
-            last_call = entry[1]
             speech_facts = session.facts()
-        urgent = any(event.get("type") in _LIVE_URGENT_TYPES for event in events)
-        if not events or (not urgent and last_call is not None and now - last_call < _LIVE_SILENCE_S):
+            reservation = object()
+            pending_times = [stamp for _, stamp in session._reservations.values()]
+            last_call = max(([entry[1]] if entry[1] is not None else []) + pending_times, default=None)
+            events = session.arbitrate(events, now, last_call is not None and now - last_call < _LIVE_SILENCE_S,
+                                       reservation=reservation)
+        if not events:
             return {"calls": []}
-        if user_id is not None:
-            descriptor = {"started_at": datetime.fromtimestamp(session._start_t, timezone.utc).isoformat(),
-                          "activity": session.activity}
-            context = self._cloud_memory(lambda: memory_service.get_context_for_live(user_id, descriptor))
-            if context["previous_summary"] is not None:
-                speech_facts["previous"] = context["previous_summary"]
-            if context["profile_brief"] is not None:
-                speech_facts["profile"] = context["profile_brief"]
-        result = llm_router.run(
-            'live',
-            lambda **kw: build_live_speech(events, speech_facts,
-                                           http_post=self.llm_post, **kw))
-        speech = result["speech"]
-        if type(speech) is not str or not speech.strip():
-            return {"calls": []}
-        with self._live_lock:
-            if self._live.get(live_id) is entry:
-                entry[1] = now
-        return {"calls": [{"speech": speech, "speech_status": result["llm_status"],
-                           "fallback": result["fallback"], "usage": result["usage"],
-                           "urgent": result.get("urgent") is True}],
-                "events": [event["type"] for event in events]}
+        success = False
+        try:
+            if user_id is not None:
+                descriptor = {"started_at": datetime.fromtimestamp(session._start_t, timezone.utc).isoformat(),
+                              "activity": session.activity}
+                context = self._cloud_memory(lambda: memory_service.get_context_for_live(user_id, descriptor))
+                if context["previous_summary"] is not None:
+                    speech_facts["previous"] = context["previous_summary"]
+                if context["profile_brief"] is not None:
+                    speech_facts["profile"] = context["profile_brief"]
+            result = llm_router.run(
+                'live',
+                lambda **kw: build_live_speech(events, speech_facts,
+                                               http_post=self.llm_post, **kw))
+            speech = result["speech"]
+            if type(speech) is not str or not speech.strip():
+                return {"calls": []}
+            response = {"calls": [{"speech": speech, "speech_status": result["llm_status"],
+                               "fallback": result["fallback"], "usage": result["usage"],
+                               "urgent": result.get("urgent") is True}],
+                    "events": [event["type"] for event in events]}
+            with self._live_lock:
+                # A delayed response must not announce a cancelled safety episode
+                # or a session that has since been replaced.
+                epoch = session._reservation_safety_epoch.get(reservation)
+                kind = events[0]["type"]
+                if (self._live.get(live_id) is not entry or
+                        (epoch is not None and epoch != session._safety_epoch[kind])):
+                    return {"calls": []}
+                success = True
+                return response
+
+        finally:
+            with self._live_lock:
+                session.finish_reservation(reservation, success)
+                if success and self._live.get(live_id) is entry:
+                    entry[1] = max(now, entry[1]) if entry[1] is not None else now
+
 
     def _weekly_ride(self, payload):
         """Snapshot/aggregate under disk lock; cloud request always outside it.
