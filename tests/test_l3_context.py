@@ -221,3 +221,25 @@ class CompleteL3Tests(unittest.TestCase):
             result = ride_live.build_live_answer('这次如何', live_facts(),
                      api_key='synthetic-key', http_post=live_post(text))
             self.assertEqual(result['llm_status'], status)
+
+
+class LiveGenerationRegressionTests(unittest.TestCase):
+    def test_qualitative_one_compounds_are_not_numeric_claims(self):
+        for text in ('心率120，和上次一样。', '心率120，比上次低了一些。'):
+            result = brain.build_ride_review(memory(), api_key='synthetic-key',
+                                             http_post=transport(text))
+            self.assertEqual(result['llm_status'], 'ok')
+        self.assertFalse(brain._inference_has_basis('和上次一样，看起来很轻松', [(Decimal(1), None)]))
+        self.assertFalse(brain._inference_has_basis('看起来轻松了一些', [(Decimal(1), None)]))
+
+    def test_real_count_one_still_requires_evidence(self):
+        normalized = brain._normalized_numbers('骑了一次，一公里')
+        self.assertIn('1', normalized)
+        self.assertFalse(brain._verified_text(normalized, [(Decimal(135), 'bpm')]))
+
+
+class LexicalShiRegressionTests(unittest.TestCase):
+    def test_question_word_is_not_a_ten_claim(self):
+        self.assertTrue(brain._verified_text(brain._normalized_numbers('心率120，没什么变化。'), [(Decimal(120), 'bpm')]))
+        self.assertFalse(brain._verified_text(brain._normalized_numbers('骑了什公里'), [(Decimal(120), 'bpm')]))
+        self.assertFalse(brain._inference_has_basis('看起来没什么变化', [(Decimal(10), None)]))
