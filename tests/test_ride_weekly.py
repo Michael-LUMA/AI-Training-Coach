@@ -292,9 +292,9 @@ class RideWeeklyRouteTests(unittest.TestCase):
             self.assertEqual(error.exception.code, code)
         self.post.assert_not_called()
 
-    def test_shares_post_budget_with_upload_and_review_get_independent(self):
+    def test_weekly_and_review_share_budget_independent_of_upload_and_get(self):
         self.request(memory(), path=server.RIDE_POST)
-        for _ in range(59):
+        for _ in range(60):
             self.request()
         with self.assertRaises(ActionError) as error:
             self.request({'session_id': 'ride-current'}, path=server.RIDE_REVIEW)

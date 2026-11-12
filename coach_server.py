@@ -289,7 +289,7 @@ class App:
         # Credential-adjacent ephemeral data; tests/custom DBs stay isolated.
         self._ride_dir = None
         self._ride_lock = Lock()
-        self._ride_requests = {"GET": deque(), "POST": deque()}
+        self._ride_requests = {"GET": deque(), "POST": deque(), "POST_WRITE": deque()}
         self._knowledge_cards = None
         self._live = {}  # live_id -> [LiveSession, last_call_mono, last_seen_mono]
         self._live_lock = Lock()
@@ -1274,11 +1274,12 @@ class App:
         """
         now = time.monotonic()
         with self._ride_lock:
-            bucket = self._ride_requests[method]
+            is_write = method == "POST" and path in (RIDE_POST, RIDE_IMPORT)
+            bucket = self._ride_requests["POST_WRITE" if is_write else method]
             while bucket and now - bucket[0] >= 60:
                 bucket.popleft()
             if method == "POST":
-                limit = 10 if path in (RIDE_POST, RIDE_IMPORT) else 60
+                limit = 10 if is_write else 60
             else:
                 limit = 120
             if len(bucket) >= limit:

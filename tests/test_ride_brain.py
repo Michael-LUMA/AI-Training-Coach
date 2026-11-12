@@ -207,9 +207,9 @@ class RideBrainEndpointTests(unittest.TestCase):
         self.assertEqual(result,{'speech_status':'not_configured','speech':None,'fallback':'template','usage':None})
         self.post.assert_not_called()
 
-    def test_shared_post_bucket_limits_review_and_upload(self):
+    def test_review_keeps_full_budget_after_upload(self):
         self.save()
-        for _ in range(59):self.request('/api/coach/ride/review',{'session_id':'current'})
+        for _ in range(60):self.request('/api/coach/ride/review',{'session_id':'current'})
         with self.assertRaises(ActionError) as error:self.request('/api/coach/ride/review',{'session_id':'current'})
         self.assertEqual((error.exception.status,error.exception.code),(429,'rate_limited'))
 

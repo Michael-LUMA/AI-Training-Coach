@@ -327,9 +327,9 @@ class ChatEndpointTests(unittest.TestCase):
         self.assertEqual(facts['recent_trend']['avg_hr_list'],[138,135])
         self.assertEqual(facts['session_ordinal'],2)
 
-    def test_chat_counts_toward_shared_post_bucket(self):
+    def test_chat_keeps_60_requests_independent_of_session_save(self):
         self.save()
-        for _ in range(59):
+        for _ in range(60):
             self.request('/api/coach/ride/chat',{'question':'心率？','session_id':'current'})
         with self.assertRaises(ActionError) as error:
             self.request('/api/coach/ride/chat',{'question':'心率？','session_id':'current'})
