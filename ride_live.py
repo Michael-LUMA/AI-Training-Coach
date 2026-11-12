@@ -107,6 +107,9 @@ hr_drift 的 current_hr、expected_hr 是本次相近速度的心率，drift_bpm
 previous 只代表上次，profile 只代表平时，不能用它们替换本次事件的均速或心率基线。
 当前事件已足够说明情况就不引用历史；路况、风、疲劳等未记录的原因不能猜，
 也不能用“可能”包装无依据的原因。实时单点不是骑后跨次趋势。
+hr_high/hr_low 的 duration_s 是整次活动时长，不是心率越限时长；
+只报当前心率与所设上下限，不说超限持续多久，也不说“一直”超限。
+需要提活动时长时，单独成句明确说“本次活动时长”，不能接在越限描述后面。
 """
 LIVE_SYSTEM_PROMPT += L3_INFERENCE_RULE
 
@@ -616,6 +619,31 @@ def _numeric_text(speech):
     return _normalized_numbers(speech)
 
 
+def _hr_duration_has_basis(speech, events):
+    """HR events carry session elapsed time, never a measured threshold duration.
+
+    Fail closed on temporal claims in a safety announcement unless a separate
+    clause explicitly labels them as activity elapsed time. Other event lanes
+    retain their duration contract. This is not a general prose-truth checker.
+    """
+    if not any(event['type'] in ('hr_high', 'hr_low') for event in events):
+        return True
+    for clause in re.split(r'[，,。！？；;：:]', speech):
+        # Heart-rate and speed denominators are units, not elapsed-time claims.
+        units = re.sub(r'(?:次|跳)\s*[/／]\s*(?:分钟|分)|每分钟', 'bpm', clause)
+        numeric = _numeric_text(units)
+        temporal = (re.search(r'\d\s*(?:min|s|h)(?![a-zA-Z/])', numeric)
+                    or re.search(r'(?<![/每])(?:分钟|小时|秒|钟头)'
+                                 r'|持续|一直|始终|很久|好久|一阵|一会|以来', units))
+        if not temporal:
+            continue
+        activity = re.search(r'(?:骑|走|跑)(?:行|步)?了|(?:活动|运动|骑行|本次|总)时长|全程用时', clause)
+        heart = re.search(r'心率|心跳|上限|下限|阈|超|高于|低于', clause)
+        if not activity or heart:
+            return False
+    return True
+
+
 def _response(status, speech, usage=None, *, urgent=False):
     return {'llm_status': status, 'speech': speech, 'usage': usage,
             'fallback': None if status == 'ok' else 'template', 'urgent': urgent}
@@ -703,6 +731,8 @@ def build_live_speech(events, live_facts, *, api_key=None, http_post=None,
         _count_checked(len(speech))
         if len(re.findall(r'[^\u3002\uff1f\uff01\u2026]+[\u3002\uff1f\uff01\u2026]*', speech)) > 2:
             return _response('rejected_bad_schema', template, usage, urgent=urgent)
+        if not _hr_duration_has_basis(speech, events):
+            return _response('rejected_unsupported_inference', template, usage, urgent=urgent)
         with localcontext() as ctx:
             ctx.prec = 100
             if (not _verified_text(_numeric_text(speech), numbers)
