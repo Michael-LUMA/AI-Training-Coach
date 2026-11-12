@@ -87,6 +87,8 @@ class InferenceBasisTests(unittest.TestCase):
 
     def test_decimal_does_not_end_sentence(self):
         self.assertTrue(brain._inference_has_basis('速度慢1.2，看起来在下降', self.numbers))
+        self.assertTrue(brain._inference_has_basis('看起来速度低.4', [(Decimal('.4'), 'm/s')]))
+        self.assertFalse(brain._inference_has_basis('心率132.看起来不错', self.numbers))
 
     def test_plain_facts_unchanged(self):
         self.assertTrue(brain._inference_has_basis('心率132，心率135。', self.numbers))
@@ -171,3 +173,51 @@ class MemoryWindowTests(unittest.TestCase):
         result = ride_chat.build_ride_chat('最近心率呢', memory(), history=history,
                  api_key='synthetic-key', http_post=transport('心率999。'))
         self.assertEqual(result['llm_status'], 'rejected_unverifiable_number')
+
+
+class CompleteL3Tests(unittest.TestCase):
+    def test_all_prompts_share_l3_constraints(self):
+        import ride_chat, ride_live
+        for prompt in (brain.SYSTEM_PROMPT, ride_chat.SYSTEM_PROMPT,
+                       ride_live.SYSTEM_PROMPT, ride_live.LIVE_SYSTEM_PROMPT):
+            for rule in ('同句前后15字', '不确定性标记', '训练效果断言', '没有记录'):
+                self.assertIn(rule, prompt)
+        self.assertIn('最多200字', brain.SYSTEM_PROMPT)
+        self.assertIn('最多100字', ride_live.SYSTEM_PROMPT)
+
+    def test_valid_unit_conversion_is_numeric_basis(self):
+        self.assertTrue(brain._inference_has_basis('看起来不错，记录0.5小时', [(Decimal(1800), 's')]))
+        self.assertFalse(brain._inference_has_basis('看起来不错，记录0.5公里', [(Decimal(1800), 's')]))
+
+    def test_review_length_limit_is_enforced_at_200(self):
+        for size, status in ((200, 'ok'), (201, 'rejected_bad_schema')):
+            result = brain.build_ride_review(memory(), api_key='synthetic-key',
+                     http_post=transport('记录' + '啊'*(size-2)))
+            self.assertEqual(result['llm_status'], status)
+
+    def test_live_length_limit_is_enforced_at_100(self):
+        import ride_live
+        from tests.test_ride_live import milestone_event, live_facts, transport as live_post
+        for size, status in ((81, 'ok'), (100, 'ok'), (101, 'rejected_bad_schema')):
+            result = ride_live.build_live_speech(milestone_event(), live_facts(),
+                     api_key='synthetic-key', http_post=live_post('记录' + '啊'*(size-2)))
+            self.assertEqual(result['llm_status'], status)
+
+    def test_chat_cannot_bypass_inference_guard(self):
+        import ride_chat
+        for text, status in [('心率120，看起来在下降。', 'ok'),
+                             ('看起来你状态不错。', 'rejected_unsupported_inference'),
+                             ('心率120，看起来变强了。', 'rejected_unsafe_speech')]:
+            with self.subTest(text=text):
+                result = ride_chat.build_ride_chat('这次怎么样', memory(),
+                         api_key='synthetic-key', http_post=transport(text))
+                self.assertEqual(result['llm_status'], status)
+
+    def test_live_answer_cannot_bypass_inference_guard(self):
+        import ride_live
+        from tests.test_ride_live import live_facts, transport as live_post
+        for text, status in [('看起来你状态不错。', 'rejected_unsupported_inference'),
+                             ('看起来已骑5公里。', 'ok')]:
+            result = ride_live.build_live_answer('这次如何', live_facts(),
+                     api_key='synthetic-key', http_post=live_post(text))
+            self.assertEqual(result['llm_status'], status)

@@ -208,7 +208,7 @@ class RideBrainAnalysisTests(unittest.TestCase):
         self.assertIn('禁止解读为训练效果',brain.SYSTEM_PROMPT)
         self.assertIn('pw_hr_decoupling_pct 是前后半程功率心率比的变化百分比',
                       brain.SYSTEM_PROMPT)
-        self.assertIn('禁止说『有氧基础好/差』『效率高/低』等任何评价',brain.SYSTEM_PROMPT)
+        self.assertIn('禁止无据断言『有氧基础好/差』『效率高/低』',brain.SYSTEM_PROMPT)
 
 
 if __name__=='__main__':
