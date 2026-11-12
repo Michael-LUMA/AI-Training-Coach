@@ -1,0 +1,301 @@
+{
+  "schema": "mark-blind-fixtures/1",
+  "cases": [
+    {
+      "case_id": "v1-001",
+      "scenario": "lower-hr",
+      "data_origin": "synthetic_fixture_not_user_measurement",
+      "summary": {
+        "duration_s": 2520,
+        "avg_hr": 131,
+        "max_hr": 143,
+        "time_in_zone_s": null,
+        "zone_target": null,
+        "gaps": 0,
+        "alerts": 0
+      },
+      "previous_summary": {
+        "duration_s": 2520,
+        "avg_hr": 135,
+        "max_hr": 147,
+        "time_in_zone_s": null,
+        "zone_target": null,
+        "gaps": 0,
+        "alerts": 0
+      },
+      "recent_summaries": null
+    },
+    {
+      "case_id": "v1-002",
+      "scenario": "higher-hr",
+      "data_origin": "synthetic_fixture_not_user_measurement",
+      "summary": {
+        "duration_s": 2400,
+        "avg_hr": 145,
+        "max_hr": 157,
+        "time_in_zone_s": null,
+        "zone_target": null,
+        "gaps": 0,
+        "alerts": 0
+      },
+      "previous_summary": {
+        "duration_s": 2400,
+        "avg_hr": 137,
+        "max_hr": 149,
+        "time_in_zone_s": null,
+        "zone_target": null,
+        "gaps": 0,
+        "alerts": 0
+      },
+      "recent_summaries": null
+    },
+    {
+      "case_id": "v1-003",
+      "scenario": "longer-record",
+      "data_origin": "synthetic_fixture_not_user_measurement",
+      "summary": {
+        "duration_s": 3600,
+        "avg_hr": 142,
+        "max_hr": 154,
+        "time_in_zone_s": null,
+        "zone_target": null,
+        "gaps": 0,
+        "alerts": 0
+      },
+      "previous_summary": {
+        "duration_s": 2400,
+        "avg_hr": 134,
+        "max_hr": 146,
+        "time_in_zone_s": null,
+        "zone_target": null,
+        "gaps": 0,
+        "alerts": 0
+      },
+      "recent_summaries": null
+    },
+    {
+      "case_id": "v1-004",
+      "scenario": "same-hr-longer",
+      "data_origin": "synthetic_fixture_not_user_measurement",
+      "summary": {
+        "duration_s": 5400,
+        "avg_hr": 138,
+        "max_hr": 150,
+        "time_in_zone_s": null,
+        "zone_target": null,
+        "gaps": 0,
+        "alerts": 0
+      },
+      "previous_summary": {
+        "duration_s": 2700,
+        "avg_hr": 138,
+        "max_hr": 150,
+        "time_in_zone_s": null,
+        "zone_target": null,
+        "gaps": 0,
+        "alerts": 0
+      },
+      "recent_summaries": null
+    },
+    {
+      "case_id": "v1-005",
+      "scenario": "shorter-record",
+      "data_origin": "synthetic_fixture_not_user_measurement",
+      "summary": {
+        "duration_s": 1800,
+        "avg_hr": 126,
+        "max_hr": 138,
+        "time_in_zone_s": null,
+        "zone_target": null,
+        "gaps": 0,
+        "alerts": 0
+      },
+      "previous_summary": {
+        "duration_s": 3600,
+        "avg_hr": 136,
+        "max_hr": 148,
+        "time_in_zone_s": null,
+        "zone_target": null,
+        "gaps": 0,
+        "alerts": 0
+      },
+      "recent_summaries": null
+    },
+    {
+      "case_id": "v1-006",
+      "scenario": "missing-hr",
+      "data_origin": "synthetic_fixture_not_user_measurement",
+      "summary": {
+        "duration_s": 3600,
+        "avg_hr": null,
+        "max_hr": null,
+        "time_in_zone_s": null,
+        "zone_target": null,
+        "gaps": 0,
+        "alerts": 0
+      },
+      "previous_summary": {
+        "duration_s": 3960,
+        "avg_hr": 134,
+        "max_hr": 146,
+        "time_in_zone_s": null,
+        "zone_target": null,
+        "gaps": 0,
+        "alerts": 0
+      },
+      "recent_summaries": null
+    },
+    {
+      "case_id": "v1-007",
+      "scenario": "close-values",
+      "data_origin": "synthetic_fixture_not_user_measurement",
+      "summary": {
+        "duration_s": 2700,
+        "avg_hr": 135,
+        "max_hr": 147,
+        "time_in_zone_s": null,
+        "zone_target": null,
+        "gaps": 0,
+        "alerts": 0
+      },
+      "previous_summary": {
+        "duration_s": 2700,
+        "avg_hr": 135,
+        "max_hr": 147,
+        "time_in_zone_s": null,
+        "zone_target": null,
+        "gaps": 0,
+        "alerts": 0
+      },
+      "recent_summaries": null
+    },
+    {
+      "case_id": "v1-008",
+      "scenario": "decimal-hr",
+      "data_origin": "synthetic_fixture_not_user_measurement",
+      "summary": {
+        "duration_s": 2520,
+        "avg_hr": 130.4,
+        "max_hr": 142.4,
+        "time_in_zone_s": null,
+        "zone_target": null,
+        "gaps": 0,
+        "alerts": 0
+      },
+      "previous_summary": {
+        "duration_s": 2400,
+        "avg_hr": 134.8,
+        "max_hr": 146.8,
+        "time_in_zone_s": null,
+        "zone_target": null,
+        "gaps": 0,
+        "alerts": 0
+      },
+      "recent_summaries": null
+    },
+    {
+      "case_id": "v1-009",
+      "scenario": "downward-series",
+      "data_origin": "synthetic_fixture_not_user_measurement",
+      "summary": {
+        "duration_s": 2520,
+        "avg_hr": 131,
+        "max_hr": 143,
+        "time_in_zone_s": null,
+        "zone_target": null,
+        "gaps": 0,
+        "alerts": 0
+      },
+      "previous_summary": {
+        "duration_s": 2400,
+        "avg_hr": 132,
+        "max_hr": 144,
+        "time_in_zone_s": null,
+        "zone_target": null,
+        "gaps": 0,
+        "alerts": 0
+      },
+      "recent_summaries": [
+        {
+          "duration_s": 2400,
+          "avg_hr": 138,
+          "max_hr": 150,
+          "time_in_zone_s": null,
+          "zone_target": null,
+          "gaps": 0,
+          "alerts": 0
+        },
+        {
+          "duration_s": 2400,
+          "avg_hr": 135,
+          "max_hr": 147,
+          "time_in_zone_s": null,
+          "zone_target": null,
+          "gaps": 0,
+          "alerts": 0
+        },
+        {
+          "duration_s": 2400,
+          "avg_hr": 132,
+          "max_hr": 144,
+          "time_in_zone_s": null,
+          "zone_target": null,
+          "gaps": 0,
+          "alerts": 0
+        }
+      ]
+    },
+    {
+      "case_id": "v1-010",
+      "scenario": "higher-range-series",
+      "data_origin": "synthetic_fixture_not_user_measurement",
+      "summary": {
+        "duration_s": 3000,
+        "avg_hr": 153,
+        "max_hr": 165,
+        "time_in_zone_s": null,
+        "zone_target": null,
+        "gaps": 0,
+        "alerts": 0
+      },
+      "previous_summary": {
+        "duration_s": 3000,
+        "avg_hr": 156,
+        "max_hr": 168,
+        "time_in_zone_s": null,
+        "zone_target": null,
+        "gaps": 0,
+        "alerts": 0
+      },
+      "recent_summaries": [
+        {
+          "duration_s": 2400,
+          "avg_hr": 160,
+          "max_hr": 172,
+          "time_in_zone_s": null,
+          "zone_target": null,
+          "gaps": 0,
+          "alerts": 0
+        },
+        {
+          "duration_s": 2400,
+          "avg_hr": 158,
+          "max_hr": 170,
+          "time_in_zone_s": null,
+          "zone_target": null,
+          "gaps": 0,
+          "alerts": 0
+        },
+        {
+          "duration_s": 2400,
+          "avg_hr": 156,
+          "max_hr": 168,
+          "time_in_zone_s": null,
+          "zone_target": null,
+          "gaps": 0,
+          "alerts": 0
+        }
+      ]
+    }
+  ]
+}
