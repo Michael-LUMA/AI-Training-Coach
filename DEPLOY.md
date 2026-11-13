@@ -14,7 +14,14 @@ The final additional safety guard was not resampled. Model quality is NOT accept
 M7 restart/readback evidence remains valid by source continuity, not a new restart claim.
 Private gates remain; raw GPS is not uploaded; climb_ahead remains disabled.
 Blind evaluation and rider materials remain paused. Temporary SSH cleanup is unconfirmed.
-Deployment commit/status are recorded separately after actual runtime verification.
+Deployed runtime commit: `05f6b16dadad88470208c2a4104d732921092013`.
+Railway deployment `0fc0441e-9e90-47cc-8e2e-b5355125c930` is SUCCESS.
+Container source hashes and 13 offline replay tests match; seven targeted HTTP gates pass.
+The original verification report remains failed due to a mistaken browser-token expectation
+on a cloud-token route. See both generation_production_verification JSON files in the
+acceptance directory; the follow-up corrects the harness, not product security.
+No new model calls/user writes/database restart occurred in that HTTP follow-up.
+Documentation-only follow-up commits remain local; they are not a new runtime deployment.
 
 ## Current private deployment — 2026-11-13 (historical snapshot)
 

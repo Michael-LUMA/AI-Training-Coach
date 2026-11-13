@@ -59,4 +59,13 @@ M7重启验收在 `f790b7a`；本轮源码连续性证明持久化/身份/导出
 `generation_regression_results.json`、`generation_m7_source_continuity.json`、
 `model_acceptance_generation_v3.json`、`model_acceptance_generation_v4.json`、
 `model_semantic_review_generation_v3.json`、`model_semantic_review_generation_v4.json`。
-线上版本与无新增模型调用的回放验收另记 `generation_production_verification.json`；未产生前不声称已上线。
+线上部署与容器内13项离线回放记录在 `generation_production_verification.json`。该原报告因HTTP验收脚本选错鉴权路由而整体为false，原文件保留不覆盖；定向复核结果见 `generation_production_verification_followup.json`，7项HTTP检查全部通过。两份报告需结合阅读，均不表示模型质量或实骑验收通过。
+
+## 线上部署与门禁复核（本轮收尾）
+
+- 实际运行提交：`05f6b16dadad88470208c2a4104d732921092013`；Railway部署 `0fc0441e-9e90-47cc-8e2e-b5355125c930` 状态SUCCESS。后续本地文档提交不代表新的运行版本。
+- 容器中三个改动文件的SHA与预期一致；13项新增离线回放全部通过，封禁上游网络调用，未写入用户记录。
+- HTTP补验7/7通过：健康200、未登录页面401、已登录页面200、云列表空请求400、无效云身份401、缺浏览器token的问答403、跨源403。
+- 原脚本对云列表空请求错误预期403；实际400来自请求结构校验。云列表按设计使用云身份token，不能拿它验证浏览器token。补验分别覆盖两个鉴权层，没有修改或降低产品门禁。
+- 补验无新增模型调用、无用户数据写入、没有重新执行数据库重启。原失败证据及其SHA保留在补验报告中。
+- 本轮代码修复已经部署；L3质量验收、L4.3可靠前方地形、实机与骑手验收、临时SSH撤销仍未完成，不能称整份任务包完成。

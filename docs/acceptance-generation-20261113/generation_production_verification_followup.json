@@ -1,0 +1,75 @@
+{
+  "date": "2026-11-13",
+  "passed": true,
+  "original_report": "generation_production_verification.json",
+  "original_report_sha256": "dd193a956aafadadb2b17ece6013f833c19ba9c264910b2ed2ac81052bcf8171",
+  "original_report_passed": false,
+  "runtime_commit": "05f6b16dadad88470208c2a4104d732921092013",
+  "new_model_calls": 0,
+  "new_user_records": 0,
+  "restart_readback_repeated": false,
+  "blind_evaluation": "paused",
+  "model_quality_passed": false,
+  "correction": "Cloud ride routes require a cloud identity token, not the browser session token. Empty payload fails validation with 400; a bad identity token must return 401. Browser chat must separately reject a missing browser token with 403.",
+  "requests": [
+    {
+      "name": "health",
+      "method": "GET",
+      "path": "/health",
+      "expected_status": 200,
+      "actual_status": 200
+    },
+    {
+      "name": "mark_requires_private_login",
+      "method": "GET",
+      "path": "/mark",
+      "expected_status": 401,
+      "actual_status": 401
+    },
+    {
+      "name": "authenticated_mark_available",
+      "method": "GET",
+      "path": "/mark",
+      "expected_status": 200,
+      "actual_status": 200
+    },
+    {
+      "name": "cloud_empty_payload_rejected",
+      "method": "POST",
+      "path": "/api/rides/list",
+      "expected_status": 400,
+      "actual_status": 400
+    },
+    {
+      "name": "cloud_invalid_identity_rejected",
+      "method": "POST",
+      "path": "/api/rides/list",
+      "expected_status": 401,
+      "actual_status": 401
+    },
+    {
+      "name": "chat_requires_browser_token",
+      "method": "POST",
+      "path": "/api/coach/ride/chat",
+      "expected_status": 403,
+      "actual_status": 403
+    },
+    {
+      "name": "foreign_origin_rejected",
+      "method": "POST",
+      "path": "/api/rides/list",
+      "expected_status": 403,
+      "actual_status": 403
+    }
+  ],
+  "checks": {
+    "health": true,
+    "mark_requires_private_login": true,
+    "authenticated_mark_available": true,
+    "cloud_empty_payload_rejected": true,
+    "cloud_invalid_identity_rejected": true,
+    "chat_requires_browser_token": true,
+    "foreign_origin_rejected": true
+  },
+  "note": "Gate verification only; reuses original deployment/source/offline replay evidence. Original failed report retained unchanged. No database restart, rider or model-quality acceptance implied."
+}

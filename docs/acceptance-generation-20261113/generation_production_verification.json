@@ -1,0 +1,43 @@
+{
+  "date": "2026-11-13",
+  "expected_commit": "05f6b16dadad88470208c2a4104d732921092013",
+  "passed": false,
+  "model_quality_passed": false,
+  "new_model_calls": 0,
+  "new_user_records": 0,
+  "restart_readback_repeated": false,
+  "blind_evaluation": "paused",
+  "checks": {
+    "health": true,
+    "mark_requires_private_login": true,
+    "authenticated_mark_available": true,
+    "write_requires_browser_token": false,
+    "foreign_origin_rejected": true
+  },
+  "deployment": {
+    "id": "0fc0441e-9e90-47cc-8e2e-b5355125c930",
+    "status": "SUCCESS",
+    "commit": "05f6b16dadad88470208c2a4104d732921092013"
+  },
+  "runtime": {
+    "acceptance_result": true,
+    "runtime_commit": "05f6b16dadad88470208c2a4104d732921092013",
+    "private_gate": true,
+    "database_url_present": true,
+    "fast_qwen_max": true,
+    "smart_qwen_max": true,
+    "files": {
+      "ride_brain.py": "76612acd46c0d8799d69519586d7f9eb4c4f842dbc451725ca69efc6af839221",
+      "ride_live.py": "052e0778e668d80a10240458ad1c0d48b4585ca0c721d2b5099b5dbf3242065c",
+      "tests/test_generation_grounding.py": "ca704d590d89126c974721924876e7cd6e23ddd00e9f2e34e46be1ac3a7f83fb"
+    },
+    "offline_replay": {
+      "total": 13,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": true
+    }
+  },
+  "error": "AssertionError: "
+}
