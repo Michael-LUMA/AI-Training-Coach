@@ -111,6 +111,15 @@ hr_high/hr_low 的 duration_s 是整次活动时长，不是心率越限时长�
 只报当前心率与所设上下限，不说超限持续多久，也不说“一直”超限。
 需要提活动时长时，单独成句明确说“本次活动时长”，不能接在越限描述后面。
 """
+SYSTEM_PROMPT += """
+display_events 是服务端从已校验的本次事件换算的口语数值，不是新测量；
+速度一律照读其中公里/小时数值，不能自行粗略取整，不能借用 previous/profile 的数值。
+实时播报不必强凑跨次原因解释。只说本次事件的事实关系，未知原因不猜。
+hr_drift 的 reference_hr 是同次相近速度的参考心率，不是目标或“预期应该达到”的心率。
+若用“看起来”，紧跟“心率140比参考132高8”这样的同句数字依据，再说相近速度条件；
+不要把推断放在长句开头、数字挤到句尾。允许直接陈述两项已知数值而不用推断句式。
+示例只是格式，最终答案只能使用最后一条 user 的数据；绝不能借用示例数字。
+"""
 LIVE_SYSTEM_PROMPT += L3_INFERENCE_RULE
 
 def _finite(value):
@@ -536,6 +545,53 @@ def _inputs(events, live_facts):
     return clean, facts
 
 
+def _display_events(events):
+    """Present event-bound numbers; never extend the verifier's authority set."""
+    result = []
+    for event in events:
+        kind = event['type']
+        if kind == 'speed_drop':
+            result.append({'type': kind,
+                           'current_speed_kmh': float((Decimal(str(event['current_speed_mps'])) * Decimal('3.6')).quantize(Decimal('0.1'))),
+                           'ride_avg_speed_kmh': float((Decimal(str(event['avg_speed_mps'])) * Decimal('3.6')).quantize(Decimal('0.1')))})
+        elif kind == 'hr_drift':
+            result.append({'type': kind, 'current_hr': event['current_hr'],
+                           'reference_hr': event['expected_hr'], 'drift_bpm': event['drift_bpm'],
+                           'speed_kmh': float((Decimal(str(event['speed_mps'])) * Decimal('3.6')).quantize(Decimal('0.1')))})
+        elif kind in ('hr_high', 'hr_low'):
+            limit = 'hr_upper' if kind == 'hr_high' else 'hr_lower'
+            result.append({'type': kind, 'hr': event['hr'], limit: event[limit]})
+    return result
+
+
+_LIVE_EXAMPLES = (
+    ([{'type': 'speed_drop', 'current_speed_mps': 2,
+       'avg_speed_mps': 6.25, 'ratio': .32}],
+     '当前速度7.2公里/小时，比本次均速22.5公里/小时慢，原因还不清楚。'),
+    ([{'type': 'hr_drift', 'current_hr': 148, 'expected_hr': 140,
+       'drift_bpm': 8, 'speed_mps': 6.25}],
+     '心率148，比相近速度时参考的140高8；原因还不清楚。'),
+    ([{'type': 'hr_high', 'hr': 165, 'hr_upper': 155, 'duration_s': 900}],
+     '现在心率165，高于你设的上限155。'),
+)
+
+
+def _live_messages(events, facts):
+    messages = [{'role': 'system', 'content': SYSTEM_PROMPT}]
+    example_facts = {'distance_m': 5625, 'duration_s': 900,
+                     'avg_speed_kmh': 22.5, 'paused': False, 'activity': 'ride'}
+    for example_events, speech in _LIVE_EXAMPLES:
+        messages.append({'role': 'user', 'content': json.dumps(
+            {'events': example_events, 'live_facts': example_facts,
+             'display_events': _display_events(example_events)}, ensure_ascii=False, allow_nan=False)})
+        messages.append({'role': 'assistant', 'content': json.dumps(
+            {'speech': speech}, ensure_ascii=False)})
+    messages.append({'role': 'user', 'content': json.dumps(
+        {'events': events, 'live_facts': facts, 'display_events': _display_events(events)},
+        ensure_ascii=False, allow_nan=False)})
+    return messages
+
+
 def _template(events, activity='ride'):
     # Keep complete event phrases; never truncate in the middle of a number.
     parts = []
@@ -685,10 +741,7 @@ def build_live_speech(events, live_facts, *, api_key=None, http_post=None,
                 numbers.extend(_profile_facts(facts['profile'])[1])
         payload = {'model': model or MODEL, 'max_tokens': MAX_TOKENS,
                    'response_format': {'type': 'json_object'},
-                   'messages': [{'role': 'system', 'content': SYSTEM_PROMPT},
-                                {'role': 'user', 'content': json.dumps(
-                                    {'events': events, 'live_facts': facts},
-                                    ensure_ascii=False, allow_nan=False)}]}
+                   'messages': _live_messages(events, facts)}
         request = Request(endpoint or ENDPOINT,
                           data=json.dumps(payload, ensure_ascii=False, allow_nan=False).encode('utf-8'),
                           headers={'Authorization': 'Bearer ' + api_key,

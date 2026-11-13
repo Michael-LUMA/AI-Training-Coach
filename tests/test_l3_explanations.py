@@ -177,7 +177,7 @@ class ExplanationTests(unittest.TestCase):
 
     def test_real_role_examples_and_final_facts_separation(self):
         messages=brain._review_messages(self.facts)
-        self.assertEqual(len(messages),22)  # system + ten user/assistant examples + final facts
+        self.assertEqual(len(messages),23)  # initial system + ten examples + trusted reminder + final facts
         self.assertEqual(json.loads(messages[-1]['content']),self.facts)
         example_speeches=[]
         for i in range(2,21,2):

@@ -80,8 +80,15 @@ SYSTEM_PROMPT += L3_INFERENCE_RULE + """
 解释型范例由后续user/assistant消息给出；它们只是格式与推理边界示例。
 只回答最后一条user里的记录；绝不能引用范例数字。没有比较数据时仍只说已知事实。
 可比维度都相同时，只确认数据相同，不强行解释变化或评价能力；没记到的原因不猜。
+已记录的数据相同不代表整体条件或表现相同；不要说“条件相同”“条件一致”“表现一致”。
 没有分段数据时，不补写“保持得挺稳”“发挥稳定”等评价；数据相同不代表过程稳定。
 禁止词即使是否定句也不要复述，用“条件不同，不能直接比较能力”表达边界。
+先选两个可比较的维度，再说明它们的关系，最后落到比较边界或本次事实确认；不得只报数。
+时长不同且心率不同，可说时长影响可比性；爬升不同且均速不同，可谨慎说明坡多的可能影响。
+同样心率和时长却爬得更多，确认“同样心率和时长下多爬了坡”，不是推断能力提高。
+不猜用户意图，不说“更注重爬坡”“想休息”“刻意控制”等没有记录的目的。
+用“可能是”“或许与”也须有据；不满足同句近数要求就调整句序，把解释紧贴其两个数值，不能删掉证据。
+只允许事实关系与谨慎解释，不把可能写成已证明的原因。可比维度全相同时诚实确认相同即可。
 """
 _REVIEW_EXAMPLES = (
     ({'summary': {'duration_s':3240,'avg_speed_mps':5,'ascent_m':480},
@@ -95,13 +102,13 @@ _REVIEW_EXAMPLES = (
       'previous_summary': {'duration_s':3840,'avg_hr':138},
       'differences': {'duration_s':-1920,'avg_hr':-10},
       'display': {'duration_min':32,'previous_duration_min':64,'duration_diff_min':32}},
-     '这次只骑32分钟，心率低10；比上次少骑32分钟，这种对比不宜直接判断能力变化。'),
+     '少骑32分钟、心率低10，或许与骑得更短有关；时长不同，不宜直接判断能力变化。'),
     ({'summary': {'duration_s':4620,'avg_hr':146,'avg_speed_mps':6.3888889},
       'previous_summary': {'duration_s':3420,'avg_hr':138,'avg_speed_mps':6.3888889},
       'differences': {'duration_s':1200,'avg_hr':8,'avg_speed_mps':0},
       'display': {'duration_min':77,'previous_duration_min':57,'duration_diff_min':20,
                   'avg_speed_kmh':23,'previous_avg_speed_kmh':23,'avg_speed_diff_kmh':0}},
-     '多骑20分钟，心率高8，均速没变；时长不同，不代表心率变化就能说明能力变化。'),
+     '多骑20分钟、心率高8，可能与骑得更久有关；均速同是23公里/小时，时长不同，不能单凭心率判断能力。'),
     ({'summary': {'avg_speed_mps':7.2222222,'ascent_m':60},
       'previous_summary': {'avg_speed_mps':5.8333333,'ascent_m':360},
       'differences': {'avg_speed_mps':1.3888889,'ascent_m':-300},
@@ -113,7 +120,7 @@ _REVIEW_EXAMPLES = (
       'differences': {'duration_s':-1440,'ascent_m':360,'avg_hr':9},
       'display': {'duration_min':39,'previous_duration_min':63,'duration_diff_min':24,
                   'ascent_m':540,'previous_ascent_m':180,'ascent_diff_m':360}},
-     '少骑24分钟却多爬360米，心率高9；时长和坡都不同，不能单凭心率判断能力。'),
+     '少骑24分钟却爬升多360米、心率高9，可能与坡多了有关；时长和坡都不同，不能单凭心率判断能力。'),
     ({'summary': {'duration_s':3360,'avg_hr':142,'ascent_m':420,'avg_speed_mps':5.5555556},
       'previous_summary': {'duration_s':3360,'avg_hr':142,'ascent_m':140,'avg_speed_mps':6.9444444},
       'differences': {'duration_s':0,'avg_hr':0,'ascent_m':280,'avg_speed_mps':-1.3888889},
@@ -140,7 +147,7 @@ _REVIEW_EXAMPLES = (
       'differences': {'duration_s':1800,'avg_speed_mps':-1.6666667,'avg_hr':-6},
       'display': {'duration_min':83,'previous_duration_min':53,'duration_diff_min':30,
                   'avg_speed_kmh':18,'previous_avg_speed_kmh':24,'avg_speed_diff_kmh':6}},
-     '多骑半小时，均速慢6公里/小时、心率低6；时长不同，不能只凭这组数判断能力。'),
+     '均速慢6公里/小时、心率低6，或许与速度更慢有关；多骑30分钟，条件不同，不能只凭心率判断能力。'),
     ({'summary': {'duration_s':3960,'ascent_m':510,'avg_speed_mps':5.2777778},
       'previous_summary': {'duration_s':3960,'ascent_m':330,'avg_speed_mps':6.1111111},
       'differences': {'duration_s':0,'ascent_m':180,'avg_speed_mps':-.8333333},
@@ -159,6 +166,12 @@ def _review_messages(facts):
             value=dict(example,activity='ride')
             messages.append({'role':'user','content':json.dumps(value,ensure_ascii=False,allow_nan=False)})
             messages.append({'role':'assistant','content':json.dumps({'speech':speech},ensure_ascii=False)})
+        messages.append({'role':'system','content':
+            '只答最后的记录。若解释原因，原因和两个支持维度的数字必须在同一句，'
+            '不要用分号把依据与解释隔开；不能只写“坡多了”而不带爬升数值。'
+            '同样心率和时长下多爬了坡，须明确确认这项本次事实，不推断能力或意图。'
+            '条件没有变化就诚实说原因无法确认，不补写路况、天气、用户目的。'
+            '有变化时在数值后补上比较边界，不得仅复述数据。'})
     messages.append({'role':'user','content':json.dumps(facts,ensure_ascii=False,allow_nan=False)})
     return messages
 
@@ -242,12 +255,14 @@ def _inference_has_basis(speech, numbers):
 _CAUSAL_CUE = re.compile(r'因为|所以|因此|导致|造成|归因|缘于|影响|可能[与跟和是受]|或许[与跟和是受]|可能来自|有关|相关|解释了|带来')
 _VAGUE_REASON = re.compile(r'(?:可能|或许)与(?:速度|均速|心率|时长|爬升)(?:的)?(?:变化|差异|改变)有关')
 _BODY_ASSERTION = re.compile(r'(?:你|身体|感觉|感到|体感).{0,6}(?:轻松|疲劳|吃力|舒服|累(?!计|积)|乏力|难受|不适)|(?:很|挺|更|非常)(?:轻松|吃力|累)|心率.{0,8}(?:正常|异常)')
+_UNRECORDED_INTENT = re.compile(r'更?注重|刻意|故意|有意|打算|想(?:要)?(?:休息|爬坡|放松|减速|加速|控制|锻炼|训练)')
+_UNMEASURED_COMPARISON = re.compile(r'条件(?:都|也)?(?:相同|一致)|表现(?:也|都)?(?:相同|一致)')
 _SEGMENT_ASSERTION = re.compile(r'(?:后半程|前半程|后程|全程|一直|始终).{0,8}(?:稳住|稳定|平稳|保持住|更稳|稳了|稳下来)')
 _COMPARABLE_DIMENSIONS = (
     ('duration_s', r'时长|分钟|小时', 's'),
     ('avg_hr', r'心率', 'bpm'),
     ('avg_speed_mps', r'均速|平均速度|速度', 'm/s'),
-    ('ascent_m', r'爬升', 'm'),
+    ('ascent_m', r'爬升|(?:多|少)爬|爬了', 'm'),
 )
 
 
@@ -257,7 +272,9 @@ def _explanation_has_basis(speech, facts):
     Numeric verification still runs first. Aggregate records never prove segment
     stability, physiology, unrecorded weather or subjective feelings.
     """
-    if _VAGUE_REASON.search(speech) or _BODY_ASSERTION.search(speech) or _SEGMENT_ASSERTION.search(speech):
+    if (_VAGUE_REASON.search(speech) or _BODY_ASSERTION.search(speech)
+            or _SEGMENT_ASSERTION.search(speech) or _UNRECORDED_INTENT.search(speech)
+            or _UNMEASURED_COMPARISON.search(speech)):
         return False
     current=dict(facts.get('summary', {}))
     previous=dict(facts.get('previous_summary', {}))
