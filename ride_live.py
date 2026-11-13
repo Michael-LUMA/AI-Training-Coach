@@ -21,7 +21,7 @@ from llm_review import (ENDPOINT, MODEL, MAX_RESPONSE_BYTES, TIMEOUT_S,
 from ride_chat import _check_history
 from ride_brain import (MAX_TOKENS, L3_INFERENCE_RULE, _FORBIDDEN_HARD, _soft_has_basis,
                         _inference_has_basis, _explanation_has_basis, _count_checked,
-                        _friendly_minutes, _normalized_numbers)
+                        _friendly_minutes, _normalized_numbers, _BASIS_NUMBER)
 from ride_chat import _check_question
 
 SCENES = {
@@ -640,8 +640,6 @@ def _numbers(events, facts):
 
 def _memory_speech_verified(speech, events, facts):
     """Historical numbers require an explicit historical clause, never current."""
-    if 'previous' not in facts and 'profile' not in facts:
-        return True  # Keep the anonymous verification behavior unchanged.
     from ride_brain import _summary, _friendly_minutes
     from ride_chat import _profile_facts
     current = _numbers(events, facts)
@@ -661,6 +659,120 @@ def _memory_speech_verified(speech, events, facts):
         allowed = previous if historical else profile if habitual else current
         if not _verified_text(_numeric_text(clause), allowed):
             return False
+    return True
+
+
+# Check explicit event-role labels in addition to the numeric whitelist. A
+# recorded reference/limit is not authority for claiming it as the current value.
+_EVENT_ROLE_SPECS = (
+    (('speed_drop',), 'current_speed_mps', 'm/s', r'(?:当前|现在|即时)(?:的)?速度', '公里/小时'),
+    (('speed_drop',), 'avg_speed_mps', 'm/s', r'均速|平均速度', '公里/小时'),
+    (('hr_drift',), 'current_hr', 'bpm', r'(?<!参考)(?<!平均)(?<!上限)(?<!下限)心率', 'bpm'),
+    (('hr_drift',), 'expected_hr', 'bpm', r'参考(?:心率|的|值)?', 'bpm'),
+    (('hr_high', 'hr_low'), 'hr', 'bpm', r'(?<!参考)(?<!平均)(?<!上限)(?<!下限)心率', 'bpm'),
+    (('hr_high',), 'hr_upper', 'bpm', r'上限(?:心率)?', 'bpm'),
+    (('hr_low',), 'hr_lower', 'bpm', r'下限(?:心率)?', 'bpm'),
+)
+_EVENT_VALUE = r'(?P<value>' + _BASIS_NUMBER.pattern + r')'
+_EVENT_UNIT = r'(?:bpm|km/h|m/s|公里每小时|千米每小时|公里/小时|千米/小时|公里/时|米每秒|米/秒)'
+_EVENT_ROLE_PATTERNS = tuple(
+    (kinds, field, unit, default_unit, re.compile(
+        r'(?:' + labels + r')(?:是|为|约|[:：])?\s*' + _EVENT_VALUE
+        + r'\s*(?P<unit>' + _EVENT_UNIT + r')?'))
+    for kinds, field, unit, labels, default_unit in _EVENT_ROLE_SPECS)
+_EVENT_SPEED_RELATION = re.compile(
+    r'(?:均速|平均速度)\s*' + _EVENT_VALUE + r'\s*(?:' + _EVENT_UNIT + r')?\s*(快|慢|高|低)')
+_EVENT_DRIFT_RELATION = re.compile(
+    r'参考(?:心率|的|值)?\s*' + _EVENT_VALUE + r'\s*(?:bpm)?\s*'
+    r'(?P<direction>高|低)(?:了)?\s*(?P<delta>' + _BASIS_NUMBER.pattern + r')\s*(?:bpm)?')
+_EVENT_LIMIT_RELATION = re.compile(
+    r'(?P<direction>高于|低于|超过)(?:你设的|设定的|设置的)?(?:心率)?(?P<limit>上限|下限)')
+
+
+def _event_roles_verified(speech, events):
+    """Bound explicit event claims, not arbitrary prose or historical summaries."""
+    for clause in re.split(r'[，,。！？；;]', speech):
+        if any(word in clause for word in ('上次', '此前', '历史', '通常', '平时', '习惯')):
+            continue  # Historical clauses are checked by _memory_speech_verified.
+        for kinds, field, unit, default_unit, pattern in _EVENT_ROLE_PATTERNS:
+            relevant = [event for event in events if event['type'] in kinds]
+            if not relevant:
+                continue
+            allowed = [number for event in relevant for number in _numbers([], {field: event[field]})]
+            for match in pattern.finditer(clause):
+                token = match.group('value') + ' ' + (match.group('unit') or default_unit)
+                if not _verified_text(_numeric_text(token), allowed):
+                    return False
+        for event in events:
+            if event['type'] == 'speed_drop':
+                for match in _EVENT_SPEED_RELATION.finditer(clause):
+                    delta = event['current_speed_mps'] - event['avg_speed_mps']
+                    sign = 1 if match.group(2) in ('快', '高') else -1
+                    if sign * delta <= 0:
+                        return False
+            elif event['type'] == 'hr_drift':
+                for match in _EVENT_DRIFT_RELATION.finditer(clause):
+                    if (match.group('direction') != '高' or not _verified_text(
+                            _numeric_text(match.group('delta') + ' bpm'),
+                            [(Decimal(str(event['drift_bpm'])), 'bpm')])):
+                        return False
+            elif event['type'] in ('hr_high', 'hr_low'):
+                for match in _EVENT_LIMIT_RELATION.finditer(clause):
+                    field = 'hr_upper' if match.group('limit') == '上限' else 'hr_lower'
+                    if field not in event:
+                        continue
+                    sign = -1 if match.group('direction') == '低于' else 1
+                    if sign * (event['hr'] - event[field]) <= 0:
+                        return False
+    return True
+
+
+_TELEMETRY_ROLE_SPECS = (
+    ('speed_mps', r'(?:当前|现在|即时)(?:的)?速度', '公里/小时'),
+    ('avg_speed_kmh', r'均速|平均速度', '公里/小时'),
+    ('hr', r'(?<!参考)(?<!平均)(?<!上限)(?<!下限)心率', 'bpm'),
+    ('hr_upper', r'上限(?:心率)?', 'bpm'),
+    ('hr_lower', r'下限(?:心率)?', 'bpm'),
+)
+_TELEMETRY_ROLE_PATTERNS = tuple(
+    (field, default_unit, re.compile(
+        r'(?:' + labels + r')(?:是|为|约|[:：])?\s*' + _EVENT_VALUE
+        + r'\s*(?P<unit>' + _EVENT_UNIT + r')?'))
+    for field, labels, default_unit in _TELEMETRY_ROLE_SPECS)
+
+
+def _telemetry_roles_verified(speech, facts):
+    """Keep current readings, ride averages and user limits in their own roles.
+
+    Live answers have no historical-record input. Dialog text is not telemetry
+    and cannot establish an old measurement or fill a missing current reading.
+    This bounds explicit labels, not arbitrary natural-language entailment.
+    """
+    for clause in re.split(r'[，,。！？；;]', speech):
+        if any(word in clause for word in ('上次', '此前', '历史', '通常', '平时', '习惯', '参考')):
+            if _BASIS_NUMBER.search(clause):
+                return False
+        for field, default_unit, pattern in _TELEMETRY_ROLE_PATTERNS:
+            for match in pattern.finditer(clause):
+                if field not in facts:
+                    return False
+                token = match.group('value') + ' ' + (match.group('unit') or default_unit)
+                if not _verified_text(_numeric_text(token), _numbers([], {field: facts[field]})):
+                    return False
+        for match in _EVENT_SPEED_RELATION.finditer(clause):
+            if 'speed_mps' not in facts or 'avg_speed_kmh' not in facts:
+                return False
+            delta = facts['speed_mps'] * 3.6 - facts['avg_speed_kmh']
+            sign = 1 if match.group(2) in ('快', '高') else -1
+            if sign * delta <= 0:
+                return False
+        for match in _EVENT_LIMIT_RELATION.finditer(clause):
+            field = 'hr_upper' if match.group('limit') == '上限' else 'hr_lower'
+            if 'hr' not in facts or field not in facts:
+                return False
+            sign = -1 if match.group('direction') == '低于' else 1
+            if sign * (facts['hr'] - facts[field]) <= 0:
+                return False
     return True
 
 
@@ -791,6 +903,8 @@ def build_live_speech(events, live_facts, *, api_key=None, http_post=None,
             if (not _verified_text(_numeric_text(speech), numbers)
                     or not _memory_speech_verified(speech, events, facts)):
                 return _response('rejected_unverifiable_number', template, usage, urgent=urgent)
+        if not _event_roles_verified(speech, events):
+            return _response('rejected_unsupported_inference', template, usage, urgent=urgent)
         if _FORBIDDEN_HARD.search(speech) or not _soft_has_basis(speech, numbers):
             return _response('rejected_unsafe_speech', template, usage, urgent=urgent)
         if not _inference_has_basis(speech, numbers) or not _explanation_has_basis(speech, facts):
@@ -940,7 +1054,8 @@ def build_live_answer(question, live_facts, *, history=None, api_key=None, http_
                 return _live_answer_response('rejected_unverifiable_number', usage=usage)
         if _FORBIDDEN_HARD.search(speech) or not _soft_has_basis(speech, numbers):
             return _live_answer_response('rejected_unsafe_speech', usage=usage)
-        if not _inference_has_basis(speech, numbers) or not _explanation_has_basis(speech, facts):
+        if (not _telemetry_roles_verified(speech, facts)
+                or not _inference_has_basis(speech, numbers) or not _explanation_has_basis(speech, facts)):
             return _live_answer_response('rejected_unsupported_inference', usage=usage)
         return _live_answer_response('ok', speech, usage)
     except (ValueError, UnicodeError, RecursionError, OverflowError, InvalidOperation):

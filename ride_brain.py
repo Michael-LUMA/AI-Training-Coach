@@ -89,6 +89,8 @@ SYSTEM_PROMPT += L3_INFERENCE_RULE + """
 不猜用户意图，不说“更注重爬坡”“想休息”“刻意控制”等没有记录的目的。
 用“可能是”“或许与”也须有据；不满足同句近数要求就调整句序，把解释紧贴其两个数值，不能删掉证据。
 只允许事实关系与谨慎解释，不把可能写成已证明的原因。可比维度全相同时诚实确认相同即可。
+多/少、快/慢、高/低必须符合本次减上次的方向；差值不能拿本次或上次的总数代替。
+“这次”“上次”后的数值须属于对应记录；“仍是”“同是”须两次都符合，不能把有变化说成不变。
 """
 _REVIEW_EXAMPLES = (
     ({'summary': {'duration_s':3240,'avg_speed_mps':5,'ascent_m':480},
@@ -266,6 +268,69 @@ _COMPARABLE_DIMENSIONS = (
 )
 
 
+# Deliberately bounded grammar: adjacent metric + delta/equality, or an absolute
+# value with an explicit current/previous subject. This supplements the global
+# number whitelist; it is not a general natural-language entailment checker.
+_COMPARISON_SPECS = (
+    ('duration_s', r'骑行时长|徒步时长|时长|骑了|走了|跑了', r'骑|走|跑', 'min'),
+    ('avg_hr', r'平均心率|心率', None, 'bpm'),
+    ('avg_speed_mps', r'平均速度|均速|速度', None, 'km/h'),
+    ('ascent_m', r'累计爬升|爬升|爬了', r'爬', 'm'),
+)
+_POSITIVE_CHANGE = frozenset(('多', '长', '高', '快', '增加', '升高', '上升', '提高'))
+_NEGATIVE_CHANGE = frozenset(('少', '短', '低', '慢', '减少', '降低', '下降'))
+_EQUAL_CHANGE = frozenset(('仍是', '还是', '同是', '同为'))
+_RELATION_WORDS = '|'.join(sorted(_POSITIVE_CHANGE | _NEGATIVE_CHANGE | _EQUAL_CHANGE,
+                                key=lambda word: (-len(word), word)))
+_SUBJECT = re.compile(r'这次|本次|这趟|本趟|(?<!比)(?<!较)上次|(?<!比)(?<!较)前次')
+_COMPARISON_PATTERNS = tuple(
+    (key, default_unit, re.compile(
+        (r'(?:(?P<oral>多|少)(?:' + verb + r')|' if verb else r'(?:')
+        + r'(?:' + labels + r')(?:(?:相比|比|较)(?:上次|前次))?'
+        + r'(?P<relation>' + _RELATION_WORDS + r')?)'
+        + r'(?:了|是|为|约|[:：])?\s*(?P<value>' + _NUM + r')'
+        + r'\s*(?P<unit>km/h|m/s|bpm|min|h|s|m)?'))
+    for key, labels, verb, default_unit in _COMPARISON_SPECS)
+
+
+def _comparison_claims_have_basis(speech, current, previous):
+    if not current and not previous:
+        return True  # Live events have a separate event-bound numeric guard.
+    units = {key: unit for key, _, unit in _COMPARABLE_DIMENSIONS}
+    for sentence in _SENTENCE_END.split(_normalized_numbers(speech)):
+        for key, default_unit, pattern in _COMPARISON_PATTERNS:
+            for match in pattern.finditer(sentence):
+                relation = match.groupdict().get('oral') or match.group('relation')
+                subjects = list(_SUBJECT.finditer(sentence[:match.start()]))
+                subject = subjects[-1].group() if subjects else None
+                if not relation and not subject:
+                    continue  # No explicit role; may be a historical list.
+                now, before = current.get(key), previous.get(key)
+                token = match.group('value') + ' ' + (match.group('unit') or default_unit)
+                if relation:
+                    if now is None or before is None:
+                        return False
+                    now, before = Decimal(str(now)), Decimal(str(before))
+                    if relation in _EQUAL_CHANGE:
+                        expected = (now, before)
+                    else:
+                        delta = now - before
+                        if subject in ('上次', '前次'):
+                            delta = -delta
+                        sign = 1 if relation in _POSITIVE_CHANGE else -1
+                        if sign * delta <= 0:
+                            return False
+                        expected = (abs(delta),)
+                else:
+                    value = before if subject in ('上次', '前次') else now
+                    if value is None:
+                        return False
+                    expected = (Decimal(str(value)),)
+                if not all(_verified_text(token, [(value, units[key])]) for value in expected):
+                    return False
+    return True
+
+
 def _explanation_has_basis(speech, facts):
     """Bound reason wording to measured comparative dimensions, not causal proof.
 
@@ -298,6 +363,8 @@ def _explanation_has_basis(speech, facts):
                 current[key]=Decimal(str(values[-1]))*scale
             if current.get(key) is not None and previous.get(key) is not None:
                 differences[key]=Decimal(str(current[key]))-Decimal(str(previous[key]))
+    if not _comparison_claims_have_basis(speech, current, previous):
+        return False
     for sentence in _SENTENCE_END.split(speech):
         if not _CAUSAL_CUE.search(sentence):
             continue
