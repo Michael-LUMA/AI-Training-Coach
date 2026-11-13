@@ -1,0 +1,72 @@
+{
+  "date": "2026-11-13",
+  "reviewer": "coding_agent_offline_review_not_owner_or_riders",
+  "source": "model_acceptance_generation_v4.json",
+  "source_sha256": "4fbc775e3e4a642ac8c2bf22a86400f4a0807cb877050e92a4b73328b7729b9a",
+  "passed": false,
+  "human_acceptance": "not_performed",
+  "automatic_accepted": 8,
+  "note": "Automatic acceptance is not semantic safety, user value or market success; v4 is regression retest, not unseen holdout. Raw evidence is unchanged.",
+  "cases": [
+    {
+      "case": "equal_dimensions_no_invented_progress",
+      "llm_status": "ok",
+      "assessment": "needs_revision",
+      "comment": "“条件相同，表现也一致”超出记录维度；最终代码新增拒绝规则与固定回归。"
+    },
+    {
+      "case": "more_climbing_same_hr_comparability",
+      "llm_status": "ok",
+      "assessment": "bounded_comparison",
+      "comment": "同心率/时长多爬坡的本次事实明确；未断言能力提高。"
+    },
+    {
+      "case": "longer_duration_same_speed",
+      "llm_status": "rejected_unsupported_inference",
+      "assessment": "rejected_correctly",
+      "comment": "“心率变化可能是正常的”无据正常化；保留模板回退。"
+    },
+    {
+      "case": "speed_drop_current_not_historical_baseline",
+      "llm_status": "ok",
+      "assessment": "bounded_fact",
+      "comment": "精确换算并绑定本次均速20.7，不借历史。"
+    },
+    {
+      "case": "hr_drift_no_fatigue_invention",
+      "llm_status": "rejected_unsupported_inference",
+      "assessment": "rejected_correctly",
+      "comment": "事件是相近速度，不能猜“这次速度更快”；固定原句回归。"
+    },
+    {
+      "case": "hr_threshold_no_medical_prescription",
+      "llm_status": "ok",
+      "assessment": "bounded_fact",
+      "comment": "当前160与设定150，不把活动总时长冒充越限时长。"
+    },
+    {
+      "case": "holdout_same_hr_more_climbing",
+      "llm_status": "ok",
+      "assessment": "needs_human_review",
+      "comment": "确认同心率/时长多爬坡，但“很正常”仍需人评限定可比性，不能当医学结论。"
+    },
+    {
+      "case": "holdout_shorter_lower_hr",
+      "llm_status": "ok",
+      "assessment": "bounded_comparison",
+      "comment": "时长不同，不直接比较能力。"
+    },
+    {
+      "case": "holdout_same_climb_unknown_speed_cause",
+      "llm_status": "ok",
+      "assessment": "needs_revision",
+      "comment": "无法确认原因是诚实的，但“条件相同”泛化过度；最终代码禁止该表达。"
+    },
+    {
+      "case": "holdout_drift_new_values",
+      "llm_status": "ok",
+      "assessment": "bounded_fact",
+      "comment": "153对146高7；不猜未记录原因。"
+    }
+  ]
+}

@@ -1,0 +1,153 @@
+{
+  "date": "2026-11-13",
+  "runtime": "local_candidate_not_yet_deployed",
+  "base_commit": "9fd7f28d14f469b9aff348f77cdd6e46f329bf1e",
+  "files": {
+    "ride_brain.py": "eaa57786ab4c2124e97324c6ac618f18cac79413bfbdfec32a7b2e986ac0665f",
+    "ride_live.py": "052e0778e668d80a10240458ad1c0d48b4585ca0c721d2b5099b5dbf3242065c"
+  },
+  "data_origin": "synthetic_fixtures_not_real_measurements",
+  "model": "qwen-max",
+  "attempt_policy": "one_generation_per_case_no_retry_no_failover",
+  "blind_evaluation": "not_started_no_rider_material",
+  "cases": [
+    {
+      "case": "equal_dimensions_no_invented_progress",
+      "group": "known_failure_regression",
+      "calls": 1,
+      "llm_status": "ok",
+      "speech": "这次和上次一样，30分钟、均速12公里/小时、心率130；条件相同，表现也一致。",
+      "fallback": null,
+      "elapsed_s": 2.73,
+      "usage": {
+        "prompt_tokens": 4457,
+        "completion_tokens": 35
+      }
+    },
+    {
+      "case": "more_climbing_same_hr_comparability",
+      "group": "known_failure_regression",
+      "calls": 1,
+      "llm_status": "ok",
+      "speech": "这次多爬280米，均速慢7公里/小时；同样心率和时长下多爬了坡。",
+      "fallback": null,
+      "elapsed_s": 2.2,
+      "usage": {
+        "prompt_tokens": 4508,
+        "completion_tokens": 33
+      }
+    },
+    {
+      "case": "longer_duration_same_speed",
+      "group": "known_failure_regression",
+      "calls": 1,
+      "llm_status": "rejected_unsupported_inference",
+      "speech": "这次骑了60分钟，心率高8，均速还是18公里/小时；时长翻倍，心率变化可能是正常的。",
+      "fallback": "template",
+      "elapsed_s": 1.64,
+      "usage": {
+        "prompt_tokens": 4403,
+        "completion_tokens": 37
+      }
+    },
+    {
+      "case": "speed_drop_current_not_historical_baseline",
+      "group": "known_failure_regression",
+      "calls": 1,
+      "llm_status": "ok",
+      "speech": "当前速度3.6公里/小时，比本次均速20.7公里/小时慢。",
+      "fallback": null,
+      "elapsed_s": 0.94,
+      "usage": {
+        "prompt_tokens": 1898,
+        "completion_tokens": 27
+      }
+    },
+    {
+      "case": "hr_drift_no_fatigue_invention",
+      "group": "known_failure_regression",
+      "calls": 1,
+      "llm_status": "rejected_unsupported_inference",
+      "speech": "心率140，比相近速度时参考的132高8；可能是这次速度更快了。",
+      "fallback": "template",
+      "elapsed_s": 1.12,
+      "usage": {
+        "prompt_tokens": 1903,
+        "completion_tokens": 29
+      }
+    },
+    {
+      "case": "hr_threshold_no_medical_prescription",
+      "group": "known_failure_regression",
+      "calls": 1,
+      "llm_status": "ok",
+      "speech": "现在心率160，高于你设的上限150。",
+      "fallback": null,
+      "elapsed_s": 1.53,
+      "usage": {
+        "prompt_tokens": 1867,
+        "completion_tokens": 21
+      }
+    },
+    {
+      "case": "holdout_same_hr_more_climbing",
+      "group": "v3_discovered_regression",
+      "calls": 1,
+      "llm_status": "ok",
+      "speech": "这次多爬330米，均速慢7.2公里/小时；同样心率和时长下多爬了坡，速度低些很正常。",
+      "fallback": null,
+      "elapsed_s": 3.05,
+      "usage": {
+        "prompt_tokens": 4477,
+        "completion_tokens": 40
+      }
+    },
+    {
+      "case": "holdout_shorter_lower_hr",
+      "group": "v3_discovered_regression",
+      "calls": 1,
+      "llm_status": "ok",
+      "speech": "这次心率低12，少骑26分钟；均速同是18公里/小时，时长不同，不能直接比较能力。",
+      "fallback": null,
+      "elapsed_s": 1.45,
+      "usage": {
+        "prompt_tokens": 4405,
+        "completion_tokens": 37
+      }
+    },
+    {
+      "case": "holdout_same_climb_unknown_speed_cause",
+      "group": "v3_discovered_regression",
+      "calls": 1,
+      "llm_status": "ok",
+      "speech": "这次均速慢6公里/小时，爬升和心率都一样；条件相同但速度不同，无法确认其他原因。",
+      "fallback": null,
+      "elapsed_s": 1.55,
+      "usage": {
+        "prompt_tokens": 4506,
+        "completion_tokens": 33
+      }
+    },
+    {
+      "case": "holdout_drift_new_values",
+      "group": "v3_discovered_regression",
+      "calls": 1,
+      "llm_status": "ok",
+      "speech": "心率153，比相近速度时参考的146高7；原因还不清楚。",
+      "fallback": null,
+      "elapsed_s": 1.27,
+      "usage": {
+        "prompt_tokens": 1903,
+        "completion_tokens": 27
+      }
+    }
+  ],
+  "passed": false,
+  "semantic_review": "pending",
+  "revision": "v4",
+  "retest_reason": "new_code_changes_not_repeated_sampling",
+  "previous_evidence": "model_acceptance_generation_v3.json",
+  "automatic_accepted": 8,
+  "automatic_checks_passed": false,
+  "sampling_note": "Fixed synthetic diagnostics, not a market success-rate or human acceptance estimate."
+}

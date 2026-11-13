@@ -1,0 +1,24 @@
+{
+  "date": "2026-11-13",
+  "deployment_full": {
+    "total": 1847,
+    "passed": 1842,
+    "skipped": 5,
+    "failed": 0,
+    "log_sha256": "404c99b104873bf8d047a8717a9e3f871a011c1dd3acccee27082a85d0cc8145"
+  },
+  "development_affected": {
+    "total": 192,
+    "passed": 192,
+    "skipped": 0,
+    "failed": 0
+  },
+  "files": {
+    "ride_brain.py": "76612acd46c0d8799d69519586d7f9eb4c4f842dbc451725ca69efc6af839221",
+    "ride_live.py": "052e0778e668d80a10240458ad1c0d48b4585ca0c721d2b5099b5dbf3242065c",
+    "tests/test_l3_explanations.py": "49f9cd78cf5b93ee2f9ef8737cdbae6962160def01b1eedd96f61506aeb034f1",
+    "tests/test_generation_grounding.py": "ca704d590d89126c974721924876e7cd6e23ddd00e9f2e34e46be1ac3a7f83fb"
+  },
+  "model_acceptance": false,
+  "note": "Final guard adds rejection of unmeasured overall condition/performance equality. v4 model sampling predates this final guard; no resampling or release acceptance claimed."
+}

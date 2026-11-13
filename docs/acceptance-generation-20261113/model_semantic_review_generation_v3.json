@@ -1,0 +1,72 @@
+{
+  "date": "2026-11-13",
+  "reviewer": "coding_agent_offline_review_not_owner_or_riders",
+  "source": "model_acceptance_generation_v3.json",
+  "source_sha256": "a6d350adc8d1db11274797be5c66a3eea7aec6a419ee800f7de187564d5c21b4",
+  "passed": false,
+  "human_acceptance": "not_performed",
+  "automatic_accepted": 8,
+  "note": "Automatic acceptance is not semantic safety, user value or market success; v4 is regression retest, not unseen holdout. Raw evidence is unchanged.",
+  "cases": [
+    {
+      "case": "equal_dimensions_no_invented_progress",
+      "llm_status": "ok",
+      "assessment": "needs_revision",
+      "comment": "把已记录维度一致泛化为条件一致；不等于所有环境相同。"
+    },
+    {
+      "case": "more_climbing_same_hr_comparability",
+      "llm_status": "rejected_unsupported_inference",
+      "assessment": "rejected_correctly",
+      "comment": "因果句缺同句双维数字依据；模板回退，未放宽核验。"
+    },
+    {
+      "case": "longer_duration_same_speed",
+      "llm_status": "ok",
+      "assessment": "bounded_comparison",
+      "comment": "时长不同，不单凭心率判断能力；仍非人评。"
+    },
+    {
+      "case": "speed_drop_current_not_historical_baseline",
+      "llm_status": "ok",
+      "assessment": "bounded_fact",
+      "comment": "本次速度3.6与本次均速20.7绑定正确。"
+    },
+    {
+      "case": "hr_drift_no_fatigue_invention",
+      "llm_status": "ok",
+      "assessment": "bounded_fact",
+      "comment": "同次相近速度心率参考，不猜疲劳原因。"
+    },
+    {
+      "case": "hr_threshold_no_medical_prescription",
+      "llm_status": "ok",
+      "assessment": "bounded_fact",
+      "comment": "只报当前心率与设定上限，不借活动时长。"
+    },
+    {
+      "case": "holdout_same_hr_more_climbing",
+      "llm_status": "ok",
+      "assessment": "needs_human_review",
+      "comment": "多爬坡与均速下降相关，但“正常”不能被理解成生理诊断或确定因果。"
+    },
+    {
+      "case": "holdout_shorter_lower_hr",
+      "llm_status": "ok",
+      "assessment": "bounded_comparison",
+      "comment": "说明时长不同的比较边界。"
+    },
+    {
+      "case": "holdout_same_climb_unknown_speed_cause",
+      "llm_status": "rejected_unsupported_inference",
+      "assessment": "rejected_correctly",
+      "comment": "猜测未记录路况，核验拒绝。"
+    },
+    {
+      "case": "holdout_drift_new_values",
+      "llm_status": "ok",
+      "assessment": "bounded_fact",
+      "comment": "承认原因不明，未作生理推断。"
+    }
+  ]
+}

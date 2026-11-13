@@ -2,7 +2,21 @@
 
 中文摘要：当前为Railway＋PostgreSQL私测部署，保留身份与访问门禁；Render步骤和无依赖描述属于历史方案。工程检查与模型质量验收分开记录，未公开发布。
 
-## Current private deployment — 2026-11-13
+## Latest engineering update — 2026-11-13 (generation grounding)
+
+This section supersedes the older current-status section below. See
+`docs/generation-grounding-20261113.md` and `docs/acceptance-generation-20261113/`.
+Final deployment-repository regression: 1847 tests, 1842 passed, 5 skipped, no failures.
+The candidate fixes event/display provenance, intent guessing, oral climbing labels,
+and unsupported equality of overall conditions/performance. qwen-max remains selected.
+Recorded v3/v4 diagnostics each accepted 8/10 automatically; semantic review still fails.
+The final additional safety guard was not resampled. Model quality is NOT accepted.
+M7 restart/readback evidence remains valid by source continuity, not a new restart claim.
+Private gates remain; raw GPS is not uploaded; climb_ahead remains disabled.
+Blind evaluation and rider materials remain paused. Temporary SSH cleanup is unconfirmed.
+Deployment commit/status are recorded separately after actual runtime verification.
+
+## Current private deployment — 2026-11-13 (historical snapshot)
 
 This section supersedes milestone status below. Current private origin:
 `https://ai-ride-coach-production-7887.up.railway.app`; open `/mark` with existing tester credentials.

@@ -1,0 +1,20 @@
+{
+  "date": "2026-11-13",
+  "restart_and_M7_accepted_commit": "f790b7af8336566ca0817fb8981f0531d1e9a57e",
+  "scope": "candidate_source_continuity_not_another_database_restart_test",
+  "changed_tracked_runtime_and_test_paths": [
+    "ride_brain.py",
+    "ride_live.py",
+    "tests/test_l3_explanations.py",
+    "tests/test_prompt_guard_alignment.py"
+  ],
+  "additional_untracked_test": "tests/test_generation_grounding.py",
+  "persistence_auth_export_delete_frontend_unchanged": true,
+  "candidate_files": {
+    "ride_brain.py": "76612acd46c0d8799d69519586d7f9eb4c4f842dbc451725ca69efc6af839221",
+    "ride_live.py": "052e0778e668d80a10240458ad1c0d48b4585ca0c721d2b5099b5dbf3242065c",
+    "tests/test_l3_explanations.py": "49f9cd78cf5b93ee2f9ef8737cdbae6962160def01b1eedd96f61506aeb034f1",
+    "tests/test_generation_grounding.py": "ca704d590d89126c974721924876e7cd6e23ddd00e9f2e34e46be1ac3a7f83fb"
+  },
+  "overall_project_accepted": false
+}
